@@ -5,11 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:p4": "vite --config vite.config.p4.ts",
     "build": "tsc && vite build",
+    "build:p4": "vite build --config vite.config.p4.ts",
     "preview": "vite preview",
+    "preview:p4": "vite preview --config vite.config.p4.ts",
     "test": "vitest --run",
+    "test:p4": "vitest --run --config vitest.config.p4.ts",
     "lint": "eslint src --ext ts",
+    "lint:p4": "eslint src-p4 --ext ts",
     "format": "prettier --write \"src/**/*.ts\"",
+    "format:p4": "prettier --write \"src-p4/**/*.ts\"",
     "type-check": "tsc --noEmit",
     "profile": "node scripts/profile-rendering.js"
   },
@@ -21,6 +27,7 @@
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
+    "@webgpu/types": "^0.1.67",
     "eslint": "^8.54.0",
     "jsdom": "^23.0.1",
     "prettier": "^3.1.0",
@@ -29,4 +36,3 @@
     "vitest": "^1.0.4"
   }
 }
-
