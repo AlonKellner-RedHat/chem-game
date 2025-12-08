@@ -10,8 +10,11 @@
 
 import { SpectralComputePipeline, GPUShape, ComputeParams } from './SpectralCompute';
 import { initWebGPU, WebGPUContext } from './WebGPUContext';
-import { MaskManager } from './MaskLoader';
+import { MaskManager, LoadedMSDF } from './MaskLoader';
 import { BackgroundMode } from '../physics/config';
+
+// Re-export GPUShape for convenience
+export type { GPUShape } from './SpectralCompute';
 
 /**
  * Renderer interface (abstracts Phaser version)
@@ -44,11 +47,17 @@ export interface Renderer {
   /** Get global max intensity from last render (for plot normalization) */
   getGlobalMaxIntensity(): number;
   
-  /** Load mask files for shapes */
+  /** Load MSDF files for shapes */
   loadMasks(maskNames: string[]): Promise<void>;
   
-  /** Get mask index by name */
+  /** Get MSDF index by name */
   getMaskIndex(name: string): number;
+  
+  /** Get MSDF texture dimensions by name */
+  getMaskDimensions(name: string): { width: number; height: number };
+  
+  /** Get MSDF pixel range */
+  getMsdfPxRange(): number;
   
   /** Destroy resources */
   destroy(): void;
@@ -132,6 +141,7 @@ export class WebGPURenderer implements Renderer {
       enableEmission: this.emissionEnabled,
       sampleX: this.sampleX,
       sampleY: this.sampleY,
+      msdfPxRange: this.getMsdfPxRange(),
     };
     
     // Two-pass compute with global normalization
@@ -166,34 +176,52 @@ export class WebGPURenderer implements Renderer {
   }
   
   /**
-   * Load mask files for shapes
+   * Load MSDF files for shapes
    */
   async loadMasks(maskNames: string[]): Promise<void> {
     if (!this.context || !this.pipeline) {
-      console.warn('[WebGPURenderer] Cannot load masks - not initialized');
+      console.warn('[WebGPURenderer] Cannot load MSDF - not initialized');
       return;
     }
     
-    // Create mask manager if not exists
+    // Create MSDF manager if not exists
     if (!this.maskManager) {
-      this.maskManager = new MaskManager(this.context.device, '/masks');
+      this.maskManager = new MaskManager(this.context.device, '/msdf');
     }
     
-    // Load all requested masks
+    // Load all requested MSDFs
     await this.maskManager.loadMasks(maskNames);
     
-    // Set mask textures on pipeline
-    const masks = this.maskManager.getAllMasks();
-    this.pipeline.setMaskTextures(masks.map(m => m.texture));
+    // Set MSDF textures on pipeline
+    const msdfs = this.maskManager.getAllMasks();
+    this.pipeline.setMaskTextures(msdfs.map(m => m.texture));
     
-    console.log(`[WebGPURenderer] Loaded ${maskNames.length} masks`);
+    console.log(`[WebGPURenderer] Loaded ${maskNames.length} MSDF textures`);
   }
   
   /**
-   * Get mask index by name
+   * Get MSDF index by name
    */
   getMaskIndex(name: string): number {
     return this.maskManager?.getMaskIndex(name) ?? 0;
+  }
+  
+  /**
+   * Get MSDF texture dimensions by name
+   */
+  getMaskDimensions(name: string): { width: number; height: number } {
+    const msdf = this.maskManager?.getMask(name);
+    if (msdf) {
+      return { width: msdf.width, height: msdf.height };
+    }
+    return { width: 256, height: 256 };  // Default
+  }
+  
+  /**
+   * Get MSDF pixel range
+   */
+  getMsdfPxRange(): number {
+    return this.maskManager?.getPxRange() ?? 4.0;
   }
   
   /**
@@ -213,6 +241,7 @@ export class WebGPURenderer implements Renderer {
   
   destroy(): void {
     this.pipeline?.destroy();
+    this.maskManager?.destroy();
     this.context?.device.destroy();
   }
 }
@@ -284,11 +313,19 @@ export class CPURenderer implements Renderer {
   
   async loadMasks(_maskNames: string[]): Promise<void> {
     // CPU fallback doesn't use GPU masks
-    console.log('[CPUFallbackRenderer] Mask loading not supported in CPU mode');
+    console.log('[CPUFallbackRenderer] MSDF loading not supported in CPU mode');
   }
   
   getMaskIndex(_name: string): number {
     return 0; // CPU fallback returns default index
+  }
+  
+  getMaskDimensions(_name: string): { width: number; height: number } {
+    return { width: 256, height: 256 };  // Default
+  }
+  
+  getMsdfPxRange(): number {
+    return 4.0;  // Default
   }
   
   destroy(): void {
@@ -312,5 +349,3 @@ export async function createRenderer(): Promise<Renderer> {
   await cpuRenderer.init();
   return cpuRenderer;
 }
-
-

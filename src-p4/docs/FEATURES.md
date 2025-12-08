@@ -208,3 +208,4 @@ interface SharedPhysicsConfig {
 4. **Spectrum Alignment**: Plot values match rendered colors at same position
 
 
+

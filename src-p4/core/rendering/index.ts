@@ -1,7 +1,7 @@
 /**
  * Rendering Module
  * 
- * WebGPU-based spectral rendering.
+ * WebGPU-based spectral rendering with MSDF shape support.
  */
 
 export {
@@ -25,9 +25,15 @@ export {
 
 export {
   MaskManager,
-  loadMaskFile,
-  parseMaskFile,
-  createMaskTexture,
+  type MSDFMetadata,
+  type LoadedMSDF,
   type MaskData,
   type LoadedMask,
 } from './MaskLoader';
+
+export {
+  createRenderer,
+  WebGPURenderer,
+  CPURenderer,
+  type Renderer,
+} from './PhaserBridge';

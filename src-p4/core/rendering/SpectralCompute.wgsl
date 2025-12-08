@@ -4,6 +4,9 @@
  * Calculates per-pixel spectral values and integrates to RGB.
  * This is the WebGPU equivalent of the physics module,
  * implementing the same formulas in WGSL.
+ * 
+ * Uses MSDF (Multi-Channel Signed Distance Field) textures for
+ * resolution-independent shape rendering with sharp corners.
  */
 
 // Physical constants
@@ -28,19 +31,23 @@ struct Params {
   sampleY: i32,  // -1 for no sampling, otherwise y coord
   isNormalizationPass: u32,  // 0 = compute pass (find max), 1 = normalize pass
   globalMaxIntensity: f32,   // Global max for normalization (used in pass 1)
-  _padding: u32,
+  msdfPxRange: f32,          // MSDF pixel range (typically 4.0)
 }
 
 // Shape definition
 struct Shape {
   x: f32,             // Position X
   y: f32,             // Position Y
-  width: f32,         // Bounding box width (matches mask size)
-  height: f32,        // Bounding box height (matches mask size)
+  width: f32,         // Bounding box width
+  height: f32,        // Bounding box height
   temperature: f32,   // For emission calculations
   layer: u32,         // Render order (0 = background, higher = foreground)
   materialIndex: u32, // Index into material textures
-  maskIndex: u32,     // Index into mask textures
+  maskIndex: u32,     // Index into MSDF textures
+  texWidth: f32,      // MSDF texture width (for screenPxRange calculation)
+  texHeight: f32,     // MSDF texture height
+  _padding1: u32,
+  _padding2: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -64,12 +71,96 @@ struct Shape {
 // CIE scale factors
 @group(2) @binding(4) var<uniform> cieScales: vec4<f32>; // x, y, z, unused
 
-// Mask textures (r32float, sampled at shape-relative coordinates)
-@group(3) @binding(0) var maskTexture0: texture_2d<f32>;
-@group(3) @binding(1) var maskTexture1: texture_2d<f32>;
-@group(3) @binding(2) var maskTexture2: texture_2d<f32>;
-@group(3) @binding(3) var maskTexture3: texture_2d<f32>;
-@group(3) @binding(4) var maskSampler: sampler;
+// MSDF textures (rgba8unorm, RGB channels encode signed distances)
+@group(3) @binding(0) var msdfTexture0: texture_2d<f32>;
+@group(3) @binding(1) var msdfTexture1: texture_2d<f32>;
+@group(3) @binding(2) var msdfTexture2: texture_2d<f32>;
+@group(3) @binding(3) var msdfTexture3: texture_2d<f32>;
+@group(3) @binding(4) var msdfSampler: sampler;
+
+// ============================================================
+// MSDF Functions
+// ============================================================
+
+/**
+ * MSDF median function - extracts true signed distance from RGB
+ * The median of the three channels gives corner-aware distance
+ */
+fn msdfMedian(rgb: vec3<f32>) -> f32 {
+  return max(min(rgb.r, rgb.g), min(max(rgb.r, rgb.g), rgb.b));
+}
+
+/**
+ * Sample MSDF texture by index
+ */
+fn sampleMSDFTexture(maskIndex: u32, uv: vec2<f32>) -> vec3<f32> {
+  if (maskIndex == 0u) {
+    return textureSampleLevel(msdfTexture0, msdfSampler, uv, 0.0).rgb;
+  } else if (maskIndex == 1u) {
+    return textureSampleLevel(msdfTexture1, msdfSampler, uv, 0.0).rgb;
+  } else if (maskIndex == 2u) {
+    return textureSampleLevel(msdfTexture2, msdfSampler, uv, 0.0).rgb;
+  } else if (maskIndex == 3u) {
+    return textureSampleLevel(msdfTexture3, msdfSampler, uv, 0.0).rgb;
+  }
+  // Default: solid white (fully inside)
+  return vec3<f32>(0.0, 0.0, 0.0);
+}
+
+/**
+ * Sample MSDF and return shape coverage (0.0 = outside, 1.0 = inside)
+ * 
+ * In compute shaders we can't use fwidth(), so we calculate the screen-space
+ * pixel range based on the known relationship between shape size and texture size.
+ * 
+ * @param shapeScreenSize - The shape's size in screen pixels (width or height)
+ */
+fn sampleMSDF(maskIndex: u32, uv: vec2<f32>, pxRange: f32, texSize: vec2<f32>, shapeScreenSize: vec2<f32>) -> f32 {
+  let msd = sampleMSDFTexture(maskIndex, uv);
+  
+  // Get signed distance: 0.5 = edge, <0.5 = inside, >0.5 = outside
+  let sd = msdfMedian(msd) - 0.5;
+  
+  // Calculate screen-space pixel range without fwidth()
+  // This is the ratio of: (pxRange in texture pixels) / (texture pixels per screen pixel)
+  // texturePixelsPerScreenPixel = texSize / shapeScreenSize
+  // So: screenPxRange = pxRange * (shapeScreenSize / texSize)
+  let unitRange = vec2<f32>(pxRange) / texSize;
+  let screenPxRangeVal = max(0.5 * dot(unitRange, shapeScreenSize), 1.0);
+  
+  // Scale signed distance by screen pixel range
+  let screenPxDist = screenPxRangeVal * sd;
+  
+  // Hard mask with smooth AA at edges
+  // smoothstep gives nice anti-aliased edges
+  return 1.0 - smoothstep(-0.5, 0.5, screenPxDist);
+}
+
+/**
+ * Get shape mask value at pixel coordinates using MSDF
+ * Returns 0.0-1.0 based on MSDF sampling
+ */
+fn getShapeMask(shape: Shape, x: f32, y: f32) -> f32 {
+  // Check if within bounding box
+  if (x < shape.x || x >= shape.x + shape.width ||
+      y < shape.y || y >= shape.y + shape.height) {
+    return 0.0;
+  }
+  
+  // Calculate UV coordinates relative to shape bounds
+  let u = (x - shape.x) / shape.width;
+  let v = (y - shape.y) / shape.height;
+  let uv = vec2<f32>(u, v);
+  
+  // Sample MSDF texture with anti-aliasing
+  let texSize = vec2<f32>(shape.texWidth, shape.texHeight);
+  let shapeScreenSize = vec2<f32>(shape.width, shape.height);
+  return sampleMSDF(shape.maskIndex, uv, params.msdfPxRange, texSize, shapeScreenSize);
+}
+
+// ============================================================
+// Physics Functions
+// ============================================================
 
 /**
  * Get raw Planck radiance (unnormalized)
@@ -177,44 +268,6 @@ fn getMaterialTransmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
   }
   
   return 1.0;  // Default: full transmission
-}
-
-/**
- * Sample mask texture at shape-relative coordinates
- * Returns mask value (0.0 = outside, 1.0 = fully inside)
- */
-fn sampleMask(maskIndex: u32, u: f32, v: f32) -> f32 {
-  let uv = vec2<f32>(u, v);
-  
-  if (maskIndex == 0u) {
-    return textureSampleLevel(maskTexture0, maskSampler, uv, 0.0).r;
-  } else if (maskIndex == 1u) {
-    return textureSampleLevel(maskTexture1, maskSampler, uv, 0.0).r;
-  } else if (maskIndex == 2u) {
-    return textureSampleLevel(maskTexture2, maskSampler, uv, 0.0).r;
-  } else if (maskIndex == 3u) {
-    return textureSampleLevel(maskTexture3, maskSampler, uv, 0.0).r;
-  }
-  return 0.0;
-}
-
-/**
- * Get shape mask value at pixel coordinates
- * Returns 0.0-1.0 based on mask texture sampling
- */
-fn getShapeMask(shape: Shape, x: f32, y: f32) -> f32 {
-  // Check if within bounding box
-  if (x < shape.x || x >= shape.x + shape.width ||
-      y < shape.y || y >= shape.y + shape.height) {
-    return 0.0;
-  }
-  
-  // Calculate UV coordinates relative to shape bounds
-  let u = (x - shape.x) / shape.width;
-  let v = (y - shape.y) / shape.height;
-  
-  // Sample mask texture
-  return sampleMask(shape.maskIndex, u, v);
 }
 
 /**
@@ -392,5 +445,3 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
   }
 }
-
-

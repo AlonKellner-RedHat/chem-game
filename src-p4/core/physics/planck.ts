@@ -114,3 +114,4 @@ export function hasVisibleEmission(temperatureK: number): boolean {
 }
 
 
+

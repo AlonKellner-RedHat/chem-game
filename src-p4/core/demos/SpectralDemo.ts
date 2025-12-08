@@ -58,6 +58,7 @@ export class SpectralDemo implements Demo {
   
   // Masks
   protected masksLoaded = false;
+  protected renderInProgress = false;
   
   // State
   protected needsRender = true;
@@ -77,8 +78,35 @@ export class SpectralDemo implements Demo {
     const crystalMaterial = createCrystalMaterial();
     const gasMaterial = createGasMaterial();
     
-    // Create shapes (positioned with slight overlap for interesting color mixing)
+    // Create a simple tint material for background (66% transmission = slight dimming)
+    const tintMaterial: Material = {
+      id: 'tint',
+      name: 'Background Tint',
+      molecules: [],  // No absorption peaks - just flat transmission
+      bandGap: 0,     // No band gap (transparent in visible)
+      uvCutoff: 0,    // No UV cutoff
+      generateTransmissionSpectrum: (minWl: number, maxWl: number, resolution: number) => {
+        // Flat 66% transmission across all wavelengths
+        return new Float32Array(resolution).fill(0.66);
+      },
+    };
+    
+    // Create shapes (background layer first, then foreground)
     this.shapes = [
+      // Background circle grid (layer 0)
+      {
+        id: 'bg-grid',
+        name: 'Background Grid',
+        maskName: 'circle-grid',
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+        layer: 0,  // Background layer
+        material: tintMaterial,
+        properties: createDefaultProperties(tintMaterial),
+      },
+      // Foreground shapes (layer 1)
       {
         id: 'square',
         name: 'Square (Water)',
@@ -161,10 +189,11 @@ export class SpectralDemo implements Demo {
   }
   
   update(scene: GameScene): void {
-    if (this.needsRender) {
-      // updateRenderer is async but we fire and forget here
-      // The next frame will pick up the result
-      this.updateRenderer(scene);
+    if (this.needsRender && !this.renderInProgress) {
+      this.renderInProgress = true;
+      this.updateRenderer(scene).finally(() => {
+        this.renderInProgress = false;
+      });
       this.needsRender = false;
     }
     
@@ -182,10 +211,13 @@ export class SpectralDemo implements Demo {
       shape.properties = defaults;
     }
     
-    // Reset UI sliders
-    for (let i = 0; i < this.shapes.length; i++) {
-      const shape = this.shapes[i];
-      const panel = this.controlPanels[i];
+    // Reset UI sliders (only for foreground shapes with panels)
+    let panelIndex = 0;
+    for (const shape of this.shapes) {
+      if (shape.layer === 0) continue;  // Skip background shapes
+      
+      const panel = this.controlPanels[panelIndex];
+      if (!panel) continue;
       
       // Reset concentration sliders
       for (const molecule of shape.material.molecules) {
@@ -204,6 +236,8 @@ export class SpectralDemo implements Demo {
       if (shape.material.id === 'gas') {
         panel.setSliderValue('pressure', shape.properties.pressure);
       }
+      
+      panelIndex++;
     }
     
     // Reset background mode
@@ -327,10 +361,15 @@ export class SpectralDemo implements Demo {
     // Create control panels for each shape (using base dimensions)
     const panelY = BASE_HEIGHT - 250;
     
+    // Only create control panels for foreground shapes (layer > 0)
+    let panelIndex = 0;
     for (let i = 0; i < this.shapes.length; i++) {
       const shape = this.shapes[i];
-      const panel = this.createControlPanel(scene, shape, 10 + i * 270, panelY);
-      this.controlPanels.push(panel);
+      if (shape.layer > 0) {
+        const panel = this.createControlPanel(scene, shape, 10 + panelIndex * 270, panelY);
+        this.controlPanels.push(panel);
+        panelIndex++;
+      }
     }
     
     // Create toggle buttons container
@@ -518,16 +557,23 @@ export class SpectralDemo implements Demo {
     renderer.setMaterials(spectra);
     
     // Convert shapes to GPU format
-    const gpuShapes: GPUShape[] = this.shapes.map((shape, index) => ({
-      x: shape.x,
-      y: shape.y,
-      width: shape.width,
-      height: shape.height,
-      temperature: this.enableEmission ? shape.properties.temperature : 300,
-      layer: shape.layer,
-      materialIndex: index,
-      maskIndex: renderer.getMaskIndex(shape.maskName),
-    }));
+    const gpuShapes: GPUShape[] = this.shapes.map((shape, index) => {
+      const maskIndex = renderer.getMaskIndex(shape.maskName);
+      const maskDims = renderer.getMaskDimensions(shape.maskName);
+      console.log(`[SpectralDemo] Shape ${shape.id}: maskName=${shape.maskName} -> maskIndex=${maskIndex}, texSize=${maskDims.width}x${maskDims.height}`);
+      return {
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+        temperature: this.enableEmission ? shape.properties.temperature : 300,
+        layer: shape.layer,
+        materialIndex: index,
+        maskIndex,
+        texWidth: maskDims.width,
+        texHeight: maskDims.height,
+      };
+    });
     
     renderer.setShapes(gpuShapes);
     renderer.setBackgroundMode(this.backgroundMode);

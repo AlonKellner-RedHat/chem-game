@@ -2,6 +2,7 @@
  * Spectral Compute Pipeline
  * 
  * Manages the WebGPU compute pipeline for spectral calculations.
+ * Uses MSDF textures for resolution-independent shape rendering.
  */
 
 import {
@@ -20,12 +21,14 @@ import shaderCode from './SpectralCompute.wgsl?raw';
 export interface GPUShape {
   x: number;            // Position X
   y: number;            // Position Y
-  width: number;        // Bounding box width (matches mask size)
-  height: number;       // Bounding box height (matches mask size)
+  width: number;        // Bounding box width
+  height: number;       // Bounding box height
   temperature: number;  // For emission calculations
   layer: number;        // Render order (0 = background, higher = foreground)
   materialIndex: number; // Index into material textures
-  maskIndex: number;    // Index into mask textures
+  maskIndex: number;    // Index into MSDF textures
+  texWidth: number;     // MSDF texture width (for screenPxRange calculation)
+  texHeight: number;    // MSDF texture height
 }
 
 /**
@@ -41,6 +44,7 @@ export interface ComputeParams {
   enableEmission: boolean;
   sampleX?: number;
   sampleY?: number;
+  msdfPxRange?: number;  // MSDF pixel range (default: 4.0)
 }
 
 /**
@@ -74,13 +78,13 @@ export class SpectralComputePipeline {
   
   // Textures
   private materialTextures: GPUTexture[] = [];
-  private maskTextures: GPUTexture[] = [];
+  private msdfTextures: GPUTexture[] = [];
   private cieTextures: { x: GPUTexture; y: GPUTexture; z: GPUTexture } | null = null;
   private cieScalesBuffer: GPUBuffer | null = null;
   
   // Samplers
   private textureSampler: GPUSampler | null = null;
-  private maskSampler: GPUSampler | null = null;
+  private msdfSampler: GPUSampler | null = null;
   
   // Bind groups
   private bindGroup0: GPUBindGroup | null = null;
@@ -128,21 +132,37 @@ export class SpectralComputePipeline {
       minFilter: 'linear',
     });
     
-    // Create sampler for mask textures (nearest for sharp edges)
-    this.maskSampler = this.device.createSampler({
+    // Create sampler for MSDF textures (linear for smooth AA)
+    this.msdfSampler = this.device.createSampler({
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
-      magFilter: 'nearest',
-      minFilter: 'nearest',
+      magFilter: 'linear',
+      minFilter: 'linear',
     });
     
     // Initialize CIE textures
     this.initCIETextures();
     
-    // Initialize default mask textures (solid white)
-    this.initDefaultMaskTextures();
+    // Initialize default material textures (full transmission)
+    this.initDefaultMaterialTextures();
+    
+    // Initialize default MSDF textures (solid - all inside)
+    this.initDefaultMSDFTextures();
     
     console.log('[SpectralCompute] Pipeline initialized');
+  }
+  
+  /**
+   * Initialize default material textures (full transmission)
+   */
+  private initDefaultMaterialTextures(): void {
+    // Create 3 default material textures with full transmission
+    for (let i = 0; i < 3; i++) {
+      const defaultSpectrum = new Float32Array(100).fill(1.0);
+      this.materialTextures.push(
+        create1DTexture(this.device, defaultSpectrum, `Default Material ${i}`)
+      );
+    }
   }
   
   /**
@@ -168,58 +188,57 @@ export class SpectralComputePipeline {
   }
   
   /**
-   * Initialize default mask textures (solid white 1x1 textures)
+   * Initialize default MSDF textures (solid - distance 0 = fully inside)
+   * Format: rgba8unorm with all channels at 0.0 (inside the shape)
    */
-  private initDefaultMaskTextures(): void {
-    // Create 4 default solid white mask textures
+  private initDefaultMSDFTextures(): void {
+    // Create 4 default solid MSDF textures (all pixels inside shape)
     for (let i = 0; i < 4; i++) {
       const texture = this.device.createTexture({
-        label: `Default Mask ${i}`,
+        label: `Default MSDF ${i}`,
         size: { width: 1, height: 1, depthOrArrayLayers: 1 },
-        format: 'r32float',
+        format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
       
-      // Fill with 1.0 (fully inside)
+      // Fill with value that represents "fully inside" 
+      // MSDF: 0.0 = inside, 0.5 = edge, 1.0 = outside
+      // So 0 (0.0 when sampled) = fully inside
       this.device.queue.writeTexture(
         { texture },
-        new Float32Array([1.0]),
+        new Uint8Array([0, 0, 0, 255]),  // RGB=0 (inside), A=255
         { bytesPerRow: 4, rowsPerImage: 1 },
         { width: 1, height: 1, depthOrArrayLayers: 1 }
       );
       
-      this.maskTextures.push(texture);
+      this.msdfTextures.push(texture);
     }
   }
   
   /**
-   * Set mask textures from loaded mask data
+   * Set MSDF textures from loaded MSDF data
+   * Note: We don't destroy old textures immediately as they may still be in use
+   * by pending GPU commands. They will be garbage collected.
    */
   setMaskTextures(textures: GPUTexture[]): void {
-    // Destroy old textures (except defaults which are managed separately)
-    // Note: We replace all textures, so destroy all existing ones
-    for (const tex of this.maskTextures) {
-      tex.destroy();
-    }
+    // Store new textures (old ones will be garbage collected)
+    this.msdfTextures = textures;
     
-    // Store new textures
-    this.maskTextures = textures;
-    
-    // Ensure we have at least 4 textures (pad with solid white if needed)
-    while (this.maskTextures.length < 4) {
+    // Ensure we have at least 4 textures (pad with solid MSDF if needed)
+    while (this.msdfTextures.length < 4) {
       const texture = this.device.createTexture({
-        label: `Padding Mask ${this.maskTextures.length}`,
+        label: `Padding MSDF ${this.msdfTextures.length}`,
         size: { width: 1, height: 1, depthOrArrayLayers: 1 },
-        format: 'r32float',
+        format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
       this.device.queue.writeTexture(
         { texture },
-        new Float32Array([1.0]),
+        new Uint8Array([0, 0, 0, 255]),  // Inside
         { bytesPerRow: 4, rowsPerImage: 1 },
         { width: 1, height: 1, depthOrArrayLayers: 1 }
       );
-      this.maskTextures.push(texture);
+      this.msdfTextures.push(texture);
     }
     
     // Invalidate bind group
@@ -228,14 +247,11 @@ export class SpectralComputePipeline {
   
   /**
    * Set material transmission spectra
+   * Note: We don't destroy old textures immediately as they may still be in use
+   * by pending GPU commands. They will be garbage collected.
    */
   setMaterials(materials: TransmissionSpectrum[]): void {
-    // Destroy old textures
-    for (const tex of this.materialTextures) {
-      tex.destroy();
-    }
-    
-    // Create new textures
+    // Create new textures (old ones will be garbage collected)
     this.materialTextures = materials.map((spectrum, i) =>
       create1DTexture(this.device, spectrum, `Material ${i}`)
     );
@@ -313,15 +329,27 @@ export class SpectralComputePipeline {
     this.updateParamsBuffer(params, 0, 1.0); // isNormalizationPass=0, globalMax=1.0 (unused)
     
     // Ensure bind groups are created (after params buffer is created)
+    // Force recreation of all bind groups to ensure consistency
     this.ensureBindGroups();
+    
+    // Verify all bind groups are valid
+    if (!this.bindGroup0 || !this.bindGroup1 || !this.bindGroup2 || !this.bindGroup3) {
+      console.error('[SpectralCompute] Bind groups not created properly:', {
+        bindGroup0: !!this.bindGroup0,
+        bindGroup1: !!this.bindGroup1,
+        bindGroup2: !!this.bindGroup2,
+        bindGroup3: !!this.bindGroup3,
+      });
+      throw new Error('Failed to create bind groups');
+    }
     
     const commandEncoder0 = this.device.createCommandEncoder();
     const passEncoder0 = commandEncoder0.beginComputePass();
     passEncoder0.setPipeline(this.pipeline);
-    passEncoder0.setBindGroup(0, this.bindGroup0!);
-    passEncoder0.setBindGroup(1, this.bindGroup1!);
-    passEncoder0.setBindGroup(2, this.bindGroup2!);
-    passEncoder0.setBindGroup(3, this.bindGroup3!);
+    passEncoder0.setBindGroup(0, this.bindGroup0);
+    passEncoder0.setBindGroup(1, this.bindGroup1);
+    passEncoder0.setBindGroup(2, this.bindGroup2);
+    passEncoder0.setBindGroup(3, this.bindGroup3);
     passEncoder0.dispatchWorkgroups(workgroupsX, workgroupsY);
     passEncoder0.end();
     this.device.queue.submit([commandEncoder0.finish()]);
@@ -339,8 +367,9 @@ export class SpectralComputePipeline {
     
     // === PASS 1: Normalize by global max and convert to RGB ===
     this.updateParamsBuffer(params, 1, globalMax); // isNormalizationPass=1, globalMax
-    // Note: We don't need to recreate bind groups - the buffer object is the same, 
-    // only its contents changed, which the GPU will read from the updated buffer
+    
+    // Re-ensure bind groups in case they were invalidated during async operations
+    this.ensureBindGroups();
     
     const commandEncoder1 = this.device.createCommandEncoder();
     const passEncoder1 = commandEncoder1.beginComputePass();
@@ -445,16 +474,23 @@ export class SpectralComputePipeline {
     view.setInt32(32, params.sampleY ?? -1, true);
     view.setUint32(36, isNormalizationPass, true);
     view.setFloat32(40, globalMaxIntensity, true);
-    // Padding at offset 44 (1 u32)
+    view.setFloat32(44, params.msdfPxRange ?? 4.0, true);  // MSDF pixel range
     
     this.device.queue.writeBuffer(this.paramsBuffer, 0, data);
   }
   
   /**
    * Update shapes storage buffer
+   * Shape struct size: 48 bytes (12 fields * 4 bytes each)
    */
   private updateShapesBuffer(shapes: GPUShape[]): void {
-    const shapeSize = 32; // 8 * 4 bytes (matches WGSL Shape struct)
+    // Shape struct in WGSL:
+    // x, y, width, height, temperature (5 f32)
+    // layer, materialIndex, maskIndex (3 u32)
+    // texWidth, texHeight (2 f32)
+    // _padding1, _padding2 (2 u32)
+    // Total: 12 * 4 = 48 bytes
+    const shapeSize = 48;
     const data = new ArrayBuffer(Math.max(shapes.length, 1) * shapeSize);
     const view = new DataView(data);
     
@@ -470,6 +506,9 @@ export class SpectralComputePipeline {
       view.setUint32(offset + 20, shape.layer, true);
       view.setUint32(offset + 24, shape.materialIndex, true);
       view.setUint32(offset + 28, shape.maskIndex, true);
+      view.setFloat32(offset + 32, shape.texWidth ?? 256, true);
+      view.setFloat32(offset + 36, shape.texHeight ?? 256, true);
+      // _padding1, _padding2 at 40, 44 (leave as 0)
     }
     
     // Recreate buffer if size changed
@@ -490,18 +529,27 @@ export class SpectralComputePipeline {
    * Ensure bind groups are created
    */
   private ensureBindGroups(): void {
-    if (!this.pipeline) return;
+    if (!this.pipeline) {
+      console.error('[SpectralCompute] ensureBindGroups called but pipeline is null');
+      return;
+    }
     
     // Bind group 0: params, shapes, outputs
     if (!this.bindGroup0) {
+      if (!this.paramsBuffer || !this.shapesBuffer || !this.rgbOutputBuffer || 
+          !this.spectrumOutputBuffer || !this.maxPerPixelBuffer) {
+        console.error('[SpectralCompute] Cannot create bindGroup0 - missing buffers');
+        return;
+      }
       this.bindGroup0 = this.device.createBindGroup({
+        label: 'Bind Group 0 (Buffers)',
         layout: this.pipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: { buffer: this.paramsBuffer! } },
-          { binding: 1, resource: { buffer: this.shapesBuffer! } },
-          { binding: 2, resource: { buffer: this.rgbOutputBuffer! } },
-          { binding: 3, resource: { buffer: this.spectrumOutputBuffer! } },
-          { binding: 4, resource: { buffer: this.maxPerPixelBuffer! } },
+          { binding: 0, resource: { buffer: this.paramsBuffer } },
+          { binding: 1, resource: { buffer: this.shapesBuffer } },
+          { binding: 2, resource: { buffer: this.rgbOutputBuffer } },
+          { binding: 3, resource: { buffer: this.spectrumOutputBuffer } },
+          { binding: 4, resource: { buffer: this.maxPerPixelBuffer } },
         ],
       });
     }
@@ -512,11 +560,17 @@ export class SpectralComputePipeline {
       while (this.materialTextures.length < 3) {
         const defaultSpectrum = new Float32Array(100).fill(1.0);
         this.materialTextures.push(
-          create1DTexture(this.device, defaultSpectrum, `Default Material ${this.materialTextures.length}`)
+          create1DTexture(this.device, defaultSpectrum, `Fallback Material ${this.materialTextures.length}`)
         );
       }
       
+      if (!this.textureSampler) {
+        console.error('[SpectralCompute] Cannot create bindGroup1 - missing sampler');
+        return;
+      }
+      
       this.bindGroup1 = this.device.createBindGroup({
+        label: 'Bind Group 1 (Materials)',
         layout: this.pipeline.getBindGroupLayout(1),
         entries: [
           { binding: 0, resource: this.materialTextures[0].createView() },
@@ -528,46 +582,57 @@ export class SpectralComputePipeline {
     }
     
     // Bind group 2: CIE textures
-    if (!this.bindGroup2 && this.cieTextures) {
+    if (!this.bindGroup2) {
+      if (!this.cieTextures || !this.cieScalesBuffer || !this.textureSampler) {
+        console.error('[SpectralCompute] Cannot create bindGroup2 - missing CIE resources');
+        return;
+      }
       this.bindGroup2 = this.device.createBindGroup({
+        label: 'Bind Group 2 (CIE)',
         layout: this.pipeline.getBindGroupLayout(2),
         entries: [
           { binding: 0, resource: this.cieTextures.x.createView() },
           { binding: 1, resource: this.cieTextures.y.createView() },
           { binding: 2, resource: this.cieTextures.z.createView() },
-          { binding: 3, resource: this.textureSampler! },
-          { binding: 4, resource: { buffer: this.cieScalesBuffer! } },
+          { binding: 3, resource: this.textureSampler },
+          { binding: 4, resource: { buffer: this.cieScalesBuffer } },
         ],
       });
     }
     
-    // Bind group 3: Mask textures
+    // Bind group 3: MSDF textures
     if (!this.bindGroup3) {
-      // Ensure we have at least 4 mask textures
-      while (this.maskTextures.length < 4) {
+      // Ensure we have at least 4 MSDF textures
+      while (this.msdfTextures.length < 4) {
         const texture = this.device.createTexture({
-          label: `Padding Mask ${this.maskTextures.length}`,
+          label: `Fallback MSDF ${this.msdfTextures.length}`,
           size: { width: 1, height: 1, depthOrArrayLayers: 1 },
-          format: 'r32float',
+          format: 'rgba8unorm',
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
         this.device.queue.writeTexture(
           { texture },
-          new Float32Array([1.0]),
+          new Uint8Array([0, 0, 0, 255]),  // Inside
           { bytesPerRow: 4, rowsPerImage: 1 },
           { width: 1, height: 1, depthOrArrayLayers: 1 }
         );
-        this.maskTextures.push(texture);
+        this.msdfTextures.push(texture);
+      }
+      
+      if (!this.msdfSampler) {
+        console.error('[SpectralCompute] Cannot create bindGroup3 - missing MSDF sampler');
+        return;
       }
       
       this.bindGroup3 = this.device.createBindGroup({
+        label: 'Bind Group 3 (MSDF)',
         layout: this.pipeline.getBindGroupLayout(3),
         entries: [
-          { binding: 0, resource: this.maskTextures[0].createView() },
-          { binding: 1, resource: this.maskTextures[1].createView() },
-          { binding: 2, resource: this.maskTextures[2].createView() },
-          { binding: 3, resource: this.maskTextures[3].createView() },
-          { binding: 4, resource: this.maskSampler! },
+          { binding: 0, resource: this.msdfTextures[0].createView() },
+          { binding: 1, resource: this.msdfTextures[1].createView() },
+          { binding: 2, resource: this.msdfTextures[2].createView() },
+          { binding: 3, resource: this.msdfTextures[3].createView() },
+          { binding: 4, resource: this.msdfSampler },
         ],
       });
     }
@@ -588,7 +653,7 @@ export class SpectralComputePipeline {
       tex.destroy();
     }
     
-    for (const tex of this.maskTextures) {
+    for (const tex of this.msdfTextures) {
       tex.destroy();
     }
     
@@ -597,5 +662,3 @@ export class SpectralComputePipeline {
     this.cieTextures?.z.destroy();
   }
 }
-
-

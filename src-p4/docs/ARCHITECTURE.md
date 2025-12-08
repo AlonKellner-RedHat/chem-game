@@ -270,3 +270,4 @@ const advancedConfig: SpectralDemoConfig = {
 - Performance optimization
 
 
+
