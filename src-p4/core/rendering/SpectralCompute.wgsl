@@ -68,8 +68,8 @@ struct Shape {
 @group(0) @binding(3) var<storage, read_write> spectrumOutput: array<f32>;
 @group(0) @binding(4) var<storage, read_write> maxPerPixel: array<f32>;
 
-// Spectrum box buffer (boxSize² × plotResolution values, using f16)
-@group(0) @binding(5) var<storage, read_write> spectrumBox: array<f32>;
+// Spectrum box buffer (boxSize² × plotResolution values, using f16 for memory bandwidth)
+@group(0) @binding(5) var<storage, read_write> spectrumBox: array<f16>;
 
 // Material palette texture (2D atlas: X=wavelength, Y=material index)
 @group(1) @binding(0) var materialPalette: texture_2d<f32>;
@@ -477,7 +477,8 @@ fn computeSpectrumBox(@builtin(global_invocation_id) id: vec3<u32>) {
       intensity = computePixelIntensity(fx, fy, wavelength, numShapes);
     }
     
-    spectrumBox[outputOffset + i] = intensity;
+    // Store as f16 for reduced memory bandwidth
+    spectrumBox[outputOffset + i] = f16(intensity);
   }
 }
 
@@ -517,9 +518,9 @@ fn averageSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
       let distSq = dx * dx + dy * dy;
       
       if (distSq <= avgRadius * avgRadius) {
-        // Get spectrum value from box
+        // Get spectrum value from box (convert f16 to f32 for accumulation)
         let boxIndex = by * params.boxSize + bx;
-        let value = spectrumBox[boxIndex * params.plotResolution + wavelengthIdx];
+        let value = f32(spectrumBox[boxIndex * params.plotResolution + wavelengthIdx]);
         
         // Optional: Gaussian weighting (currently uniform)
         // let weight = exp(-f32(distSq) / (2.0 * f32(avgRadius * avgRadius)));

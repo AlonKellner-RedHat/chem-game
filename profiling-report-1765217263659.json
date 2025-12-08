@@ -1,0 +1,1292 @@
+{
+  "timestamp": "2025-12-08T18:07:43.658Z",
+  "config": {
+    "boxSize": 11,
+    "plotResolution": 5000,
+    "averageRadius": 5,
+    "colorResolution": 16,
+    "screenWidth": 1461,
+    "screenHeight": 822
+  },
+  "summary": {
+    "avgFPS": 62.5260525358656,
+    "avgFrameTime": 15.993333329757055,
+    "avgPass0": 4.01333332657814,
+    "avgPass1": 2.4733333388964334,
+    "avgPass2": 0,
+    "avgPass3": 0,
+    "avgReadback": 5.2599999944369,
+    "cacheHitRate": 1,
+    "minFrameTime": 14.699999928474426,
+    "maxFrameTime": 19.600000023841858
+  },
+  "frames": [
+    {
+      "frameNumber": 2086,
+      "timestamp": 57318.200000047684,
+      "frameTime": 15.200000047683716,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57303,
+          "endTime": 57306.800000071526,
+          "duration": 3.8000000715255737
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57306.800000071526,
+          "endTime": 57309.300000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.199999928474426,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2087,
+      "timestamp": 57335.10000002384,
+      "frameTime": 16.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57318.800000071526,
+          "endTime": 57323.90000009537,
+          "duration": 5.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57323.90000009537,
+          "endTime": 57326.300000071526,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2088,
+      "timestamp": 57354.800000071526,
+      "frameTime": 18,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57336.800000071526,
+          "endTime": 57342,
+          "duration": 5.199999928474426
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57342,
+          "endTime": 57344.40000009537,
+          "duration": 2.4000000953674316
+        }
+      ],
+      "readbackTime": 5.5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2089,
+      "timestamp": 57376.700000047684,
+      "frameTime": 15.799999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57360.90000009537,
+          "endTime": 57364.800000071526,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57364.800000071526,
+          "endTime": 57367.40000009537,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.099999904632568,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2090,
+      "timestamp": 57392.90000009537,
+      "frameTime": 15.600000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57377.300000071526,
+          "endTime": 57381.300000071526,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57381.300000071526,
+          "endTime": 57383.800000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2091,
+      "timestamp": 57408.800000071526,
+      "frameTime": 15.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57393.40000009537,
+          "endTime": 57397.300000071526,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57397.300000071526,
+          "endTime": 57399.700000047684,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2092,
+      "timestamp": 57427.300000071526,
+      "frameTime": 15.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57411.800000071526,
+          "endTime": 57415.60000002384,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57415.60000002384,
+          "endTime": 57418.10000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2093,
+      "timestamp": 57442.5,
+      "frameTime": 14.699999928474426,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57427.800000071526,
+          "endTime": 57431.700000047684,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57431.700000047684,
+          "endTime": 57434.10000002384,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 4.899999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2094,
+      "timestamp": 57458.700000047684,
+      "frameTime": 15.600000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57443.10000002384,
+          "endTime": 57446.800000071526,
+          "duration": 3.700000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57446.800000071526,
+          "endTime": 57449.300000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2095,
+      "timestamp": 57476.90000009537,
+      "frameTime": 15.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57461.800000071526,
+          "endTime": 57465.60000002384,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57465.60000002384,
+          "endTime": 57468.10000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2096,
+      "timestamp": 57492.40000009537,
+      "frameTime": 15,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57477.40000009537,
+          "endTime": 57481.200000047684,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57481.200000047684,
+          "endTime": 57483.700000047684,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.200000047683716,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2097,
+      "timestamp": 57508.300000071526,
+      "frameTime": 15.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57493,
+          "endTime": 57496.800000071526,
+          "duration": 3.8000000715255737
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57496.800000071526,
+          "endTime": 57499.300000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2098,
+      "timestamp": 57526.60000002384,
+      "frameTime": 14.899999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57511.700000047684,
+          "endTime": 57515.60000002384,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57515.60000002384,
+          "endTime": 57518,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2099,
+      "timestamp": 57542.200000047684,
+      "frameTime": 15,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57527.200000047684,
+          "endTime": 57531,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57531,
+          "endTime": 57533.5,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2100,
+      "timestamp": 57560.300000071526,
+      "frameTime": 15.300000071525574,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57545,
+          "endTime": 57548.90000009537,
+          "duration": 3.9000000953674316
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57548.90000009537,
+          "endTime": 57551.40000009537,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.199999928474426,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2101,
+      "timestamp": 57576.300000071526,
+      "frameTime": 15.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57561.200000047684,
+          "endTime": 57565.10000002384,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57565.10000002384,
+          "endTime": 57567.700000047684,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2102,
+      "timestamp": 57591.800000071526,
+      "frameTime": 15,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57576.800000071526,
+          "endTime": 57580.60000002384,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57580.60000002384,
+          "endTime": 57583.10000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2103,
+      "timestamp": 57610.200000047684,
+      "frameTime": 15.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57595.10000002384,
+          "endTime": 57598.800000071526,
+          "duration": 3.700000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57598.800000071526,
+          "endTime": 57601.40000009537,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.199999928474426,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2104,
+      "timestamp": 57626.300000071526,
+      "frameTime": 15.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57611.200000047684,
+          "endTime": 57615.300000071526,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57615.300000071526,
+          "endTime": 57617.700000047684,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2105,
+      "timestamp": 57641.700000047684,
+      "frameTime": 14.799999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57626.90000009537,
+          "endTime": 57630.700000047684,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57630.700000047684,
+          "endTime": 57633.10000002384,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2106,
+      "timestamp": 57657.300000071526,
+      "frameTime": 15.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57642.200000047684,
+          "endTime": 57645.90000009537,
+          "duration": 3.700000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57645.90000009537,
+          "endTime": 57648.300000071526,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.299999952316284,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2107,
+      "timestamp": 57676.60000002384,
+      "frameTime": 14.799999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57661.800000071526,
+          "endTime": 57665.5,
+          "duration": 3.6999999284744263
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57665.5,
+          "endTime": 57668.10000002384,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 4.899999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2108,
+      "timestamp": 57694.200000047684,
+      "frameTime": 17.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57677.10000002384,
+          "endTime": 57680.800000071526,
+          "duration": 3.700000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57680.800000071526,
+          "endTime": 57683.40000009537,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.599999904632568,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2109,
+      "timestamp": 57711.5,
+      "frameTime": 16.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57695,
+          "endTime": 57699.10000002384,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57699.10000002384,
+          "endTime": 57701.60000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.600000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2110,
+      "timestamp": 57735.700000047684,
+      "frameTime": 16.600000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57719.200000047684,
+          "endTime": 57723.5,
+          "duration": 4.299999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57723.5,
+          "endTime": 57726,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2111,
+      "timestamp": 57752.10000002384,
+      "frameTime": 15.899999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57736.300000071526,
+          "endTime": 57740.300000071526,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57740.300000071526,
+          "endTime": 57742.700000047684,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2112,
+      "timestamp": 57768.5,
+      "frameTime": 15.899999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57752.60000002384,
+          "endTime": 57756.5,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57756.5,
+          "endTime": 57758.90000009537,
+          "duration": 2.4000000953674316
+        }
+      ],
+      "readbackTime": 5.199999928474426,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2113,
+      "timestamp": 57785.5,
+      "frameTime": 16,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57769.5,
+          "endTime": 57773.5,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57773.5,
+          "endTime": 57775.90000009537,
+          "duration": 2.4000000953674316
+        }
+      ],
+      "readbackTime": 5.299999952316284,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2114,
+      "timestamp": 57801.40000009537,
+      "frameTime": 15.300000071525574,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57786.10000002384,
+          "endTime": 57790.10000002384,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57790.10000002384,
+          "endTime": 57792.60000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.200000047683716,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2115,
+      "timestamp": 57819.300000071526,
+      "frameTime": 17.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57801.90000009537,
+          "endTime": 57805.700000047684,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57805.700000047684,
+          "endTime": 57808.200000047684,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.200000047683716,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2116,
+      "timestamp": 57835.40000009537,
+      "frameTime": 15.300000071525574,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57820.10000002384,
+          "endTime": 57823.90000009537,
+          "duration": 3.8000000715255737
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57823.90000009537,
+          "endTime": 57826.300000071526,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.099999904632568,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2117,
+      "timestamp": 57850.90000009537,
+      "frameTime": 15,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57835.90000009537,
+          "endTime": 57839.60000002384,
+          "duration": 3.6999999284744263
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57839.60000002384,
+          "endTime": 57842,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.300000071525574,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2118,
+      "timestamp": 57866.40000009537,
+      "frameTime": 15.100000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57851.300000071526,
+          "endTime": 57855.200000047684,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57855.200000047684,
+          "endTime": 57857.800000071526,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.199999928474426,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2119,
+      "timestamp": 57885.5,
+      "frameTime": 15.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57870.10000002384,
+          "endTime": 57874,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57874.10000002384,
+          "endTime": 57876.5,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2120,
+      "timestamp": 57910.5,
+      "frameTime": 16.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57894.10000002384,
+          "endTime": 57898.200000047684,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57898.200000047684,
+          "endTime": 57900.60000002384,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2121,
+      "timestamp": 57926.200000047684,
+      "frameTime": 15.299999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57910.90000009537,
+          "endTime": 57914.800000071526,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57914.800000071526,
+          "endTime": 57917.200000047684,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2122,
+      "timestamp": 57942.10000002384,
+      "frameTime": 15.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57926.700000047684,
+          "endTime": 57930.5,
+          "duration": 3.799999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57930.5,
+          "endTime": 57933.10000002384,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.300000071525574,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2123,
+      "timestamp": 57960,
+      "frameTime": 15,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57945,
+          "endTime": 57948.90000009537,
+          "duration": 3.9000000953674316
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57948.90000009537,
+          "endTime": 57951.40000009537,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2124,
+      "timestamp": 57975.90000009537,
+      "frameTime": 15.400000095367432,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57960.5,
+          "endTime": 57964.5,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57964.5,
+          "endTime": 57966.90000009537,
+          "duration": 2.4000000953674316
+        }
+      ],
+      "readbackTime": 5.099999904632568,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2125,
+      "timestamp": 57993.700000047684,
+      "frameTime": 15.299999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 57978.40000009537,
+          "endTime": 57982.5,
+          "duration": 4.099999904632568
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 57982.5,
+          "endTime": 57984.90000009537,
+          "duration": 2.4000000953674316
+        }
+      ],
+      "readbackTime": 5.199999928474426,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2126,
+      "timestamp": 58018.800000071526,
+      "frameTime": 15.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58003.40000009537,
+          "endTime": 58007.5,
+          "duration": 4.099999904632568
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58007.5,
+          "endTime": 58010,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2127,
+      "timestamp": 58034.60000002384,
+      "frameTime": 15.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58019.200000047684,
+          "endTime": 58023.300000071526,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58023.300000071526,
+          "endTime": 58025.800000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2128,
+      "timestamp": 58052.800000071526,
+      "frameTime": 17.700000047683716,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58035.10000002384,
+          "endTime": 58039.200000047684,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58039.200000047684,
+          "endTime": 58041.60000002384,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2129,
+      "timestamp": 58078.10000002384,
+      "frameTime": 16.199999928474426,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58062,
+          "endTime": 58066.10000002384,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58066.10000002384,
+          "endTime": 58068.60000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2130,
+      "timestamp": 58102.90000009537,
+      "frameTime": 16.200000047683716,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58086.700000047684,
+          "endTime": 58090.700000047684,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58090.700000047684,
+          "endTime": 58093.10000002384,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.200000047683716,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2131,
+      "timestamp": 58128.800000071526,
+      "frameTime": 17,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58111.800000071526,
+          "endTime": 58115.90000009537,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58115.90000009537,
+          "endTime": 58118.300000071526,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.299999952316284,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2132,
+      "timestamp": 58153,
+      "frameTime": 16.299999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58136.700000047684,
+          "endTime": 58140.90000009537,
+          "duration": 4.200000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58140.90000009537,
+          "endTime": 58143.40000009537,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2133,
+      "timestamp": 58178.60000002384,
+      "frameTime": 16.899999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58161.700000047684,
+          "endTime": 58166,
+          "duration": 4.299999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58166,
+          "endTime": 58168.40000009537,
+          "duration": 2.4000000953674316
+        }
+      ],
+      "readbackTime": 5.299999952316284,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2134,
+      "timestamp": 58206.40000009537,
+      "frameTime": 19.600000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58186.90000009537,
+          "endTime": 58190.800000071526,
+          "duration": 3.899999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58190.800000071526,
+          "endTime": 58193.300000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2135,
+      "timestamp": 58228,
+      "frameTime": 16.09999990463257,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58211.90000009537,
+          "endTime": 58216,
+          "duration": 4.099999904632568
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58216,
+          "endTime": 58218.5,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.400000095367432,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2136,
+      "timestamp": 58253,
+      "frameTime": 17.199999928474426,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58235.800000071526,
+          "endTime": 58240,
+          "duration": 4.199999928474426
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58240,
+          "endTime": 58242.60000002384,
+          "duration": 2.600000023841858
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2137,
+      "timestamp": 58279.5,
+      "frameTime": 17.799999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58261.800000071526,
+          "endTime": 58265.800000071526,
+          "duration": 4
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58265.800000071526,
+          "endTime": 58268.300000071526,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2138,
+      "timestamp": 58302.90000009537,
+      "frameTime": 16.800000071525574,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58286.10000002384,
+          "endTime": 58290.5,
+          "duration": 4.399999976158142
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58290.5,
+          "endTime": 58293,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.400000095367432,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2139,
+      "timestamp": 58328.800000071526,
+      "frameTime": 17,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58311.800000071526,
+          "endTime": 58316.10000002384,
+          "duration": 4.299999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58316.10000002384,
+          "endTime": 58318.60000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.600000023841858,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2140,
+      "timestamp": 58354.800000071526,
+      "frameTime": 18,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58336.800000071526,
+          "endTime": 58340.90000009537,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58340.90000009537,
+          "endTime": 58343.40000009537,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.5,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2141,
+      "timestamp": 58378,
+      "frameTime": 16.299999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58361.800000071526,
+          "endTime": 58365.90000009537,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58365.90000009537,
+          "endTime": 58368.40000009537,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.299999952316284,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2142,
+      "timestamp": 58403.200000047684,
+      "frameTime": 16.399999976158142,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58386.800000071526,
+          "endTime": 58391.10000002384,
+          "duration": 4.299999952316284
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58391.10000002384,
+          "endTime": 58393.60000002384,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.300000071525574,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2143,
+      "timestamp": 58428.90000009537,
+      "frameTime": 17.200000047683716,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58411.700000047684,
+          "endTime": 58415.90000009537,
+          "duration": 4.200000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58415.90000009537,
+          "endTime": 58418.40000009537,
+          "duration": 2.5
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2144,
+      "timestamp": 58453.10000002384,
+      "frameTime": 16.299999952316284,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58436.800000071526,
+          "endTime": 58440.90000009537,
+          "duration": 4.100000023841858
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58440.90000009537,
+          "endTime": 58443.300000071526,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.399999976158142,
+      "cacheHit": true
+    },
+    {
+      "frameNumber": 2145,
+      "timestamp": 58479.300000071526,
+      "frameTime": 17.600000023841858,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Color)",
+          "startTime": 58461.700000047684,
+          "endTime": 58465.90000009537,
+          "duration": 4.200000047683716
+        },
+        {
+          "name": "Pass 1 (Normalize)",
+          "startTime": 58465.90000009537,
+          "endTime": 58468.300000071526,
+          "duration": 2.399999976158142
+        }
+      ],
+      "readbackTime": 5.5,
+      "cacheHit": true
+    }
+  ],
+  "warnings": [
+    "Buffer readback slow: 5.26ms"
+  ],
+  "deviceInfo": {
+    "hasF16": true,
+    "hasTimestampQuery": true
+  }
+}

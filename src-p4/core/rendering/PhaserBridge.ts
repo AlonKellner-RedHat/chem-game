@@ -95,6 +95,13 @@ export class WebGPURenderer implements Renderer {
   private cachedEmissionEnabled = true;
   private spectrumCacheValid = false;
   
+  // Spectrum throttling - only compute every N frames or when mouse moves significantly
+  private spectrumFrameCounter = 0;
+  private spectrumThrottleFrames = 2;  // Compute spectrum every 2nd frame
+  private spectrumMovementThreshold = 3;  // Recompute if mouse moves > 3 pixels
+  private lastComputedX = -1;
+  private lastComputedY = -1;
+  
   async init(): Promise<boolean> {
     this.context = await initWebGPU();
     if (!this.context) {
@@ -178,6 +185,45 @@ export class WebGPURenderer implements Renderer {
   invalidateSpectrumCache(): void {
     this.spectrumCacheValid = false;
   }
+  
+  /**
+   * Check if spectrum should be computed this frame based on throttling
+   * Returns true if:
+   * - Frame counter reached threshold, OR
+   * - Mouse moved significantly from last computed position
+   */
+  private shouldComputeSpectrum(): boolean {
+    // Increment frame counter
+    this.spectrumFrameCounter++;
+    
+    // Check if frame counter reached threshold
+    if (this.spectrumFrameCounter >= this.spectrumThrottleFrames) {
+      return true;
+    }
+    
+    // Check if mouse moved significantly
+    if (this.lastComputedX >= 0 && this.lastComputedY >= 0) {
+      const dx = Math.abs(this.sampleX - this.lastComputedX);
+      const dy = Math.abs(this.sampleY - this.lastComputedY);
+      if (dx > this.spectrumMovementThreshold || dy > this.spectrumMovementThreshold) {
+        return true;
+      }
+    } else if (this.sampleX >= 0 && this.sampleY >= 0) {
+      // First sample point - always compute
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Update tracking after spectrum was computed
+   */
+  private recordSpectrumComputed(): void {
+    this.spectrumFrameCounter = 0;
+    this.lastComputedX = this.sampleX;
+    this.lastComputedY = this.sampleY;
+  }
 
   async render(): Promise<ImageData> {
     if (!this.pipeline || this.width === 0 || this.height === 0) {
@@ -189,9 +235,13 @@ export class WebGPURenderer implements Renderer {
     
     const isSampling = this.sampleX >= 0 && this.sampleY >= 0;
     
-    // Check if we can skip spectrum computation (use cached result)
-    const canUseCachedSpectrum = isSampling && this.isSpectrumCacheValid();
-    profiler.recordCacheHit(canUseCachedSpectrum);
+    // Determine if we should compute spectrum this frame
+    // Use both caching (scene unchanged) and throttling (frame skipping)
+    const cacheValid = this.isSpectrumCacheValid();
+    const shouldCompute = isSampling && !cacheValid && this.shouldComputeSpectrum();
+    
+    // For profiler, record cache hit only when we truly skip computation
+    profiler.recordCacheHit(!shouldCompute && isSampling);
     
     const params: ComputeParams = {
       width: this.width,
@@ -202,16 +252,16 @@ export class WebGPURenderer implements Renderer {
       spectralResolution: 16,
       backgroundMode: this.backgroundMode,
       enableEmission: this.emissionEnabled,
-      // Only pass sample point if we need to recompute spectrum
-      sampleX: canUseCachedSpectrum ? -1 : this.sampleX,
-      sampleY: canUseCachedSpectrum ? -1 : this.sampleY,
+      // Only pass sample point if we should compute spectrum
+      sampleX: shouldCompute ? this.sampleX : -1,
+      sampleY: shouldCompute ? this.sampleY : -1,
       msdfPxRange: this.getMsdfPxRange(),
       // Use 5000 samples only for spectrum output at sample point
       plotResolution: 5000,
       // Average spectrum over 5-pixel radius circle
       averageRadius: 5,
-      // Compute spectrum for 15x15 box around sample point (parallel)
-      boxSize: 15,
+      // Compute spectrum for 11x11 box around sample point (reduced from 15 for perf)
+      boxSize: 11,
     };
     
     // Update profiler config
@@ -235,10 +285,11 @@ export class WebGPURenderer implements Renderer {
     const readbackStart = performance.now();
     const rgbData = await this.pipeline.readRGBOutput();
     
-    // If sampling and cache is invalid, read spectrum data and update cache
-    if (isSampling && !canUseCachedSpectrum) {
+    // If we computed spectrum this frame, read it and update tracking
+    if (shouldCompute) {
       this.lastSpectrum = await this.pipeline.readSpectrumOutput();
       this.updateSpectrumCache();
+      this.recordSpectrumComputed();
     }
     const readbackEnd = performance.now();
     profiler.recordReadbackTime(readbackEnd - readbackStart);

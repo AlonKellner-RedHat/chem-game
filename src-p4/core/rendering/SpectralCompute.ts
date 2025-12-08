@@ -100,10 +100,14 @@ export class SpectralComputePipeline {
   // Buffers
   private paramsBuffer: GPUBuffer | null = null;
   private shapesBuffer: GPUBuffer | null = null;
-  private rgbOutputBuffer: GPUBuffer | null = null;
-  private spectrumOutputBuffer: GPUBuffer | null = null;
   private maxPerPixelBuffer: GPUBuffer | null = null;
   private spectrumBoxBuffer: GPUBuffer | null = null;
+  
+  // Double-buffered output buffers (compute to one, read from other)
+  private rgbOutputBuffers: [GPUBuffer | null, GPUBuffer | null] = [null, null];
+  private spectrumOutputBuffers: [GPUBuffer | null, GPUBuffer | null] = [null, null];
+  private currentBufferIndex: 0 | 1 = 0;
+  private frameCount: number = 0;  // Track frames for first-frame handling
   
   // Global max intensity from last render (for plot normalization)
   private lastGlobalMaxIntensity: number = 1.0;
@@ -384,16 +388,16 @@ export class SpectralComputePipeline {
    * Initialize spectrum box buffer for parallel spectrum computation
    */
   private initSpectrumBoxBuffer(): void {
-    // boxSize² pixels × plotResolution wavelengths × 4 bytes (f32)
-    const bufferSize = this.boxSize * this.boxSize * this.plotResolution * 4;
+    // boxSize² pixels × plotResolution wavelengths × 2 bytes (f16 for reduced memory bandwidth)
+    const bufferSize = this.boxSize * this.boxSize * this.plotResolution * 2;
     
     this.spectrumBoxBuffer = this.device.createBuffer({
-      label: 'Spectrum Box',
+      label: 'Spectrum Box (f16)',
       size: bufferSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
     
-    console.log(`[SpectralCompute] Spectrum box buffer: ${(bufferSize / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`[SpectralCompute] Spectrum box buffer (f16): ${(bufferSize / 1024 / 1024).toFixed(2)} MB`);
   }
   
   /**
@@ -487,7 +491,7 @@ export class SpectralComputePipeline {
   }
   
   /**
-   * Resize output buffers
+   * Resize output buffers (double-buffered)
    */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height) {
@@ -498,32 +502,63 @@ export class SpectralComputePipeline {
     this.height = height;
     
     // Destroy old buffers
-    this.rgbOutputBuffer?.destroy();
-    this.spectrumOutputBuffer?.destroy();
+    this.rgbOutputBuffers[0]?.destroy();
+    this.rgbOutputBuffers[1]?.destroy();
+    this.spectrumOutputBuffers[0]?.destroy();
+    this.spectrumOutputBuffers[1]?.destroy();
     this.maxPerPixelBuffer?.destroy();
     
-    // Create new output buffers
+    // Create new output buffers (double-buffered for RGB and spectrum)
     const pixelCount = width * height;
     
-    this.rgbOutputBuffer = this.device.createBuffer({
-      label: 'RGB Output',
-      size: pixelCount * 4 * 4, // vec4<f32> per pixel
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
+    // Create two RGB output buffers
+    for (let i = 0; i < 2; i++) {
+      this.rgbOutputBuffers[i] = this.device.createBuffer({
+        label: `RGB Output ${i}`,
+        size: pixelCount * 4 * 4, // vec4<f32> per pixel
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      });
+    }
     
-    this.spectrumOutputBuffer = this.device.createBuffer({
-      label: 'Spectrum Output',
-      size: SpectralComputePipeline.MAX_SPECTRAL_RESOLUTION * 4, // f32 per wavelength (max size)
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
+    // Create two spectrum output buffers
+    for (let i = 0; i < 2; i++) {
+      this.spectrumOutputBuffers[i] = this.device.createBuffer({
+        label: `Spectrum Output ${i}`,
+        size: SpectralComputePipeline.MAX_SPECTRAL_RESOLUTION * 4, // f32 per wavelength
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      });
+    }
     
+    // Max per pixel buffer (single - only used for CPU reduction)
     this.maxPerPixelBuffer = this.device.createBuffer({
       label: 'Max Per Pixel',
       size: pixelCount * 4, // f32 per pixel
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
     
-    // Invalidate bind group
+    // Reset frame count on resize
+    this.frameCount = 0;
+    
+    // Invalidate bind groups (both need recreation for new buffers)
+    this.bindGroup0 = null;
+  }
+  
+  /**
+   * Get current write buffer index and read buffer index
+   */
+  private getBufferIndices(): { writeIndex: 0 | 1; readIndex: 0 | 1 } {
+    const writeIndex = this.currentBufferIndex;
+    const readIndex = (1 - this.currentBufferIndex) as 0 | 1;
+    return { writeIndex, readIndex };
+  }
+  
+  /**
+   * Swap to the next buffer for double-buffering
+   */
+  private swapBuffers(): void {
+    this.currentBufferIndex = (1 - this.currentBufferIndex) as 0 | 1;
+    this.frameCount++;
+    // Invalidate bind group since we're using different buffers
     this.bindGroup0 = null;
   }
   
@@ -681,6 +716,9 @@ export class SpectralComputePipeline {
       });
     }
     
+    // Swap to next buffer for double-buffering (next frame writes to other buffer)
+    this.swapBuffers();
+    
     return { globalMaxIntensity: globalMax };
   }
   
@@ -701,29 +739,41 @@ export class SpectralComputePipeline {
   /**
    * Read RGB output back to CPU
    */
+  /**
+   * Read RGB output from the READ buffer (previous frame's result)
+   * This enables double-buffered readback - compute to one buffer while reading from another
+   */
   async readRGBOutput(): Promise<Float32Array> {
-    if (!this.rgbOutputBuffer) {
-      throw new Error('No output buffer');
+    const { readIndex } = this.getBufferIndices();
+    const buffer = this.rgbOutputBuffers[readIndex];
+    
+    // On first frame, read buffer might be empty - return zeros
+    if (!buffer || this.frameCount < 1) {
+      return new Float32Array(this.width * this.height * 4);
     }
     
     return readBufferData(
       this.device,
-      this.rgbOutputBuffer,
+      buffer,
       this.width * this.height * 4 * 4
     );
   }
   
   /**
-   * Read spectrum output at sample point
+   * Read spectrum output from the READ buffer (previous frame's result)
    */
   async readSpectrumOutput(): Promise<Float32Array> {
-    if (!this.spectrumOutputBuffer) {
-      throw new Error('No spectrum buffer');
+    const { readIndex } = this.getBufferIndices();
+    const buffer = this.spectrumOutputBuffers[readIndex];
+    
+    // On first frame, read buffer might be empty - return zeros
+    if (!buffer || this.frameCount < 1) {
+      return new Float32Array(this.plotResolution);
     }
     
     return readBufferData(
       this.device,
-      this.spectrumOutputBuffer,
+      buffer,
       this.plotResolution * 4
     );
   }
@@ -746,8 +796,12 @@ export class SpectralComputePipeline {
   /**
    * Get RGB buffer for direct binding
    */
+  /**
+   * Get current write RGB buffer for direct binding
+   */
   getRGBBuffer(): GPUBuffer | null {
-    return this.rgbOutputBuffer;
+    const { writeIndex } = this.getBufferIndices();
+    return this.rgbOutputBuffers[writeIndex];
   }
   
   /**
@@ -858,21 +912,26 @@ export class SpectralComputePipeline {
    */
   private ensureBindGroups(): void {
     // Bind group 0: params, shapes, outputs, spectrum box
+    // Uses current write buffer for double-buffering
     if (!this.bindGroup0) {
-      if (!this.paramsBuffer || !this.shapesBuffer || !this.rgbOutputBuffer || 
-          !this.spectrumOutputBuffer || !this.maxPerPixelBuffer || !this.spectrumBoxBuffer ||
+      const { writeIndex } = this.getBufferIndices();
+      const rgbBuffer = this.rgbOutputBuffers[writeIndex];
+      const spectrumBuffer = this.spectrumOutputBuffers[writeIndex];
+      
+      if (!this.paramsBuffer || !this.shapesBuffer || !rgbBuffer || 
+          !spectrumBuffer || !this.maxPerPixelBuffer || !this.spectrumBoxBuffer ||
           !this.bindGroupLayout0) {
         console.error('[SpectralCompute] Cannot create bindGroup0 - missing buffers or layout');
         return;
       }
       this.bindGroup0 = this.device.createBindGroup({
-        label: 'Bind Group 0 (Buffers)',
+        label: `Bind Group 0 (Buffers, write=${writeIndex})`,
         layout: this.bindGroupLayout0,
         entries: [
           { binding: 0, resource: { buffer: this.paramsBuffer } },
           { binding: 1, resource: { buffer: this.shapesBuffer } },
-          { binding: 2, resource: { buffer: this.rgbOutputBuffer } },
-          { binding: 3, resource: { buffer: this.spectrumOutputBuffer } },
+          { binding: 2, resource: { buffer: rgbBuffer } },
+          { binding: 3, resource: { buffer: spectrumBuffer } },
           { binding: 4, resource: { buffer: this.maxPerPixelBuffer } },
           { binding: 5, resource: { buffer: this.spectrumBoxBuffer } },
         ],
@@ -970,8 +1029,13 @@ export class SpectralComputePipeline {
   destroy(): void {
     this.paramsBuffer?.destroy();
     this.shapesBuffer?.destroy();
-    this.rgbOutputBuffer?.destroy();
-    this.spectrumOutputBuffer?.destroy();
+    
+    // Destroy double-buffered outputs
+    this.rgbOutputBuffers[0]?.destroy();
+    this.rgbOutputBuffers[1]?.destroy();
+    this.spectrumOutputBuffers[0]?.destroy();
+    this.spectrumOutputBuffers[1]?.destroy();
+    
     this.maxPerPixelBuffer?.destroy();
     this.spectrumBoxBuffer?.destroy();
     this.cieScalesBuffer?.destroy();
