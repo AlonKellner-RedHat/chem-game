@@ -17,6 +17,7 @@ import {
   MaterialProperties,
 } from '../materials';
 import { BackgroundMode } from '../physics/config';
+import { profiler } from '../rendering/Profiler';
 
 interface ShapeConfig {
   id: string;
@@ -55,6 +56,9 @@ export class SpectralDemo implements Demo {
   protected darkButton: ToggleButton | null = null;
   protected uiContainer: HTMLElement | null = null;
   protected uiScaleWrapper: HTMLElement | null = null;
+  protected measurementIndicator: HTMLElement | null = null;
+  protected profilingOverlay: HTMLElement | null = null;
+  protected profilingVisible = false;
   
   // Masks
   protected masksLoaded = false;
@@ -180,6 +184,19 @@ export class SpectralDemo implements Demo {
             this.spectralGraph?.setLockedPosition(this.lockedX, this.lockedY);
           }
         }
+      } else if (e.key === 'p' || e.key === 'P') {
+        // Toggle profiling overlay
+        this.profilingVisible = !this.profilingVisible;
+        if (this.profilingOverlay) {
+          this.profilingOverlay.style.display = this.profilingVisible ? 'block' : 'none';
+        }
+        // Set profiler logging mode
+        profiler.setLoggingMode(this.profilingVisible ? 'summary' : 'silent');
+      } else if (e.key === 'd' || e.key === 'D') {
+        // Download profiling report (only if overlay is visible)
+        if (this.profilingVisible) {
+          profiler.downloadReport();
+        }
       }
     };
     document.addEventListener('keydown', this.keyHandler);
@@ -199,6 +216,11 @@ export class SpectralDemo implements Demo {
     
     // Update spectrum graph with current mouse position
     this.updateSpectrumGraph(scene);
+    
+    // Update profiling overlay if visible
+    if (this.profilingVisible && this.profilingOverlay) {
+      this.updateProfilingOverlay();
+    }
   }
   
   /**
@@ -276,6 +298,9 @@ export class SpectralDemo implements Demo {
     const sampleX = this.isSpectrumLocked ? this.lockedX : this.mouseX;
     const sampleY = this.isSpectrumLocked ? this.lockedY : this.mouseY;
     
+    // Update measurement indicator position and style
+    this.updateMeasurementIndicator(scene, sampleX, sampleY);
+    
     // Sample spectrum at position
     if (sampleX >= 0 && sampleY >= 0) {
       const { width, height } = scene.getDimensions();
@@ -286,6 +311,78 @@ export class SpectralDemo implements Demo {
         }
       }
     }
+  }
+  
+  /**
+   * Update the measurement indicator circle position and appearance
+   */
+  protected updateMeasurementIndicator(scene: GameScene, x: number, y: number): void {
+    if (!this.measurementIndicator) return;
+    
+    const { width, height } = scene.getDimensions();
+    
+    // Hide indicator if position is invalid
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+      this.measurementIndicator.style.display = 'none';
+      return;
+    }
+    
+    // Show indicator
+    this.measurementIndicator.style.display = 'block';
+    
+    // Scale the position from canvas coordinates to UI coordinates (base dimensions)
+    const scaleX = BASE_WIDTH / width;
+    const scaleY = BASE_HEIGHT / height;
+    const uiX = x * scaleX;
+    const uiY = y * scaleY;
+    
+    // Update position
+    this.measurementIndicator.style.left = `${uiX}px`;
+    this.measurementIndicator.style.top = `${uiY}px`;
+    
+    // Update style based on locked state
+    if (this.isSpectrumLocked) {
+      // Locked: more prominent indicator with solid border
+      this.measurementIndicator.style.borderColor = 'rgba(100, 200, 255, 0.9)';
+      this.measurementIndicator.style.background = 'rgba(100, 200, 255, 0.3)';
+      this.measurementIndicator.style.borderWidth = '2px';
+      this.measurementIndicator.style.boxShadow = '0 0 8px rgba(100, 200, 255, 0.5)';
+    } else {
+      // Unlocked: subtle indicator
+      this.measurementIndicator.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+      this.measurementIndicator.style.background = 'rgba(255, 255, 255, 0.2)';
+      this.measurementIndicator.style.borderWidth = '2px';
+      this.measurementIndicator.style.boxShadow = '0 0 4px rgba(0, 0, 0, 0.5)';
+    }
+  }
+  
+  /**
+   * Update the profiling overlay display
+   */
+  protected updateProfilingOverlay(): void {
+    if (!this.profilingOverlay) return;
+    
+    const lines = profiler.getDisplayText();
+    let html = '';
+    
+    for (const line of lines) {
+      // Parse color hints from format "text [color]"
+      const match = line.match(/^(.+) \[(green|yellow|red)\]$/);
+      if (match) {
+        const colorMap: { [key: string]: string } = {
+          green: '#4f4',
+          yellow: '#ff4',
+          red: '#f44',
+        };
+        html += `<div style="color: ${colorMap[match[2]] || '#fff'}">${match[1]}</div>`;
+      } else if (line === '---') {
+        html += '<hr style="border: none; border-top: 1px solid rgba(255,255,255,0.2); margin: 4px 0;">';
+      } else {
+        html += `<div>${line}</div>`;
+      }
+    }
+    
+    this.profilingOverlay.innerHTML = html;
   }
   
   cleanup(scene: GameScene): void {
@@ -315,6 +412,12 @@ export class SpectralDemo implements Demo {
     this.darkButton?.destroy();
     this.uvButton = null;
     this.darkButton = null;
+    
+    this.measurementIndicator?.remove();
+    this.measurementIndicator = null;
+    
+    this.profilingOverlay?.remove();
+    this.profilingOverlay = null;
     
     this.uiScaleWrapper?.remove();
     this.uiScaleWrapper = null;
@@ -424,6 +527,45 @@ export class SpectralDemo implements Demo {
       wavelengthMax: 1000,
       title: 'Spectral Distribution (hover over canvas)',
     });
+    
+    // Create measurement indicator circle (shows averaging area)
+    // This indicator shows where the spectrum is being sampled from
+    // Radius of 5 matches the averageRadius parameter in the shader
+    this.measurementIndicator = document.createElement('div');
+    this.measurementIndicator.style.cssText = `
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      background: rgba(255, 255, 255, 0.2);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: none;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+      transition: border-color 0.2s, background 0.2s;
+    `;
+    this.uiScaleWrapper.appendChild(this.measurementIndicator);
+    
+    // Create profiling overlay (hidden by default, toggle with P key)
+    this.profilingOverlay = document.createElement('div');
+    this.profilingOverlay.style.cssText = `
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      font-size: 11px;
+      padding: 10px;
+      border-radius: 4px;
+      pointer-events: none;
+      display: none;
+      line-height: 1.4;
+      min-width: 200px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    `;
+    this.uiScaleWrapper.appendChild(this.profilingOverlay);
   }
   
   /**

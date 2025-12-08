@@ -11,6 +11,13 @@ export interface WebGPUContext {
 }
 
 /**
+ * Check if shader-f16 feature is supported
+ */
+export function hasF16Support(context: WebGPUContext): boolean {
+  return context.device.features.has('shader-f16');
+}
+
+/**
  * Initialize WebGPU and return context
  */
 export async function initWebGPU(): Promise<WebGPUContext | null> {
@@ -33,13 +40,31 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   // Log adapter info (optional, may not be available in all browsers)
   console.log('[WebGPU] Adapter available');
   
-  // Check for float32-filterable support (needed for r32float texture sampling)
+  // Check for required/optional features
   const requiredFeatures: GPUFeatureName[] = [];
+  
+  // Check for float32-filterable support (needed for r32float texture sampling)
   if (adapter.features.has('float32-filterable')) {
     requiredFeatures.push('float32-filterable');
     console.log('[WebGPU] float32-filterable feature available');
   } else {
     console.warn('[WebGPU] float32-filterable not available - spectral textures may not work correctly');
+  }
+  
+  // Check for shader-f16 support (for half-precision floats)
+  if (adapter.features.has('shader-f16')) {
+    requiredFeatures.push('shader-f16');
+    console.log('[WebGPU] shader-f16 feature available - using half precision for spectrum');
+  } else {
+    console.warn('[WebGPU] shader-f16 not available - using full precision');
+  }
+  
+  // Check for timestamp-query support (for GPU profiling)
+  if (adapter.features.has('timestamp-query')) {
+    requiredFeatures.push('timestamp-query');
+    console.log('[WebGPU] timestamp-query feature available - GPU profiling enabled');
+  } else {
+    console.warn('[WebGPU] timestamp-query not available - GPU profiling disabled');
   }
   
   // Request device
@@ -61,6 +86,7 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   const format = navigator.gpu.getPreferredCanvasFormat();
   
   console.log('[WebGPU] Initialized with format:', format);
+  console.log('[WebGPU] Features enabled:', Array.from(device.features));
   
   return { adapter, device, format };
 }

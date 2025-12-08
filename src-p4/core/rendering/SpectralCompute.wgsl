@@ -7,7 +7,15 @@
  * 
  * Uses MSDF (Multi-Channel Signed Distance Field) textures for
  * resolution-independent shape rendering with sharp corners.
+ * 
+ * Multi-pass architecture:
+ * - Pass 0 (main): Color computation for all pixels (16 wavelengths)
+ * - Pass 1 (main): Normalization pass
+ * - Pass 2 (computeSpectrumBox): High-res spectrum for boxSize² pixels (parallel)
+ * - Pass 3 (averageSpectrum): GPU averaging over circular region
  */
+
+enable f16;
 
 // Physical constants
 const DRAPER_POINT: f32 = 798.0;
@@ -24,14 +32,18 @@ struct Params {
   height: u32,
   wavelengthMin: f32,
   wavelengthMax: f32,
-  spectralResolution: u32,
-  backgroundMode: u32,  // 0=normal, 1=uv, 2=dark
+  spectralResolution: u32,   // Low-res samples for color integration (16)
+  backgroundMode: u32,       // 0=normal, 1=uv, 2=dark
   enableEmission: u32,
-  sampleX: i32,  // -1 for no sampling, otherwise x coord
-  sampleY: i32,  // -1 for no sampling, otherwise y coord
+  sampleX: i32,              // -1 for no sampling, otherwise x coord
+  sampleY: i32,              // -1 for no sampling, otherwise y coord
   isNormalizationPass: u32,  // 0 = compute pass (find max), 1 = normalize pass
   globalMaxIntensity: f32,   // Global max for normalization (used in pass 1)
   msdfPxRange: f32,          // MSDF pixel range (typically 4.0)
+  numMaterials: u32,         // Number of materials in the palette
+  plotResolution: u32,       // High-res samples for spectrum output (5000)
+  averageRadius: u32,        // Radius in pixels to average spectrum over (default: 5)
+  boxSize: u32,              // Size of spectrum box (default: 30)
 }
 
 // Shape definition
@@ -56,11 +68,12 @@ struct Shape {
 @group(0) @binding(3) var<storage, read_write> spectrumOutput: array<f32>;
 @group(0) @binding(4) var<storage, read_write> maxPerPixel: array<f32>;
 
-// Material transmission textures (2D with height=1 for sampling support)
-@group(1) @binding(0) var materialTexture0: texture_2d<f32>;
-@group(1) @binding(1) var materialTexture1: texture_2d<f32>;
-@group(1) @binding(2) var materialTexture2: texture_2d<f32>;
-@group(1) @binding(3) var textureSampler: sampler;
+// Spectrum box buffer (boxSize² × plotResolution values, using f16)
+@group(0) @binding(5) var<storage, read_write> spectrumBox: array<f32>;
+
+// Material palette texture (2D atlas: X=wavelength, Y=material index)
+@group(1) @binding(0) var materialPalette: texture_2d<f32>;
+@group(1) @binding(1) var materialSampler: sampler;
 
 // CIE color matching function textures (2D with height=1)
 @group(2) @binding(0) var cieXTexture: texture_2d<f32>;
@@ -118,7 +131,7 @@ fn sampleMSDFTexture(maskIndex: u32, uv: vec2<f32>) -> vec3<f32> {
 fn sampleMSDF(maskIndex: u32, uv: vec2<f32>, pxRange: f32, texSize: vec2<f32>, shapeScreenSize: vec2<f32>) -> f32 {
   let msd = sampleMSDFTexture(maskIndex, uv);
   
-  // Get signed distance: 0.5 = edge, <0.5 = inside, >0.5 = outside
+  // Get signed distance: 0.5 = edge, >0.5 = inside, <0.5 = outside
   let sd = msdfMedian(msd) - 0.5;
   
   // Calculate screen-space pixel range without fwidth()
@@ -133,7 +146,7 @@ fn sampleMSDF(maskIndex: u32, uv: vec2<f32>, pxRange: f32, texSize: vec2<f32>, s
   
   // Hard mask with smooth AA at edges
   // smoothstep gives nice anti-aliased edges
-  return 1.0 - smoothstep(-0.5, 0.5, screenPxDist);
+  return smoothstep(-0.5, 0.5, screenPxDist);
 }
 
 /**
@@ -253,21 +266,21 @@ fn getBackgroundIntensity(wavelengthNm: f32) -> f32 {
 }
 
 /**
- * Sample material transmission at wavelength
+ * Sample material transmission at wavelength from palette
  */
 fn getMaterialTransmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
-  let u = (wavelengthNm - params.wavelengthMin) / (params.wavelengthMax - params.wavelengthMin);
-  let uv = vec2<f32>(u, 0.5);  // Use vec2 for 2D texture sampling
-  
-  if (materialIndex == 0u) {
-    return textureSampleLevel(materialTexture0, textureSampler, uv, 0.0).r;
-  } else if (materialIndex == 1u) {
-    return textureSampleLevel(materialTexture1, textureSampler, uv, 0.0).r;
-  } else if (materialIndex == 2u) {
-    return textureSampleLevel(materialTexture2, textureSampler, uv, 0.0).r;
+  // Handle case when no materials are loaded
+  if (params.numMaterials == 0u) {
+    return 1.0;
   }
   
-  return 1.0;  // Default: full transmission
+  // U coordinate: wavelength position
+  let u = (wavelengthNm - params.wavelengthMin) / (params.wavelengthMax - params.wavelengthMin);
+  
+  // V coordinate: center of the row for this material
+  let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
+  
+  return textureSampleLevel(materialPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
 }
 
 /**
@@ -310,7 +323,42 @@ fn gammaCorrect(linear: f32) -> f32 {
 }
 
 /**
- * Main compute shader entry point
+ * Compute spectral intensity at a pixel for a specific wavelength
+ * Shared by both color and spectrum computation
+ */
+fn computePixelIntensity(px: f32, py: f32, wavelength: f32, numShapes: u32) -> f32 {
+  // Start with background
+  var intensity = getBackgroundIntensity(wavelength);
+  var totalTransmission = 1.0;
+  var emission = 0.0;
+  
+  // Apply all shapes
+  for (var i: u32 = 0u; i < numShapes; i++) {
+    let mask = getShapeMask(shapes[i], px, py);
+    if (mask > 0.0) {
+      let shape = shapes[i];
+      let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+      
+      // Blend between full transmission (1.0) and material transmission based on mask
+      let trans = mix(1.0, materialTrans, mask);
+      totalTransmission *= trans;
+      
+      if (params.enableEmission == 1u) {
+        let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
+        emission += em * mask;
+      }
+    }
+  }
+  
+  return intensity * totalTransmission + emission;
+}
+
+// ============================================================
+// Entry Point: Color Computation (Pass 0 & 1)
+// ============================================================
+
+/**
+ * Main compute shader entry point for color rendering
  * 
  * Two-pass rendering for global normalization:
  * Pass 0 (isNormalizationPass=0): Compute XYZ, track max intensity per pixel
@@ -335,9 +383,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let stored = rgbOutput[pixelIndex];
     var xyz = stored.xyz;
     
-      // Normalize by global max Y (luminance) across all pixels
-      let globalMax = max(params.globalMaxIntensity, 0.001);
-      xyz = xyz / globalMax;
+    // Normalize by global max Y (luminance) across all pixels
+    let globalMax = max(params.globalMaxIntensity, 0.001);
+    xyz = xyz / globalMax;
     
     // Convert to sRGB
     var rgb = xyzToLinearRGB(xyz);
@@ -351,21 +399,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   
   // Pass 0: Compute spectral integration and find max intensity
-  
-  // Determine which shapes affect this pixel and their mask values
-  var activeShapes: array<u32, 8>;
-  var shapeMasks: array<f32, 8>;
-  var numActiveShapes: u32 = 0u;
-  
   let numShapes = arrayLength(&shapes);
-  for (var i: u32 = 0u; i < numShapes && numActiveShapes < 8u; i++) {
-    let mask = getShapeMask(shapes[i], fx, fy);
-    if (mask > 0.0) {
-      activeShapes[numActiveShapes] = i;
-      shapeMasks[numActiveShapes] = mask;
-      numActiveShapes++;
-    }
-  }
   
   // Integrate spectrum and track max intensity
   let dLambda = (VISIBLE_MAX - VISIBLE_MIN) / f32(params.spectralResolution);
@@ -375,28 +409,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   for (var i: u32 = 0u; i < params.spectralResolution; i++) {
     let wavelength = VISIBLE_MIN + (f32(i) + 0.5) * dLambda;
     
-    // Start with background
-    var intensity = getBackgroundIntensity(wavelength);
-    var totalTransmission = 1.0;
-    var emission = 0.0;
-    
-    // Apply all active shapes, blending by mask value
-    for (var s: u32 = 0u; s < numActiveShapes; s++) {
-      let shape = shapes[activeShapes[s]];
-      let mask = shapeMasks[s];
-      let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
-      
-      // Blend between full transmission (1.0) and material transmission based on mask
-      let trans = mix(1.0, materialTrans, mask);
-      totalTransmission *= trans;
-      
-      if (params.enableEmission == 1u) {
-        let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-        emission += em * mask;  // Scale emission by mask
-      }
-    }
-    
-    intensity = intensity * totalTransmission + emission;
+    let intensity = computePixelIntensity(fx, fy, wavelength, numShapes);
     
     // Track maximum intensity for this pixel
     maxIntensity = max(maxIntensity, intensity);
@@ -412,36 +425,116 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   
   // Store luminance (Y) for CPU reduction and global normalization
   maxPerPixel[pixelIndex] = xyz.y;
+}
+
+// ============================================================
+// Entry Point: Spectrum Box Computation (Pass 2) - PARALLEL
+// ============================================================
+
+/**
+ * Compute high-resolution spectrum for a single pixel in the sample box
+ * Each thread computes the full spectrum for one pixel in the boxSize² region
+ * 
+ * Thread mapping: id.x = local x in box, id.y = local y in box
+ * Output: spectrumBox[boxIndex * plotResolution + wavelengthIndex]
+ */
+@compute @workgroup_size(8, 8)
+fn computeSpectrumBox(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
   
-  // If this is the sample point, output full spectrum
-  if (params.sampleX >= 0 && params.sampleY >= 0 &&
-      i32(x) == params.sampleX && i32(y) == params.sampleY) {
-    let fullRes = params.spectralResolution;
-    let step = (params.wavelengthMax - params.wavelengthMin) / f32(fullRes - 1u);
+  // Skip if outside box
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  // Calculate actual screen coordinates
+  // Box is centered on (sampleX, sampleY)
+  let halfBox = i32(params.boxSize) / 2;
+  let screenX = params.sampleX - halfBox + i32(boxX);
+  let screenY = params.sampleY - halfBox + i32(boxY);
+  
+  // Bounds check - mark out-of-bounds pixels with 0
+  let inBounds = screenX >= 0 && screenX < i32(params.width) &&
+                 screenY >= 0 && screenY < i32(params.height);
+  
+  let fx = f32(screenX);
+  let fy = f32(screenY);
+  let numShapes = arrayLength(&shapes);
+  
+  // Calculate output offset for this pixel
+  let boxIndex = boxY * params.boxSize + boxX;
+  let outputOffset = boxIndex * params.plotResolution;
+  
+  // Compute full spectrum for this pixel
+  let step = (params.wavelengthMax - params.wavelengthMin) / f32(params.plotResolution - 1u);
+  
+  for (var i: u32 = 0u; i < params.plotResolution; i++) {
+    var intensity: f32 = 0.0;
     
-    for (var i: u32 = 0u; i < fullRes; i++) {
+    if (inBounds) {
       let wavelength = params.wavelengthMin + f32(i) * step;
-      
-      var intensity = getBackgroundIntensity(wavelength);
-      var totalTransmission = 1.0;
-      var emission = 0.0;
-      
-      for (var s: u32 = 0u; s < numActiveShapes; s++) {
-        let shape = shapes[activeShapes[s]];
-        let mask = shapeMasks[s];
-        let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
-        
-        // Blend between full transmission (1.0) and material transmission based on mask
-        let trans = mix(1.0, materialTrans, mask);
-        totalTransmission *= trans;
-        
-        if (params.enableEmission == 1u) {
-          let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-          emission += em * mask;
-        }
-      }
-      
-      spectrumOutput[i] = intensity * totalTransmission + emission;
+      intensity = computePixelIntensity(fx, fy, wavelength, numShapes);
     }
+    
+    spectrumBox[outputOffset + i] = intensity;
+  }
+}
+
+// ============================================================
+// Entry Point: Spectrum Averaging (Pass 3) - GPU Reduction
+// ============================================================
+
+/**
+ * Average the spectrum box over a circular region
+ * Single workgroup averages all wavelengths
+ * 
+ * Thread mapping: id.x = wavelength index (up to plotResolution)
+ * Output: spectrumOutput[wavelengthIndex] = averaged intensity
+ */
+@compute @workgroup_size(256)
+fn averageSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
+  let wavelengthIdx = id.x;
+  
+  if (wavelengthIdx >= params.plotResolution) {
+    return;
+  }
+  
+  let halfBox = i32(params.boxSize) / 2;
+  let avgRadius = i32(params.averageRadius);
+  let centerX = halfBox;  // Center of box in local coords
+  let centerY = halfBox;
+  
+  var sum: f32 = 0.0;
+  var count: f32 = 0.0;
+  
+  // Iterate over all pixels in the box
+  for (var by: u32 = 0u; by < params.boxSize; by++) {
+    for (var bx: u32 = 0u; bx < params.boxSize; bx++) {
+      // Check if within averaging circle
+      let dx = i32(bx) - centerX;
+      let dy = i32(by) - centerY;
+      let distSq = dx * dx + dy * dy;
+      
+      if (distSq <= avgRadius * avgRadius) {
+        // Get spectrum value from box
+        let boxIndex = by * params.boxSize + bx;
+        let value = spectrumBox[boxIndex * params.plotResolution + wavelengthIdx];
+        
+        // Optional: Gaussian weighting (currently uniform)
+        // let weight = exp(-f32(distSq) / (2.0 * f32(avgRadius * avgRadius)));
+        let weight = 1.0;
+        
+        sum += value * weight;
+        count += weight;
+      }
+    }
+  }
+  
+  // Output averaged spectrum
+  if (count > 0.0) {
+    spectrumOutput[wavelengthIdx] = sum / count;
+  } else {
+    spectrumOutput[wavelengthIdx] = 0.0;
   }
 }
