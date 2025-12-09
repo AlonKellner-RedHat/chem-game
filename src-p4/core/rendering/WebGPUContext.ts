@@ -67,10 +67,22 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
     console.warn('[WebGPU] timestamp-query not available - GPU profiling disabled');
   }
   
-  // Request device
+  // Check adapter limits for storage buffers
+  const adapterLimits = adapter.limits;
+  const requiredStorageBuffers = 10; // We need 10 storage buffers for the spectral pipeline
+  
+  if (adapterLimits.maxStorageBuffersPerShaderStage < requiredStorageBuffers) {
+    console.warn(`[WebGPU] Adapter only supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers, but we need ${requiredStorageBuffers}`);
+  } else {
+    console.log(`[WebGPU] Adapter supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers per stage (need ${requiredStorageBuffers})`);
+  }
+  
+  // Request device with higher storage buffer limit
   const device = await adapter.requestDevice({
     requiredFeatures,
-    requiredLimits: {},
+    requiredLimits: {
+      maxStorageBuffersPerShaderStage: Math.min(requiredStorageBuffers, adapterLimits.maxStorageBuffersPerShaderStage),
+    },
   });
   
   // Handle device loss

@@ -18,6 +18,20 @@ export { getCIE_X, getCIE_Y, getCIE_Z, getCIE_XYZ, generateCIETextures } from '.
 export { getBackgroundIntensity, generateBackgroundSpectrum } from './backgrounds';
 export { integrateToXYZ, fastIntegrateToXYZ, generateD65Spectrum } from './integration';
 export { xyzToSRGB, xyzToLinearRGB, xyzTo8BitSRGB, gammaCorrect, normalizeXYZ } from './srgb';
+export { evToWavelength, wavelengthToEV, getTaucAbsorption, getBandGapTransmission } from './bandgap';
+export { voigtProfile, gaussianProfile, lorentzianProfile, voigtFWHM, getTotalLinewidth } from './voigt';
+export { 
+  getRayleighScattering, 
+  getMieScattering, 
+  applyScattering, 
+  getScatteredFraction,
+  RAYLEIGH_REFERENCE_COEFFICIENT,
+  MIE_REFERENCE_COEFFICIENT,
+  DEFAULT_SMALL_PARTICLE_SIZE,
+  DEFAULT_LARGE_PARTICLE_SIZE,
+  type RayleighParams,
+  type MieParams,
+} from './scattering';
 
 // Import for engine implementation
 import {

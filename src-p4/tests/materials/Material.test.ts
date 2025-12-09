@@ -87,7 +87,7 @@ describe('Materials', () => {
       // Check sodium has narrow D-line peaks
       const sodium = gas.molecules.find(m => m.id === 'sodium');
       expect(sodium).toBeDefined();
-      expect(sodium!.peaks[0].bandwidth).toBeLessThan(5);
+      expect(sodium!.peaks[0].naturalWidth).toBeLessThan(5);
     });
   });
   

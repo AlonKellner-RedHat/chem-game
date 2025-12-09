@@ -39,6 +39,12 @@ export interface Renderer {
   /** Enable/disable emission */
   setEmissionEnabled(enabled: boolean): void;
   
+  /** Set emission spread factor (fraction of emission that spreads sideways) */
+  setEmissionSpreadFactor?(factor: number): void;
+  
+  /** Set emission aura blur sigma (in pixels) */
+  setEmissionAuraSigma?(sigma: number): void;
+  
   /** Render and return ImageData */
   render(): Promise<ImageData>;
   
@@ -78,6 +84,8 @@ export class WebGPURenderer implements Renderer {
   private materials: Float32Array[] = [];
   private backgroundMode: BackgroundMode = 'normal';
   private emissionEnabled = true;
+  private emissionSpreadFactor = 0.3;  // Fraction of emission that spreads sideways (aura)
+  private emissionAuraSigma = 3.0;     // Gaussian sigma for emission aura blur
   
   // Spectrum sampling state
   private sampleX = -1;
@@ -142,6 +150,20 @@ export class WebGPURenderer implements Renderer {
   
   setEmissionEnabled(enabled: boolean): void {
     this.emissionEnabled = enabled;
+  }
+  
+  /**
+   * Set emission spread factor (fraction of emission that spreads sideways)
+   */
+  setEmissionSpreadFactor(factor: number): void {
+    this.emissionSpreadFactor = Math.max(0, Math.min(1, factor));
+  }
+  
+  /**
+   * Set emission aura blur sigma (in pixels)
+   */
+  setEmissionAuraSigma(sigma: number): void {
+    this.emissionAuraSigma = Math.max(0, sigma);
   }
   
   /**
@@ -262,6 +284,9 @@ export class WebGPURenderer implements Renderer {
       averageRadius: 5,
       // Compute spectrum for 11x11 box around sample point (reduced from 15 for perf)
       boxSize: 11,
+      // Emission aura parameters
+      emissionSpreadFactor: this.emissionSpreadFactor,
+      emissionAuraSigma: this.emissionAuraSigma,
     };
     
     // Update profiler config
@@ -424,6 +449,14 @@ export class CPURenderer implements Renderer {
   
   setEmissionEnabled(enabled: boolean): void {
     this.emissionEnabled = enabled;
+  }
+  
+  setEmissionSpreadFactor(_factor: number): void {
+    // No-op for CPU fallback
+  }
+  
+  setEmissionAuraSigma(_sigma: number): void {
+    // No-op for CPU fallback
   }
   
   async render(): Promise<ImageData> {

@@ -19,7 +19,7 @@ import {
 import { BackgroundMode } from '../physics/config';
 import { profiler } from '../rendering/Profiler';
 
-interface ShapeConfig {
+export interface ShapeConfig {
   id: string;
   name: string;
   maskName: string;  // Name of mask file (without .mask extension)
@@ -30,6 +30,9 @@ interface ShapeConfig {
   layer: number;     // Render order (0 = background)
   material: Material;
   properties: MaterialProperties;
+  // Scattering particle densities (particles/cm³)
+  smallParticleDensity: number;  // Rayleigh scattering (nanoparticles)
+  largeParticleDensity: number;  // Mie scattering (microparticles)
 }
 
 // Base design dimensions (UI is designed at this size)
@@ -109,6 +112,8 @@ export class SpectralDemo implements Demo {
         layer: 0,  // Background layer
         material: tintMaterial,
         properties: createDefaultProperties(tintMaterial),
+        smallParticleDensity: 0,  // No scattering for background
+        largeParticleDensity: 0,
       },
       // Foreground shapes (layer 1)
       {
@@ -122,6 +127,8 @@ export class SpectralDemo implements Demo {
         layer: 1,
         material: waterMaterial,
         properties: createDefaultProperties(waterMaterial),
+        smallParticleDensity: 0,  // Start with no scattering, user can adjust
+        largeParticleDensity: 0,
       },
       {
         id: 'circle',
@@ -134,6 +141,8 @@ export class SpectralDemo implements Demo {
         layer: 1,
         material: crystalMaterial,
         properties: createDefaultProperties(crystalMaterial),
+        smallParticleDensity: 0,  // Start with no scattering, user can adjust
+        largeParticleDensity: 0,
       },
       {
         id: 'triangle',
@@ -146,6 +155,8 @@ export class SpectralDemo implements Demo {
         layer: 1,
         material: gasMaterial,
         properties: createDefaultProperties(gasMaterial),
+        smallParticleDensity: 0,  // No scattering for gas (particles too sparse)
+        largeParticleDensity: 0,
       },
     ];
     
@@ -257,6 +268,12 @@ export class SpectralDemo implements Demo {
       // Reset pressure slider for gas materials
       if (shape.material.id === 'gas') {
         panel.setSliderValue('pressure', shape.properties.pressure);
+      }
+      
+      // Reset scattering sliders for condensed materials
+      if (shape.material.id === 'water' || shape.material.id === 'crystal') {
+        panel.setSliderValue('smallParticles', shape.smallParticleDensity);
+        panel.setSliderValue('largeParticles', shape.largeParticleDensity);
       }
       
       panelIndex++;
@@ -672,6 +689,35 @@ export class SpectralDemo implements Demo {
       });
     }
     
+    // Scattering sliders for condensed materials (water/crystal, not gas)
+    // Rayleigh scattering: small particles << wavelength (nanoparticles, blue sky effect)
+    // Mie scattering: large particles ~ wavelength (microparticles, milk/fog effect)
+    if (shape.material.id === 'water' || shape.material.id === 'crystal') {
+      panel.addSlider('smallParticles', {
+        min: 0,
+        max: 1e14,  // particles/cm³
+        value: shape.smallParticleDensity,
+        logarithmic: true,
+        label: 'Nanoparticles (Rayleigh)',
+        onChange: (value) => {
+          shape.smallParticleDensity = value;
+          this.needsRender = true;
+        },
+      });
+      
+      panel.addSlider('largeParticles', {
+        min: 0,
+        max: 1e10,  // particles/cm³
+        value: shape.largeParticleDensity,
+        logarithmic: true,
+        label: 'Microparticles (Mie)',
+        onChange: (value) => {
+          shape.largeParticleDensity = value;
+          this.needsRender = true;
+        },
+      });
+    }
+    
     return panel;
   }
   
@@ -714,6 +760,9 @@ export class SpectralDemo implements Demo {
         maskIndex,
         texWidth: maskDims.width,
         texHeight: maskDims.height,
+        // Scattering particle densities
+        smallParticleDensity: shape.smallParticleDensity,
+        largeParticleDensity: shape.largeParticleDensity,
       };
     });
     

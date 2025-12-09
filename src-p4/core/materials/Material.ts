@@ -6,6 +6,9 @@
  * molecule concentrations and base material properties.
  */
 
+import { getBandGapTransmission } from '../physics/bandgap';
+import { voigtProfile, voigtFWHM } from '../physics/voigt';
+
 /**
  * Absorption peak definition
  */
@@ -89,11 +92,34 @@ function calculatePressureWidth(
 }
 
 /**
- * Calculate total linewidth combining natural, Doppler, and pressure broadening
- * Uses quadrature addition: total = sqrt(natural² + doppler² + pressure²)
+ * Calculate linewidth components for Voigt profile
  * 
- * This is an approximation - true Voigt profile combines Gaussian (Doppler)
- * and Lorentzian (pressure) differently, but quadrature works well for visualization
+ * Returns separate Gaussian (Doppler) and Lorentzian (natural + pressure) widths
+ * for use with the true Voigt profile calculation.
+ */
+function calculateLinewidthComponents(
+  peak: AbsorptionPeak,
+  temperatureK: number,
+  massAMU: number,
+  pressureAtm: number,
+  pressureCoefficient: number
+): { gaussian: number; lorentzian: number } {
+  // Doppler broadening is Gaussian
+  const doppler = calculateDopplerWidth(peak.wavelength, temperatureK, massAMU);
+  
+  // Natural and pressure broadening are both Lorentzian, so they add directly
+  const natural = peak.naturalWidth;
+  const pressure = calculatePressureWidth(pressureAtm, pressureCoefficient);
+  const lorentzian = natural + pressure;
+  
+  return { gaussian: doppler, lorentzian };
+}
+
+/**
+ * Calculate total linewidth using proper Voigt FWHM
+ * 
+ * Uses the Olivero-Longbothum approximation for Voigt FWHM:
+ * FWHM_V ≈ 0.5346 × FWHM_L + √(0.2166 × FWHM_L² + FWHM_G²)
  */
 function calculateTotalLinewidth(
   peak: AbsorptionPeak,
@@ -102,12 +128,12 @@ function calculateTotalLinewidth(
   pressureAtm: number,
   pressureCoefficient: number
 ): number {
-  const natural = peak.naturalWidth;
-  const doppler = calculateDopplerWidth(peak.wavelength, temperatureK, massAMU);
-  const pressure = calculatePressureWidth(pressureAtm, pressureCoefficient);
+  const { gaussian, lorentzian } = calculateLinewidthComponents(
+    peak, temperatureK, massAMU, pressureAtm, pressureCoefficient
+  );
   
-  // Quadrature addition for independent broadening mechanisms
-  return Math.sqrt(natural * natural + doppler * doppler + pressure * pressure);
+  // Use proper Voigt FWHM calculation
+  return voigtFWHM(gaussian, lorentzian);
 }
 
 /**
@@ -178,8 +204,12 @@ function beerLambert(
 const BASELINE_EXTINCTION = 0.5;
 
 /**
- * Calculate extinction coefficient at wavelength using Gaussian peaks
+ * Calculate extinction coefficient at wavelength using Voigt profile peaks
  * with temperature-dependent Doppler broadening and pressure broadening
+ * 
+ * The Voigt profile properly combines:
+ * - Gaussian (Doppler) broadening from thermal motion
+ * - Lorentzian (natural + pressure) broadening from lifetime/collisions
  * 
  * @param wavelength - Wavelength in nm
  * @param molecule - Molecule with peaks, mass, and pressure broadening coefficient
@@ -197,18 +227,27 @@ function calculateExtinction(
   let total = BASELINE_EXTINCTION;
   
   for (const peak of molecule.peaks) {
-    // Calculate total linewidth including natural, Doppler, and pressure broadening
-    const fwhm = calculateTotalLinewidth(
+    // Get separate Gaussian and Lorentzian widths for Voigt profile
+    const { gaussian, lorentzian } = calculateLinewidthComponents(
       peak,
       temperatureK,
       molecule.mass,
       pressureAtm,
       molecule.pressureBroadening
     );
-    const sigma = fwhm / 2.35482; // FWHM to Gaussian sigma
     
+    // Distance from line center
     const diff = wavelength - peak.wavelength;
-    total += peak.extinction * Math.exp(-0.5 * Math.pow(diff / sigma, 2));
+    
+    // Use true Voigt profile shape
+    // voigtProfile returns normalized value, scale by extinction coefficient
+    const voigtValue = voigtProfile(diff, gaussian, lorentzian);
+    
+    // Peak extinction is defined at line center, so normalize to that
+    const peakVoigt = voigtProfile(0, gaussian, lorentzian);
+    const normalizedShape = peakVoigt > 0 ? voigtValue / peakVoigt : 0;
+    
+    total += peak.extinction * normalizedShape;
   }
   
   return total;
@@ -244,11 +283,10 @@ export function createMaterial(
         const wavelength = wavelengthMin + i * step;
         let transmission = 1.0;
         
-        // Base material UV absorption
-        if (wavelength < uvCutoff) {
-          const fade = Math.max(0, (wavelength - 100) / (uvCutoff - 100));
-          transmission *= fade * fade;
-        }
+        // Band gap absorption using Tauc-like model
+        // Uses proper physics: λ_cutoff = hc/E_g, α ∝ (hν - E_g)²
+        // Falls back to legacy UV cutoff if bandGap is not set (0)
+        transmission *= getBandGapTransmission(wavelength, bandGap, uvCutoff);
         
         // Apply absorption from each molecule with temperature and pressure-dependent broadening
         for (const molecule of molecules) {

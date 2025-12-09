@@ -1,13 +1,37 @@
 /**
- * Kirchhoff's Law Implementation
+ * Kirchhoff's Law and Radiative Transfer Implementation
  * 
- * Kirchhoff's law of thermal radiation states that:
- * emissivity(λ) = absorptivity(λ) = 1 - transmission(λ)
+ * This module implements the solution to the Radiative Transfer Equation (RTE)
+ * for a homogeneous slab (single layer):
  * 
- * For a material at temperature T:
- * emission(λ) = absorptivity(λ) × B(λ,T)
+ *   I_out = I_in × T + B(λ,T) × (1 - T)
  * 
- * where B(λ,T) is the Planck black body function.
+ * where:
+ *   - I_in = input intensity (background illumination)
+ *   - T = transmission through the slab (from Beer-Lambert law)
+ *   - B(λ,T) = Planck black body function at material temperature
+ *   - (1-T) = absorptivity = emissivity (Kirchhoff's law)
+ * 
+ * Kirchhoff's Law Connection:
+ * ---------------------------
+ * Kirchhoff's law states that for any material in thermal equilibrium:
+ *   emissivity(λ) = absorptivity(λ) = 1 - transmission(λ)
+ * 
+ * This means a material emits exactly as well as it absorbs at each wavelength.
+ * A perfect mirror (T=1) emits nothing. An opaque black body (T=0) emits maximally.
+ * 
+ * RTE Formula Equivalence:
+ * ------------------------
+ * The implementation uses: result = background × transmission + emission
+ * where emission = (1-T) × B(λ,T)
+ * 
+ * This is mathematically equivalent to the RTE solution:
+ *   I_out = I_in × T + B(λ,T) × (1 - T)
+ * 
+ * Multi-Layer Integration:
+ * ------------------------
+ * For multiple layers, each layer's output feeds as input to the next.
+ * This implicit chaining naturally handles multi-layer radiative transfer.
  */
 
 import { DRAPER_POINT } from './constants';
