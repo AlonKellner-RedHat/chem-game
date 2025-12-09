@@ -8,10 +8,37 @@
  * Uses MSDF (Multi-Channel Signed Distance Field) textures for
  * resolution-independent shape rendering with sharp corners.
  * 
+ * ============================================================================
+ * SHARED ARCHITECTURE: Unified Rendering & Spectrum Pipelines
+ * ============================================================================
+ * 
+ * Both the rendering (16 samples) and spectrum plot (5000 samples) pipelines
+ * use the SAME physics via computeLayerPhysics(). This ensures they stay aligned.
+ * 
+ * Key shared components (changes affect BOTH pipelines):
+ * - computeLayerPhysics(): Core absorption, emission, scattering logic
+ * - voigtWeight() / gaussianWeight(): Blur kernels
+ * - getBackgroundIntensity(): Background illumination
+ * - getMaterialTransmission(): Material absorption lookup
+ * - applyScattering(): Rayleigh + Mie scattering
+ * - getKirchhoffEmission(): Thermal emission
+ * 
+ * Rendering Pipeline (16 samples, full screen):
+ * - initBackgroundSpectrum → applyLayerAbsorption → blur* → integrateSpectrum
+ * 
+ * Spectrum Pipeline (5000 samples, 30×30 box):
+ * - initBackgroundSpectrum_HighRes → applyLayerAbsorption_HighRes → blur*_HighRes
+ * - finalCombine_HighRes → averageSpectrum
+ * 
+ * The _HighRes entry points call the SAME computeLayerPhysics() function,
+ * just with different resolution and buffer bindings.
+ * 
+ * ============================================================================
+ * 
  * Multi-pass architecture:
  * - Pass 0 (main): Color computation for all pixels (16 wavelengths)
  * - Pass 1 (main): Normalization pass
- * - Pass 2 (computeSpectrumBox): High-res spectrum for boxSize² pixels (parallel)
+ * - Pass 2 (High-Res): Layer-by-layer spectrum computation (5000 wavelengths)
  * - Pass 3 (averageSpectrum): GPU averaging over circular region
  */
 
@@ -102,13 +129,17 @@ struct Shape {
 @group(0) @binding(9) var<storage, read_write> scatterSource: array<f16>;    // Light to be scattered/blurred
 @group(0) @binding(10) var<storage, read_write> emissionAura: array<f16>;    // Emission aura (wavelength-independent blur)
 
+// NOTE: High-res spectrum uses the SAME buffer bindings (6-10) but with different
+// buffer references. The TypeScript swaps the actual GPUBuffer objects to point
+// to the high-res buffers when computing the spectrum plot.
+
 // Number of spectral samples (must match TypeScript)
 const SPECTRAL_SAMPLES: u32 = 16u;
 
 // Blur constants
 const MAX_BLUR_RADIUS: i32 = 64;           // Maximum blur radius in pixels
-const RAYLEIGH_BLUR_SCALE: f32 = 1e-12;    // Scale factor for Rayleigh blur
-const MIE_BLUR_SCALE: f32 = 1e-8;          // Scale factor for Mie blur
+const RAYLEIGH_BLUR_SCALE: f32 = 1e-10;    // Scale factor for Rayleigh blur (increased for visibility)
+const MIE_BLUR_SCALE: f32 = 1e-6;          // Scale factor for Mie blur (increased for visibility)
 
 // ============================================================
 // MSDF Functions
@@ -350,6 +381,14 @@ const MIE_COEFF: f32 = 5e-16;
 // Default particle sizes
 const SMALL_PARTICLE_SIZE: f32 = 50.0;   // nm (Rayleigh)
 const LARGE_PARTICLE_SIZE: f32 = 1000.0; // nm (Mie)
+
+// Dual-path scattering fractions for physically correct light redistribution:
+// - IN_SHAPE: Light that scatters but stays within the shape (blur->mask)
+//   Background bleeds INTO shape, preventing dark edges
+// - AURA: Light that escapes the shape as a subtle glow (mask->blur)
+//   Shape light bleeds OUT to surrounding pixels
+const IN_SHAPE_SCATTER_FRACTION: f32 = 0.95;  // 95% stays in shape (visual haze)
+const AURA_SCATTER_FRACTION: f32 = 0.05;      // 5% bleeds outside as aura
 
 /**
  * Rayleigh scattering coefficient
@@ -657,6 +696,456 @@ fn computeSpectrumBox(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 // ============================================================
+// HIGH-RES ENTRY POINTS: Spectrum Pipeline (30×30 × 5000 samples)
+// ============================================================
+// These entry points mirror the rendering pipeline but operate on the
+// high-resolution spectrum box. They use the SAME computeLayerPhysics()
+// function to ensure identical physics.
+//
+// SHARED ARCHITECTURE: Changes to computeLayerPhysics() affect both
+// the 16-sample rendering and 5000-sample spectrum pipelines.
+
+/**
+ * Initialize high-res background spectrum for the 30×30 box.
+ * SHARED: Uses same background logic as rendering pipeline.
+ */
+@compute @workgroup_size(8, 8)
+fn initBackgroundSpectrum_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let screenPos = boxToScreen(boxX, boxY);
+  let inBounds = isScreenInBounds(screenPos);
+  
+  // Initialize all wavelengths for this pixel
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    
+    var intensity: f32 = 0.0;
+    if (inBounds) {
+      let wavelength = getWavelengthForIndex_HighRes(wIdx);
+      intensity = getBackgroundIntensity(wavelength);
+    }
+    
+    spectralInput[spectralIdx] = f16(intensity);
+    spectralOutput[spectralIdx] = f16(0.0);
+    scatterSource[spectralIdx] = f16(0.0);
+    emissionAura[spectralIdx] = f16(0.0);
+  }
+  
+  // Initialize sigma buffer
+  let pixelIdx = boxY * params.boxSize + boxX;
+  scatteringSigma[pixelIdx] = 0.0;
+}
+
+/**
+ * Apply layer absorption/emission at high resolution (5000 samples).
+ * SHARED: Uses computeLayerPhysics() - same physics as rendering.
+ * 
+ * This is the 5000-sample version for spectrum plot. Changes to
+ * computeLayerPhysics() automatically affect this entry point.
+ */
+@compute @workgroup_size(8, 8)
+fn applyLayerAbsorption_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let screenPos = boxToScreen(boxX, boxY);
+  let inBounds = isScreenInBounds(screenPos);
+  let fx = f32(screenPos.x);
+  let fy = f32(screenPos.y);
+  let numShapes = arrayLength(&shapes);
+  let pixelIdx = boxY * params.boxSize + boxX;
+  
+  var maxSigma: f32 = 0.0;
+  
+  // Process each wavelength using SHARED physics function
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    let wavelength = getWavelengthForIndex_HighRes(wIdx);
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    
+    // Read current intensity from input buffer
+    let inputIntensity = f32(spectralInput[spectralIdx]);
+    
+    var transmitted: f32 = inputIntensity;
+    var scatterSrc: f32 = 0.0;
+    var directEmission: f32 = 0.0;
+    var emissionAuraSrc: f32 = 0.0;
+    
+    if (inBounds) {
+      // SHARED: Use common physics function for both pipelines
+      let result = computeLayerPhysics(inputIntensity, wavelength, fx, fy, numShapes);
+      
+      transmitted = result.transmitted;
+      scatterSrc = result.scatterSrc;
+      directEmission = result.directEmission;
+      emissionAuraSrc = result.emissionAuraSrc;
+      maxSigma = max(maxSigma, result.maxSigma);
+    }
+    
+    // Write outputs
+    spectralOutput[spectralIdx] = f16(transmitted + directEmission);
+    scatterSource[spectralIdx] = f16(scatterSrc);
+    emissionAura[spectralIdx] = f16(emissionAuraSrc);
+  }
+  
+  scatteringSigma[pixelIdx] = maxSigma;
+}
+
+/**
+ * Horizontal blur for high-res scatter (Voigt kernel).
+ * SHARED: Uses same blur constants and kernel as rendering.
+ */
+@compute @workgroup_size(8, 8)
+fn blurHorizontal_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let sigma = params.globalMaxScatterSigma;
+  if (sigma < 0.1) {
+    // No blur needed, just copy
+    for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+      let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+      spectralInput[spectralIdx] = scatterSource[spectralIdx];
+    }
+    return;
+  }
+  
+  let radius = u32(ceil(sigma * 4.0));
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    for (var dx: i32 = -i32(radius); dx <= i32(radius); dx++) {
+      let sampleX = i32(boxX) + dx;
+      if (sampleX >= 0 && sampleX < i32(params.boxSize)) {
+        let sampleIdx = getSpectralIndex_HighRes(u32(sampleX), boxY, wIdx);
+        let weight = voigtBlurWeight(f32(abs(dx)), sigma);
+        sum += f32(scatterSource[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    spectralInput[spectralIdx] = f16(sum / max(weightSum, 0.0001));
+  }
+}
+
+/**
+ * Vertical blur for high-res scatter (Voigt kernel).
+ * SHARED: Uses same blur constants and kernel as rendering.
+ */
+@compute @workgroup_size(8, 8)
+fn blurVertical_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let sigma = params.globalMaxScatterSigma;
+  if (sigma < 0.1) {
+    // No blur needed, just copy
+    for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+      let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+      scatterSource[spectralIdx] = spectralInput[spectralIdx];
+    }
+    return;
+  }
+  
+  let radius = u32(ceil(sigma * 4.0));
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    for (var dy: i32 = -i32(radius); dy <= i32(radius); dy++) {
+      let sampleY = i32(boxY) + dy;
+      if (sampleY >= 0 && sampleY < i32(params.boxSize)) {
+        let sampleIdx = getSpectralIndex_HighRes(boxX, u32(sampleY), wIdx);
+        let weight = voigtBlurWeight(f32(abs(dy)), sigma);
+        sum += f32(spectralInput[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    scatterSource[spectralIdx] = f16(sum / max(weightSum, 0.0001));
+  }
+}
+
+/**
+ * Horizontal blur for high-res transmitted (blur->mask path).
+ * Blurs the full transmitted image so background bleeds INTO shapes.
+ */
+@compute @workgroup_size(8, 8)
+fn blurTransmittedH_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let sigma = params.globalMaxScatterSigma;
+  if (sigma < 0.1) {
+    // No blur needed, just copy
+    for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+      let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+      spectralInput[spectralIdx] = spectralOutput[spectralIdx];
+    }
+    return;
+  }
+  
+  let radius = u32(ceil(sigma * 4.0));
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    for (var dx: i32 = -i32(radius); dx <= i32(radius); dx++) {
+      let sampleX = i32(boxX) + dx;
+      if (sampleX >= 0 && sampleX < i32(params.boxSize)) {
+        let sampleIdx = getSpectralIndex_HighRes(u32(sampleX), boxY, wIdx);
+        let weight = voigtBlurWeight(f32(abs(dx)), sigma);
+        sum += f32(spectralOutput[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    spectralInput[spectralIdx] = f16(sum / max(weightSum, 0.0001));
+  }
+}
+
+/**
+ * Vertical blur for high-res transmitted (blur->mask path).
+ * Reads H-blurred from spectralInput, writes to emissionAura (temp).
+ */
+@compute @workgroup_size(8, 8)
+fn blurTransmittedV_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let sigma = params.globalMaxScatterSigma;
+  if (sigma < 0.1) {
+    // No blur needed, just copy
+    for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+      let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+      emissionAura[spectralIdx] = spectralInput[spectralIdx];
+    }
+    return;
+  }
+  
+  let radius = u32(ceil(sigma * 4.0));
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    for (var dy: i32 = -i32(radius); dy <= i32(radius); dy++) {
+      let sampleY = i32(boxY) + dy;
+      if (sampleY >= 0 && sampleY < i32(params.boxSize)) {
+        let sampleIdx = getSpectralIndex_HighRes(boxX, u32(sampleY), wIdx);
+        let weight = voigtBlurWeight(f32(abs(dy)), sigma);
+        sum += f32(spectralInput[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    emissionAura[spectralIdx] = f16(sum / max(weightSum, 0.0001));
+  }
+}
+
+/**
+ * Combine scattered light with transmitted for high-res spectrum.
+ * Uses the same dual-path scattering model as the rendering pipeline.
+ */
+@compute @workgroup_size(8, 8)
+fn combineScattered_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  // Convert box coordinates to screen coordinates for shape queries
+  let screenPos = boxToScreen(boxX, boxY);
+  let inBounds = isScreenInBounds(screenPos);
+  let fx = f32(screenPos.x);
+  let fy = f32(screenPos.y);
+  let numShapes = arrayLength(&shapes);
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    let wavelength = getWavelengthForIndex_HighRes(wIdx);
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    
+    // Read the three components
+    let transmitted = f32(spectralOutput[spectralIdx]);   // Sharp transmitted + direct emission
+    let blurredFull = f32(emissionAura[spectralIdx]);     // Blurred full image (blur->mask path)
+    let blurredAura = f32(scatterSource[spectralIdx]);    // Blurred aura source (mask->blur path)
+    
+    // Compute scatter probability (only for in-bounds pixels)
+    var scatterProb: f32 = 0.0;
+    if (inBounds) {
+      scatterProb = computeScatterProb(fx, fy, wavelength, numShapes);
+    }
+    
+    // Three-path combination:
+    let direct = transmitted * (1.0 - scatterProb);
+    let inShapeScatter = blurredFull * scatterProb * IN_SHAPE_SCATTER_FRACTION;
+    let aura = blurredAura;
+    
+    // Combine: write back to spectralOutput so after swap it becomes spectralInput for next layer
+    spectralOutput[spectralIdx] = f16(direct + inShapeScatter + aura);
+  }
+}
+
+/**
+ * Horizontal emission aura blur for high-res spectrum.
+ * SHARED: Uses same sigma as rendering pipeline.
+ * Uses scatterSource as temporary buffer (safe since scatter blur is done before this).
+ */
+@compute @workgroup_size(8, 8)
+fn blurEmissionAuraH_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let sigma = params.emissionAuraSigma;
+  if (sigma < 0.1) {
+    // No blur needed, copy to temporary buffer
+    for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+      let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+      scatterSource[spectralIdx] = emissionAura[spectralIdx];
+    }
+    return;
+  }
+  
+  let radius = u32(ceil(sigma * 3.0));
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    for (var dx: i32 = -i32(radius); dx <= i32(radius); dx++) {
+      let sampleX = i32(boxX) + dx;
+      if (sampleX >= 0 && sampleX < i32(params.boxSize)) {
+        let sampleIdx = getSpectralIndex_HighRes(u32(sampleX), boxY, wIdx);
+        let weight = gaussianWeight(f32(abs(dx)), sigma);
+        sum += f32(emissionAura[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    // Write to scatterSource as temporary storage (NOT spectralOutput!)
+    scatterSource[spectralIdx] = f16(sum / max(weightSum, 0.0001));
+  }
+}
+
+/**
+ * Vertical emission aura blur for high-res spectrum.
+ * SHARED: Uses same sigma as rendering pipeline.
+ * Reads from scatterSource (H-blurred), writes back to emissionAura.
+ */
+@compute @workgroup_size(8, 8)
+fn blurEmissionAuraV_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let sigma = params.emissionAuraSigma;
+  if (sigma < 0.1) {
+    // No blur needed, copy back from temporary
+    for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+      let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+      emissionAura[spectralIdx] = scatterSource[spectralIdx];
+    }
+    return;
+  }
+  
+  let radius = u32(ceil(sigma * 3.0));
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    for (var dy: i32 = -i32(radius); dy <= i32(radius); dy++) {
+      let sampleY = i32(boxY) + dy;
+      if (sampleY >= 0 && sampleY < i32(params.boxSize)) {
+        let sampleIdx = getSpectralIndex_HighRes(boxX, u32(sampleY), wIdx);
+        let weight = gaussianWeight(f32(abs(dy)), sigma);
+        // Read from scatterSource (H-blurred)
+        sum += f32(scatterSource[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    emissionAura[spectralIdx] = f16(sum / max(weightSum, 0.0001));
+  }
+}
+
+/**
+ * Final combination for high-res spectrum.
+ * Writes result to spectrumBox for averaging.
+ * SHARED: Uses same combination logic as rendering pipeline.
+ * 
+ * NOTE: After the layer loop, swapHighResSpectralBuffers() is called which swaps
+ * the buffers. The combined data ends up in spectralOutput (not spectralInput).
+ */
+@compute @workgroup_size(8, 8)
+fn finalCombine_HighRes(@builtin(global_invocation_id) id: vec3<u32>) {
+  let boxX = id.x;
+  let boxY = id.y;
+  
+  if (boxX >= params.boxSize || boxY >= params.boxSize) {
+    return;
+  }
+  
+  let boxIndex = boxY * params.boxSize + boxX;
+  let outputOffset = boxIndex * params.plotResolution;
+  
+  for (var wIdx: u32 = 0u; wIdx < params.plotResolution; wIdx++) {
+    let spectralIdx = getSpectralIndex_HighRes(boxX, boxY, wIdx);
+    
+    // Combine: transmitted/scattered (in spectralOutput after swap) + emission aura
+    // After layer loop + swap, the combined data is in spectralOutput
+    let combined = f32(spectralOutput[spectralIdx]) + f32(emissionAura[spectralIdx]);
+    
+    // Write to spectrumBox for averaging
+    spectrumBox[outputOffset + wIdx] = f16(combined);
+  }
+}
+
+// ============================================================
 // Entry Point: Spectrum Averaging (Pass 3) - GPU Reduction
 // ============================================================
 
@@ -778,6 +1267,166 @@ fn getSpectralIndex(x: u32, y: u32, wavelengthIdx: u32) -> u32 {
 }
 
 // ============================================================
+// HIGH-RES SPECTRUM: Helper Functions (30×30 box × 5000 samples)
+// ============================================================
+// These helpers work with the high-resolution spectrum box buffers.
+// They share the SAME physics as the rendering pipeline via computeLayerPhysics().
+
+/**
+ * Get wavelength for a given index in the high-res spectrum (5000 samples)
+ * Uses params.plotResolution for sample count
+ */
+fn getWavelengthForIndex_HighRes(idx: u32) -> f32 {
+  let step = (params.wavelengthMax - params.wavelengthMin) / f32(params.plotResolution - 1u);
+  return params.wavelengthMin + f32(idx) * step;
+}
+
+/**
+ * Get spectral buffer index for high-res spectrum box
+ * Layout: boxY * boxSize * plotResolution + boxX * plotResolution + wavelengthIdx
+ */
+fn getSpectralIndex_HighRes(boxX: u32, boxY: u32, wavelengthIdx: u32) -> u32 {
+  return (boxY * params.boxSize + boxX) * params.plotResolution + wavelengthIdx;
+}
+
+/**
+ * Convert box coordinates to screen coordinates
+ * Box is centered on (sampleX, sampleY)
+ */
+fn boxToScreen(boxX: u32, boxY: u32) -> vec2<i32> {
+  let halfBox = i32(params.boxSize) / 2;
+  return vec2<i32>(
+    params.sampleX - halfBox + i32(boxX),
+    params.sampleY - halfBox + i32(boxY)
+  );
+}
+
+/**
+ * Check if screen coordinates are in bounds
+ */
+fn isScreenInBounds(screenPos: vec2<i32>) -> bool {
+  return screenPos.x >= 0 && screenPos.x < i32(params.width) &&
+         screenPos.y >= 0 && screenPos.y < i32(params.height);
+}
+
+// ============================================================
+// SHARED PHYSICS: Core Layer Physics (Used by both pipelines)
+// ============================================================
+// IMPORTANT: Changes here affect BOTH the rendering (16 samples)
+// and spectrum plot (5000 samples) pipelines. Keep them aligned!
+
+/**
+ * Result of processing a single wavelength through a layer's physics.
+ * This struct ensures both pipelines compute identical physics.
+ */
+struct LayerPhysicsResult {
+  transmitted: f32,      // Light that passes through without scattering
+  scatterSrc: f32,       // Light to be scattered (Voigt blur)
+  directEmission: f32,   // Emission that stays at pixel
+  emissionAuraSrc: f32,  // Emission aura (Gaussian blur)
+  maxSigma: f32,         // Maximum blur sigma for this wavelength
+}
+
+/**
+ * SHARED: Compute layer physics for a single wavelength.
+ * This is the SINGLE SOURCE OF TRUTH for absorption, emission, and scattering.
+ * 
+ * Both the 16-sample rendering pipeline and 5000-sample spectrum pipeline
+ * call this function to ensure identical physics.
+ * 
+ * @param inputIntensity - Incoming light intensity at this wavelength
+ * @param wavelength - Wavelength in nm
+ * @param fx, fy - Pixel coordinates (float)
+ * @param numShapes - Number of shapes to process
+ * @returns LayerPhysicsResult with all output components
+ */
+fn computeLayerPhysics(
+  inputIntensity: f32,
+  wavelength: f32,
+  fx: f32,
+  fy: f32,
+  numShapes: u32
+) -> LayerPhysicsResult {
+  var result: LayerPhysicsResult;
+  result.transmitted = inputIntensity;
+  result.scatterSrc = 0.0;
+  result.directEmission = 0.0;
+  result.emissionAuraSrc = 0.0;
+  result.maxSigma = 0.0;
+  
+  // Apply all shapes in this layer
+  for (var i: u32 = 0u; i < numShapes; i++) {
+    let mask = getShapeMask(shapes[i], fx, fy);
+    if (mask > 0.0) {
+      let shape = shapes[i];
+      let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+      
+      // Calculate path length for scattering
+      let pathLength = max(shape.width, shape.height) * 0.01;
+      
+      // Get scattering transmission (how much light passes without scattering)
+      let scatterTrans = applyScattering(
+        1.0,
+        wavelength,
+        shape.smallParticleDensity,
+        shape.largeParticleDensity,
+        pathLength * mask
+      );
+      
+      // Scatter probability = 1 - scatterTrans (fraction that scatters)
+      let scatterProb = 1.0 - scatterTrans;
+      
+      // Apply material absorption first
+      let absorption = mix(1.0, materialTrans, mask);
+      let absorbedInput = result.transmitted * absorption;
+      
+      // Scattering creates a blur effect but doesn't dim the shape itself.
+      // The shape maintains full brightness after absorption.
+      let directTrans = absorbedInput;
+      
+      // Compute scattered light for the aura effect (visual blur outside the shape).
+      // Only a small fraction contributes to the visible aura to avoid brightening.
+      let scatteredFrac = absorbedInput * scatterProb;
+      result.scatterSrc += scatteredFrac * AURA_SCATTER_FRACTION;
+      
+      // Update transmitted for next shape in layer (full brightness preserved)
+      result.transmitted = directTrans;
+      
+      // Calculate blur sigma for this wavelength
+      let sigma = getScatterBlurSigma(
+        wavelength,
+        shape.smallParticleDensity,
+        shape.largeParticleDensity,
+        pathLength * mask
+      );
+      result.maxSigma = max(result.maxSigma, sigma);
+      
+      // Handle emission with spread factor
+      if (params.enableEmission == 1u) {
+        let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
+        let maskedEmission = em * mask;
+        
+        // Split emission using spread factor
+        let spreadFactor = params.emissionSpreadFactor;
+        let directFraction = 1.0 - spreadFactor;
+        let spreadAmount = maskedEmission * spreadFactor;
+        
+        // Direct emission stays at pixel
+        result.directEmission += maskedEmission * directFraction;
+        
+        // Spread emission: part goes through scattering medium (Voigt blur)
+        // and part is isotropic aura (Gaussian blur)
+        // Scattered emission also loses most light to 3D scattering
+        result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
+        result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
+      }
+    }
+  }
+  
+  return result;
+}
+
+// ============================================================
 // Entry Point: Initialize Background Spectrum
 // ============================================================
 
@@ -809,22 +1458,18 @@ fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 // ============================================================
-// Entry Point: Apply Layer Absorption/Emission
+// Entry Point: Apply Layer Absorption/Emission (16 samples)
 // ============================================================
 
 /**
  * Apply a single layer's absorption and emission to the spectral buffer.
- * Separates light into transmitted (stays at pixel) and scattered (will blur).
+ * Uses SHARED computeLayerPhysics() for physics - changes there affect both pipelines.
  * 
- * Outputs:
- * - spectralOutput: transmitted light + direct emission (stays sharp)
- * - scatterSource: scattered light + scattered emission (will be blurred)
+ * This is the 16-sample version for rendering. See applyLayerAbsorption_HighRes
+ * for the 5000-sample spectrum plot version.
  * 
- * Physics:
- * - Transmitted = input × absorption × (1 - scatterProb)
- * - Scattered = input × absorption × scatterProb
- * - Direct emission = emission × (1 - scatterProb)
- * - Scattered emission = emission × scatterProb
+ * SHARED ARCHITECTURE: Both entry points use computeLayerPhysics() to ensure
+ * identical physics regardless of resolution.
  */
 @compute @workgroup_size(8, 8)
 fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -843,7 +1488,7 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
   // Track maximum scattering sigma for this layer
   var maxSigma: f32 = 0.0;
   
-  // Process each wavelength
+  // Process each wavelength using SHARED physics function
   for (var wIdx: u32 = 0u; wIdx < SPECTRAL_SAMPLES; wIdx++) {
     let wavelength = getWavelengthForIndex(wIdx);
     let spectralIdx = getSpectralIndex(x, y, wIdx);
@@ -851,90 +1496,20 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
     // Read current intensity from input buffer
     let inputIntensity = f32(spectralInput[spectralIdx]);
     
-    // Track transmitted light (stays at pixel) and scatter/emission sources (will blur)
-    var transmitted: f32 = inputIntensity;
-    var scatterSrc: f32 = 0.0;
-    var directEmission: f32 = 0.0;
-    var emissionAuraSrc: f32 = 0.0;
+    // SHARED: Use common physics function for both pipelines
+    let result = computeLayerPhysics(inputIntensity, wavelength, fx, fy, numShapes);
     
-    // Apply all shapes in this layer
-    for (var i: u32 = 0u; i < numShapes; i++) {
-      let mask = getShapeMask(shapes[i], fx, fy);
-      if (mask > 0.0) {
-        let shape = shapes[i];
-        let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
-        
-        // Calculate path length for scattering
-        let pathLength = max(shape.width, shape.height) * 0.01;
-        
-        // Get scattering transmission (how much light passes without scattering)
-        let scatterTrans = applyScattering(
-          1.0,
-          wavelength,
-          shape.smallParticleDensity,
-          shape.largeParticleDensity,
-          pathLength * mask
-        );
-        
-        // Scatter probability = 1 - scatterTrans (fraction that scatters)
-        let scatterProb = 1.0 - scatterTrans;
-        
-        // Apply material absorption first
-        let absorption = mix(1.0, materialTrans, mask);
-        let absorbedInput = transmitted * absorption;
-        
-        // Split absorbed light into transmitted (direct) and scattered
-        // Transmitted = absorbed × (1 - scatterProb) = absorbed × scatterTrans
-        // Scattered = absorbed × scatterProb
-        let directTrans = absorbedInput * scatterTrans;
-        let scatteredFrac = absorbedInput * scatterProb;
-        
-        // Accumulate scatter source (light that will be blurred)
-        scatterSrc += scatteredFrac;
-        
-        // Update transmitted for next shape in layer
-        transmitted = directTrans;
-        
-        // Calculate blur sigma for this wavelength
-        let sigma = getScatterBlurSigma(
-          wavelength,
-          shape.smallParticleDensity,
-          shape.largeParticleDensity,
-          pathLength * mask
-        );
-        maxSigma = max(maxSigma, sigma);
-        
-        // Handle emission with spread factor
-        if (params.enableEmission == 1u) {
-          let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-          let maskedEmission = em * mask;
-          
-          // Split emission using spread factor
-          // Direct: stays at pixel (no spread)
-          // Spread: further split between scattered (through medium) and aura (isotropic)
-          let spreadFactor = params.emissionSpreadFactor;
-          let directFraction = 1.0 - spreadFactor;
-          let spreadAmount = maskedEmission * spreadFactor;
-          
-          // Direct emission stays at pixel
-          directEmission += maskedEmission * directFraction;
-          
-          // Spread emission: part goes through scattering medium (Voigt blur)
-          // and part is isotropic aura (Gaussian blur)
-          scatterSrc += spreadAmount * scatterProb;
-          emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
-        }
-      }
-    }
+    // Update max sigma across all wavelengths
+    maxSigma = max(maxSigma, result.maxSigma);
     
     // Write transmitted + direct emission to output buffer (stays sharp)
-    spectralOutput[spectralIdx] = f16(transmitted + directEmission);
+    spectralOutput[spectralIdx] = f16(result.transmitted + result.directEmission);
     
     // Write scatter source to scatter buffer (will be Voigt blurred)
-    scatterSource[spectralIdx] = f16(scatterSrc);
+    scatterSource[spectralIdx] = f16(result.scatterSrc);
     
     // Write emission aura source (will be Gaussian blurred)
-    emissionAura[spectralIdx] = f16(emissionAuraSrc);
+    emissionAura[spectralIdx] = f16(result.emissionAuraSrc);
   }
   
   // Store maximum sigma for blur passes
@@ -1073,6 +1648,132 @@ fn blurVertical(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 // ============================================================
+// Entry Point: Blur Transmitted Horizontal (for in-shape scatter)
+// ============================================================
+
+/**
+ * Apply horizontal wavelength-dependent Voigt blur to the FULL transmitted image.
+ * This is the blur->mask path: background light bleeds INTO shapes, preventing dark edges.
+ * 
+ * Reads from spectralOutput (transmitted light), writes to spectralInput (temp).
+ */
+@compute @workgroup_size(256, 1)
+fn blurTransmittedH(@builtin(global_invocation_id) id: vec3<u32>) {
+  let x = id.x;
+  let y = id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  
+  let baseSigma = params.globalMaxScatterSigma;
+  
+  // Skip blur if no scattering anywhere
+  if (baseSigma <= 0.0) {
+    for (var wIdx: u32 = 0u; wIdx < SPECTRAL_SAMPLES; wIdx++) {
+      let spectralIdx = getSpectralIndex(x, y, wIdx);
+      spectralInput[spectralIdx] = spectralOutput[spectralIdx];
+    }
+    return;
+  }
+  
+  // Process each wavelength with wavelength-dependent blur
+  for (var wIdx: u32 = 0u; wIdx < SPECTRAL_SAMPLES; wIdx++) {
+    let wavelength = getWavelengthForIndex(wIdx);
+    
+    // Wavelength-dependent sigma: blue blurs more for Rayleigh
+    let rayleighFactor = pow(550.0 / wavelength, 2.0);
+    let sigma = baseSigma * rayleighFactor;
+    
+    let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
+    
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    // Sample from transmitted light (spectralOutput)
+    for (var dx: i32 = -radius; dx <= radius; dx++) {
+      let sampleX = i32(x) + dx;
+      if (sampleX >= 0 && sampleX < i32(params.width)) {
+        let sampleIdx = getSpectralIndex(u32(sampleX), y, wIdx);
+        let weight = voigtBlurWeight(f32(dx), sigma);
+        sum += f32(spectralOutput[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    // Write H-blurred transmitted to spectralInput
+    let spectralIdx = getSpectralIndex(x, y, wIdx);
+    if (weightSum > 0.0) {
+      spectralInput[spectralIdx] = f16(sum / weightSum);
+    } else {
+      spectralInput[spectralIdx] = spectralOutput[spectralIdx];
+    }
+  }
+}
+
+// ============================================================
+// Entry Point: Blur Transmitted Vertical (for in-shape scatter)
+// ============================================================
+
+/**
+ * Apply vertical wavelength-dependent Voigt blur to the transmitted image.
+ * Reads from spectralInput (H-blurred), writes to emissionAura (repurposed as temp).
+ */
+@compute @workgroup_size(1, 256)
+fn blurTransmittedV(@builtin(global_invocation_id) id: vec3<u32>) {
+  let x = id.x;
+  let y = id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  
+  let baseSigma = params.globalMaxScatterSigma;
+  
+  // Skip blur if no scattering anywhere
+  if (baseSigma <= 0.0) {
+    for (var wIdx: u32 = 0u; wIdx < SPECTRAL_SAMPLES; wIdx++) {
+      let spectralIdx = getSpectralIndex(x, y, wIdx);
+      emissionAura[spectralIdx] = spectralInput[spectralIdx];
+    }
+    return;
+  }
+  
+  // Process each wavelength with wavelength-dependent blur
+  for (var wIdx: u32 = 0u; wIdx < SPECTRAL_SAMPLES; wIdx++) {
+    let wavelength = getWavelengthForIndex(wIdx);
+    
+    // Wavelength-dependent sigma
+    let rayleighFactor = pow(550.0 / wavelength, 2.0);
+    let sigma = baseSigma * rayleighFactor;
+    
+    let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
+    
+    var sum: f32 = 0.0;
+    var weightSum: f32 = 0.0;
+    
+    // Sample from H-blurred transmitted (in spectralInput)
+    for (var dy: i32 = -radius; dy <= radius; dy++) {
+      let sampleY = i32(y) + dy;
+      if (sampleY >= 0 && sampleY < i32(params.height)) {
+        let sampleIdx = getSpectralIndex(x, u32(sampleY), wIdx);
+        let weight = voigtBlurWeight(f32(dy), sigma);
+        sum += f32(spectralInput[sampleIdx]) * weight;
+        weightSum += weight;
+      }
+    }
+    
+    // Write fully blurred transmitted to emissionAura (temp storage)
+    let spectralIdx = getSpectralIndex(x, y, wIdx);
+    if (weightSum > 0.0) {
+      emissionAura[spectralIdx] = f16(sum / weightSum);
+    } else {
+      emissionAura[spectralIdx] = spectralInput[spectralIdx];
+    }
+  }
+}
+
+// ============================================================
 // Entry Point: Gaussian Blur Weight
 // ============================================================
 
@@ -1198,14 +1899,61 @@ fn blurEmissionAuraV(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 // ============================================================
-// Entry Point: Combine All (Scatter + Emission Aura)
+// Helper: Compute total scatter probability for a pixel
 // ============================================================
 
 /**
- * Combine transmitted light with blurred scatter and blurred emission aura.
- * Writes the combined result to spectralInput for the next layer or final integration.
+ * Compute the combined scatter probability for all shapes at a pixel.
+ * This is used by the combine pass to properly blend the three scatter paths.
  * 
- * Final = transmitted + direct_emission + blurred_scatter + blurred_emission_aura
+ * @returns Combined scatterProb (fraction of light that scatters)
+ */
+fn computeScatterProb(fx: f32, fy: f32, wavelength: f32, numShapes: u32) -> f32 {
+  // Track remaining unscattered fraction (multiplicative)
+  var unscatteredFrac: f32 = 1.0;
+  
+  for (var i: u32 = 0u; i < numShapes; i++) {
+    let mask = getShapeMask(shapes[i], fx, fy);
+    if (mask > 0.0) {
+      let shape = shapes[i];
+      let pathLength = max(shape.width, shape.height) * 0.01;
+      
+      // Get scattering transmission for this shape
+      let scatterTrans = applyScattering(
+        1.0,
+        wavelength,
+        shape.smallParticleDensity,
+        shape.largeParticleDensity,
+        pathLength * mask
+      );
+      
+      // Multiply unscattered fractions (light passes through multiple shapes)
+      unscatteredFrac *= scatterTrans;
+    }
+  }
+  
+  // scatterProb = 1 - unscattered (fraction that scatters at least once)
+  return 1.0 - unscatteredFrac;
+}
+
+// ============================================================
+// Entry Point: Combine All (Dual-Path Scatter + Emission Aura)
+// ============================================================
+
+/**
+ * Combine transmitted light with dual-path scattering and emission aura.
+ * 
+ * Three-path scattering model:
+ * 1. Direct (unscattered): transmitted * (1 - scatterProb)
+ * 2. In-shape blur (95%): blurredFull * scatterProb * IN_SHAPE_SCATTER_FRACTION
+ *    - Blur applied BEFORE masking, so background bleeds INTO shape (no dark edges)
+ * 3. Aura (5%): blurredAura (already scaled by AURA_SCATTER_FRACTION in absorption pass)
+ *    - Mask applied BEFORE blurring, so shape light bleeds OUT
+ * 
+ * Buffer layout after blur passes:
+ * - spectralOutput: transmitted light (sharp)
+ * - emissionAura: blurred full image (for in-shape scatter)
+ * - scatterSource: blurred aura (for escaping light)
  */
 @compute @workgroup_size(8, 8)
 fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -1216,16 +1964,37 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
+  let fx = f32(x);
+  let fy = f32(y);
+  let numShapes = arrayLength(&shapes);
+  
   // Combine all components for each wavelength
   for (var wIdx: u32 = 0u; wIdx < SPECTRAL_SAMPLES; wIdx++) {
+    let wavelength = getWavelengthForIndex(wIdx);
     let spectralIdx = getSpectralIndex(x, y, wIdx);
     
-    let transmitted = f32(spectralOutput[spectralIdx]);   // Transmitted + direct emission
-    let blurredScatter = f32(scatterSource[spectralIdx]); // Blurred scattered light (Voigt)
-    let blurredAura = f32(emissionAura[spectralIdx]);     // Blurred emission aura (Gaussian)
+    // Read the three components
+    let transmitted = f32(spectralOutput[spectralIdx]);   // Sharp transmitted + direct emission
+    let blurredFull = f32(emissionAura[spectralIdx]);     // Blurred full image (blur->mask path)
+    let blurredAura = f32(scatterSource[spectralIdx]);    // Blurred aura source (mask->blur path)
+    
+    // Recompute scatter probability for this pixel/wavelength
+    let scatterProb = computeScatterProb(fx, fy, wavelength, numShapes);
+    
+    // Three-path combination:
+    // 1. Direct light (unscattered portion)
+    let direct = transmitted * (1.0 - scatterProb);
+    
+    // 2. In-shape scatter: blurred image masked to scattering regions (95%)
+    //    Only contributes where scatterProb > 0 (inside shapes with particles)
+    let inShapeScatter = blurredFull * scatterProb * IN_SHAPE_SCATTER_FRACTION;
+    
+    // 3. Aura: already blurred scatter source (5%, computed in absorption pass)
+    //    Contributes everywhere (bleeds outside shapes)
+    let aura = blurredAura;
     
     // Combined result becomes input for next layer
-    spectralInput[spectralIdx] = f16(transmitted + blurredScatter + blurredAura);
+    spectralInput[spectralIdx] = f16(direct + inShapeScatter + aura);
   }
 }
 

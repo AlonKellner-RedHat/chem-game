@@ -51,8 +51,11 @@ export interface Renderer {
   /** Get spectrum at a point */
   sampleSpectrum(x: number, y: number): Promise<Float32Array>;
   
-  /** Get global max intensity from last render (for plot normalization) */
+  /** Get global max Y (luminance) from last render (for screen normalization) */
   getGlobalMaxIntensity(): number;
+  
+  /** Get global max spectral intensity from last render (for plot normalization) */
+  getGlobalMaxSpectral(): number;
   
   /** Load MSDF files for shapes */
   loadMasks(maskNames: string[]): Promise<void>;
@@ -93,7 +96,8 @@ export class WebGPURenderer implements Renderer {
   private lastSpectrum: Float32Array = new Float32Array(0);
   
   // Global max intensity from last render
-  private lastGlobalMax: number = 1.0;
+  private lastGlobalMax: number = 1.0;      // Max Y (luminance) for screen
+  private lastGlobalMaxSpectral: number = 1.0; // Max spectral intensity for plot
   
   // Caching state for spectrum - avoid recomputing when nothing changed
   private cachedSampleX = -1;
@@ -302,6 +306,7 @@ export class WebGPURenderer implements Renderer {
     // Two-pass compute with global normalization
     const result = await this.pipeline.compute(params, this.shapes);
     this.lastGlobalMax = result.globalMaxIntensity;
+    this.lastGlobalMaxSpectral = result.globalMaxSpectral;
     
     // Record pass timings from pipeline
     profiler.recordPassTimings(this.pipeline.getPassTimings());
@@ -335,10 +340,17 @@ export class WebGPURenderer implements Renderer {
   }
   
   /**
-   * Get global max intensity from last render
+   * Get global max Y (luminance) from last render - for screen normalization
    */
   getGlobalMaxIntensity(): number {
     return this.lastGlobalMax;
+  }
+  
+  /**
+   * Get global max spectral intensity from last render - for plot normalization
+   */
+  getGlobalMaxSpectral(): number {
+    return this.lastGlobalMaxSpectral;
   }
   
   /**
@@ -424,6 +436,7 @@ export class CPURenderer implements Renderer {
   private emissionEnabled = true;
   private lastSpectrum: Float32Array = new Float32Array(320).fill(1.0);
   private lastGlobalMax: number = 1.0;
+  private lastGlobalMaxSpectral: number = 1.0;
   
   async init(): Promise<boolean> {
     console.log('[CPURenderer] Using CPU fallback');
@@ -483,6 +496,10 @@ export class CPURenderer implements Renderer {
   
   getGlobalMaxIntensity(): number {
     return this.lastGlobalMax;
+  }
+  
+  getGlobalMaxSpectral(): number {
+    return this.lastGlobalMaxSpectral;
   }
   
   async loadMasks(_maskNames: string[]): Promise<void> {

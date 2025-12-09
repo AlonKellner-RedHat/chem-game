@@ -19,6 +19,8 @@ export interface SliderOptions {
   width?: number;
   /** Callback when value changes */
   onChange?: (value: number) => void;
+  /** Custom value formatter for display */
+  formatValue?: (value: number) => string;
 }
 
 /**
@@ -91,7 +93,8 @@ export class SliderComponent {
       label: options.label ?? '',
       width: options.width ?? 200,
       onChange: options.onChange ?? (() => {}),
-    };
+      formatValue: options.formatValue,
+    } as Required<SliderOptions>;
     
     this.value = this.options.value;
     
@@ -202,6 +205,11 @@ export class SliderComponent {
    * Format value for display
    */
   private formatValue(value: number): string {
+    // Use custom formatter if provided
+    if (this.options.formatValue) {
+      return this.options.formatValue(value);
+    }
+    // Default formatting
     if (this.options.logarithmic) {
       if (value < 0.01) {
         return value.toExponential(1);

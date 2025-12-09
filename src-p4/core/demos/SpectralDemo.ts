@@ -307,9 +307,9 @@ export class SpectralDemo implements Demo {
     const renderer = scene.getRenderer();
     if (!renderer) return;
     
-    // Use 1.0 as plot max since intensity values are in 0-1 range
-    // (globalMaxIntensity is now integrated Y luminance, not suitable for plot)
-    this.spectralGraph.setGlobalMax(1.0);
+    // Use global max spectral intensity for plot normalization
+    // This ensures the plot scales with the scene when shapes exceed D65 temperature
+    this.spectralGraph.setGlobalMax(renderer.getGlobalMaxSpectral());
     
     // Use locked position if locked, otherwise use mouse position
     const sampleX = this.isSpectrumLocked ? this.lockedX : this.mouseX;
@@ -693,12 +693,22 @@ export class SpectralDemo implements Demo {
     // Rayleigh scattering: small particles << wavelength (nanoparticles, blue sky effect)
     // Mie scattering: large particles ~ wavelength (microparticles, milk/fog effect)
     if (shape.material.id === 'water' || shape.material.id === 'crystal') {
+      // Format particle count in billions
+      const formatBillions = (value: number): string => {
+        const billions = value / 1e9;
+        if (billions < 0.001) return '0';
+        if (billions < 1) return `${billions.toFixed(2)}B`;
+        if (billions < 1000) return `${billions.toFixed(1)}B`;
+        return `${(billions / 1000).toFixed(1)}T`;  // Trillions
+      };
+      
       panel.addSlider('smallParticles', {
         min: 0,
-        max: 1e14,  // particles/cm³
+        max: 1e14,  // particles/cm³ (100,000 billion)
         value: shape.smallParticleDensity,
         logarithmic: true,
         label: 'Nanoparticles (Rayleigh)',
+        formatValue: formatBillions,
         onChange: (value) => {
           shape.smallParticleDensity = value;
           this.needsRender = true;
@@ -707,10 +717,11 @@ export class SpectralDemo implements Demo {
       
       panel.addSlider('largeParticles', {
         min: 0,
-        max: 1e10,  // particles/cm³
+        max: 1e10,  // particles/cm³ (10 billion)
         value: shape.largeParticleDensity,
         logarithmic: true,
         label: 'Microparticles (Mie)',
+        formatValue: formatBillions,
         onChange: (value) => {
           shape.largeParticleDensity = value;
           this.needsRender = true;

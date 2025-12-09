@@ -69,7 +69,10 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   
   // Check adapter limits for storage buffers
   const adapterLimits = adapter.limits;
-  const requiredStorageBuffers = 10; // We need 10 storage buffers for the spectral pipeline
+  // We need 10 storage buffers for the spectral pipeline (bindings 1-10)
+  // Binding 0 is a uniform buffer (params), not counted as storage
+  // High-res spectrum reuses the same bindings with different buffer references
+  const requiredStorageBuffers = 10;
   
   if (adapterLimits.maxStorageBuffersPerShaderStage < requiredStorageBuffers) {
     console.warn(`[WebGPU] Adapter only supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers, but we need ${requiredStorageBuffers}`);
