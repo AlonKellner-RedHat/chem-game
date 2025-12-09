@@ -18,7 +18,6 @@
 enable f16;
 
 // Physical constants
-const DRAPER_POINT: f32 = 798.0;
 const D65_TEMPERATURE: f32 = 6500.0;
 const VISIBLE_MIN: f32 = 380.0;
 const VISIBLE_MAX: f32 = 700.0;
@@ -200,28 +199,26 @@ fn getRawPlanckRadiance(wavelengthNm: f32, temperatureK: f32) -> f32 {
 }
 
 // Cached D65 reference (precomputed)
-const D65_REFERENCE: f32 = 2.3718e+13;  // Raw Planck at 550nm, 6500K
+// Using formula: 1.0 / (pow(lambda, 5.0) * (exp(C2/(lambda*T)) - 1.0))
+// At 550nm, 6500K: lambda=5.5e-7m, exponent=4.024, expTerm-1=54.94
+// raw = 1.0 / (5.033e-32 * 54.94) = 3.62e+29
+const D65_REFERENCE: f32 = 3.62e+29;  // Raw Planck at 550nm, 6500K
 
 /**
  * Get D65-normalized Planck radiance
+ * Calculates at all temperatures (no Draper point cutoff)
+ * for accurate spectral distribution simulation
  */
 fn getPlanckRadiance(wavelengthNm: f32, temperatureK: f32) -> f32 {
-  if (temperatureK < DRAPER_POINT) {
-    return 0.0;
-  }
-  
   let raw = getRawPlanckRadiance(wavelengthNm, temperatureK);
   return raw / D65_REFERENCE;
 }
 
 /**
- * Kirchhoff emission
+ * Kirchhoff emission: emissivity = absorptivity = 1 - transmission
+ * Calculates at all temperatures for accurate spectral distribution
  */
 fn getKirchhoffEmission(transmission: f32, wavelengthNm: f32, temperatureK: f32) -> f32 {
-  if (temperatureK < DRAPER_POINT) {
-    return 0.0;
-  }
-  
   let trans = clamp(transmission, 0.0, 1.0);
   let absorptivity = 1.0 - trans;
   return absorptivity * getPlanckRadiance(wavelengthNm, temperatureK);
