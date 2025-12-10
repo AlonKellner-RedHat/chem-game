@@ -66,6 +66,7 @@ export class SpectralDemo implements Demo {
   // Masks
   protected masksLoaded = false;
   protected renderInProgress = false;
+  protected debugReportInProgress = false;  // Block auto-renders during debug capture
   
   // State
   protected needsRender = true;
@@ -124,7 +125,7 @@ export class SpectralDemo implements Demo {
         y: 80,
         width: 200,
         height: 200,
-        layer: 1,
+        layer: 1,  // Back layer
         material: waterMaterial,
         properties: createDefaultProperties(waterMaterial),
         smallParticleDensity: 0,  // Start with no scattering, user can adjust
@@ -138,7 +139,7 @@ export class SpectralDemo implements Demo {
         y: 80,
         width: 200,
         height: 200,
-        layer: 1,
+        layer: 2,  // Middle layer
         material: crystalMaterial,
         properties: createDefaultProperties(crystalMaterial),
         smallParticleDensity: 0,  // Start with no scattering, user can adjust
@@ -152,7 +153,7 @@ export class SpectralDemo implements Demo {
         y: 80,
         width: 200,
         height: 200,
-        layer: 1,
+        layer: 3,  // Front layer
         material: gasMaterial,
         properties: createDefaultProperties(gasMaterial),
         smallParticleDensity: 0,  // No scattering for gas (particles too sparse)
@@ -217,6 +218,9 @@ export class SpectralDemo implements Demo {
   }
   
   update(scene: GameScene): void {
+    // Skip auto-renders during debug report generation
+    if (this.debugReportInProgress) return;
+    
     if (this.needsRender && !this.renderInProgress) {
       this.renderInProgress = true;
       this.updateRenderer(scene).finally(() => {
@@ -527,6 +531,22 @@ export class SpectralDemo implements Demo {
       });
     }
     
+    // Debug report button (for layer order investigation)
+    const debugButton = document.createElement('button');
+    debugButton.textContent = 'Generate Debug Report';
+    debugButton.style.cssText = `
+      margin: 5px;
+      padding: 8px 12px;
+      background: #ff6b6b;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    debugButton.onclick = () => this.generateDebugReport(scene);
+    buttonContainer.appendChild(debugButton);
+    
     // Spectral graph
     const graphContainer = document.createElement('div');
     graphContainer.style.cssText = `
@@ -780,6 +800,141 @@ export class SpectralDemo implements Demo {
     renderer.setShapes(gpuShapes);
     renderer.setBackgroundMode(this.backgroundMode);
     renderer.setEmissionEnabled(this.enableEmission);
+  }
+  
+  /**
+   * Generate debug report for layer order investigation
+   * Tests emission from each shape and captures layer processing data
+   */
+  protected async generateDebugReport(scene: GameScene): Promise<void> {
+    const renderer = scene.getRenderer();
+    if (!renderer) {
+      console.error('[DEBUG-REPORT] No renderer available');
+      return;
+    }
+    
+    console.log('[DEBUG-REPORT] Starting debug report generation...');
+    
+    // Get the debug collector from the renderer
+    const debugCollector = renderer.getDebugCollector();
+    if (!debugCollector) {
+      console.error('[DEBUG-REPORT] Debug collector not available');
+      return;
+    }
+    
+    // Block auto-renders during debug capture
+    this.debugReportInProgress = true;
+    
+    // Clear previous reports
+    debugCollector.clear();
+    debugCollector.enabled = true;
+    
+    // Use known overlap coordinates for testing:
+    // Square<>Circle intersection: (196, 181)
+    // Circle<>Triangle intersection: (330, 209)
+    // For now, use the square<>circle intersection as the primary test pixel
+    debugCollector.testPixelX = 196;
+    debugCollector.testPixelY = 181;
+    
+    const foregroundShapes = this.shapes.filter(s => s.layer > 0);
+    
+    console.log(`[DEBUG-REPORT] Test pixel: (${debugCollector.testPixelX}, ${debugCollector.testPixelY})`);
+    console.log(`[DEBUG-REPORT] Shapes containing this pixel:`);
+    for (const shape of foregroundShapes) {
+      const inX = debugCollector.testPixelX >= shape.x && debugCollector.testPixelX < shape.x + shape.width;
+      const inY = debugCollector.testPixelY >= shape.y && debugCollector.testPixelY < shape.y + shape.height;
+      console.log(`  - ${shape.name} (layer ${shape.layer}): ${inX && inY ? 'YES' : 'NO'} (pos: ${shape.x},${shape.y} size: ${shape.width}x${shape.height})`);
+    }
+    
+    // Store original temperatures and background
+    const originalTemps = this.shapes.map(s => s.properties.temperature);
+    const originalBackground = this.backgroundMode;
+    
+    // Ensure dark mode for emission visibility
+    this.backgroundMode = 'dark';
+    
+    // Helper to run a single test
+    const runTest = async (testName: string, hotLayer: number) => {
+      console.log(`[DEBUG-REPORT] Running test: ${testName}`);
+      
+      // Set temperatures
+      for (const shape of this.shapes) {
+        shape.properties.temperature = shape.layer === hotLayer ? 3000 : 300;
+      }
+      
+      // Build shape config with CURRENT temperatures
+      const shapeConfig = this.shapes.map(s => ({
+        name: s.name || s.id,
+        layer: s.layer,
+        position: [s.x, s.y] as [number, number],
+        temperature: s.properties.temperature,
+      }));
+      
+      // IMPORTANT: Update renderer state BEFORE starting capture
+      // This ensures materials are uploaded to GPU before we capture
+      await this.updateRenderer(scene);
+      
+      // Do a "warm-up" render WITHOUT capture to ensure GPU state is stable
+      // Disable debug collector BEFORE render to ensure no async callbacks pollute capture
+      debugCollector.enabled = false;
+      debugCollector.currentReport = null; // Clear any partial data
+      await renderer.render();
+      
+      // Wait for ALL GPU work to complete (including async buffer reads)
+      // This is critical - the render has async operations that continue after the await
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // NOW start capture and render with clean state
+      debugCollector.enabled = true;
+      debugCollector.startCapture(testName, 'dark', true, shapeConfig);
+      
+      // Trigger the render that will be captured
+      await renderer.render();
+      
+      // Finish capture
+      debugCollector.finishCapture();
+      
+      console.log(`[DEBUG-REPORT] Test ${testName} complete`);
+    };
+    
+    // Test 1: Hot square (layer 1)
+    await runTest('hot_layer1_square', 1);
+    
+    // Test 2: Hot circle (layer 2)
+    await runTest('hot_layer2_circle', 2);
+    
+    // Test 3: Hot triangle (layer 3) if exists
+    const hasLayer3 = this.shapes.some(s => s.layer === 3);
+    if (hasLayer3) {
+      await runTest('hot_layer3_triangle', 3);
+    }
+    
+    // Restore original state
+    this.shapes.forEach((s, i) => s.properties.temperature = originalTemps[i]);
+    this.backgroundMode = originalBackground;
+    debugCollector.enabled = false;
+    this.debugReportInProgress = false;  // Allow auto-renders again
+    
+    // Re-render with original settings
+    await this.updateRenderer(scene);
+    await renderer.render();
+    
+    // Generate and download report
+    const reportJSON = debugCollector.generateReportJSON();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `layer-debug-report-${timestamp}.json`;
+    
+    // Download the file
+    const blob = new Blob([reportJSON], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    console.log(`[DEBUG-REPORT] Report saved: ${filename}`);
+    console.log('[DEBUG-REPORT] Reports generated:', debugCollector.getAllReports().length);
   }
 }
 

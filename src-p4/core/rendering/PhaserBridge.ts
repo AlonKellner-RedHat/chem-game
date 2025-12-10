@@ -8,7 +8,7 @@
  * Phaser 4 WebGPU textures.
  */
 
-import { SpectralComputePipeline, GPUShape, ComputeParams } from './SpectralCompute';
+import { SpectralComputePipeline, GPUShape, ComputeParams, DebugCollector } from './SpectralCompute';
 import { initWebGPU, WebGPUContext } from './WebGPUContext';
 import { MaskManager, LoadedMSDF } from './MaskLoader';
 import { BackgroundMode } from '../physics/config';
@@ -68,6 +68,9 @@ export interface Renderer {
   
   /** Get MSDF pixel range */
   getMsdfPxRange(): number;
+  
+  /** Get debug collector for layer order investigation */
+  getDebugCollector(): DebugCollector | null;
   
   /** Destroy resources */
   destroy(): void;
@@ -142,18 +145,26 @@ export class WebGPURenderer implements Renderer {
     if (this.pipeline) {
       this.pipeline.setMaterials(materials);
     }
+    // Invalidate spectrum cache when materials change
+    this.invalidateSpectrumCache();
   }
   
   setShapes(shapes: GPUShape[]): void {
     this.shapes = shapes;
+    // Invalidate spectrum cache when shapes change
+    this.invalidateSpectrumCache();
   }
   
   setBackgroundMode(mode: BackgroundMode): void {
     this.backgroundMode = mode;
+    // Invalidate spectrum cache when background changes
+    this.invalidateSpectrumCache();
   }
   
   setEmissionEnabled(enabled: boolean): void {
     this.emissionEnabled = enabled;
+    // Invalidate spectrum cache when emission setting changes
+    this.invalidateSpectrumCache();
   }
   
   /**
@@ -175,8 +186,9 @@ export class WebGPURenderer implements Renderer {
    */
   private computeShapesHash(): string {
     // Simple hash based on shape properties that affect spectrum
+    // Include particle densities which affect scattering
     return this.shapes.map(s => 
-      `${s.x},${s.y},${s.width},${s.height},${s.materialIndex},${s.maskIndex},${s.temperature}`
+      `${s.x},${s.y},${s.width},${s.height},${s.materialIndex},${s.maskIndex},${s.temperature},${s.smallParticleDensity},${s.largeParticleDensity}`
     ).join('|');
   }
   
@@ -344,6 +356,13 @@ export class WebGPURenderer implements Renderer {
    */
   getGlobalMaxIntensity(): number {
     return this.lastGlobalMax;
+  }
+  
+  /**
+   * Get the debug collector for layer order investigation
+   */
+  getDebugCollector() {
+    return this.pipeline?.debugCollector ?? null;
   }
   
   /**

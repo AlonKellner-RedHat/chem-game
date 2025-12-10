@@ -5,35 +5,30 @@
  * Uses MSDF textures for resolution-independent shape rendering.
  * 
  * ============================================================================
- * SHARED ARCHITECTURE: Unified Rendering & Spectrum Pipelines
+ * UNIFIED ARCHITECTURE: Single Code Path for Rendering & Spectrum
  * ============================================================================
  * 
- * Both pipelines (rendering + spectrum) share the same WGSL physics:
+ * Both pipelines share the SAME shader entry points with mode-based params:
  * 
- * 1. RENDERING PIPELINE (16 wavelength samples, full screen):
- *    - Dispatches: initBackgroundPipeline → layerAbsorptionPipeline → blur → integrate
- *    - Uses spectralBufferA/B for ping-pong processing
+ * 1. RENDERING MODE (16 wavelength samples, full screen):
+ *    - updateParamsBuffer(..., mode='render')
+ *    - Uses params: bufferWidth=width, bufferHeight=height, sampleCount=16
  *    - Outputs to rgbOutput for display
  * 
- * 2. SPECTRUM PIPELINE (5000 wavelength samples, 30×30 box):
- *    - Dispatches: initBackgroundHighResPipeline → layerAbsorptionHighResPipeline → blur → combine
- *    - Uses spectrumHighResA/B for ping-pong processing
+ * 2. SPECTRUM MODE (5000 wavelength samples, 30×30 box):
+ *    - updateParamsBuffer(..., mode='spectrum')
+ *    - Uses params: bufferWidth=boxSize, bufferHeight=boxSize, sampleCount=plotResolution
  *    - Outputs to spectrumOutput for plotting
  * 
- * The key alignment is that BOTH pipelines call computeLayerPhysics() in WGSL.
- * Changes to that function automatically affect both pipelines.
- * 
- * To maintain alignment when modifying:
- * - Any physics change: Modify computeLayerPhysics() in WGSL (affects both)
- * - Any orchestration change: Update BOTH compute() and high-res dispatch loop
- * - Blur/scattering changes: Update both regular and _HighRes entry points
+ * All physics functions are shared - changes automatically affect both modes.
+ * No duplicate _HighRes entry points needed.
  * 
  * ============================================================================
  * 
  * Multi-pass architecture for performance:
  * - Pass 0 (computeSpectral): Layer-by-layer color computation (16 wavelengths)
  * - Pass 1 (integrateSpectrum): Integration and normalization
- * - Pass 2 (High-Res): Layer-by-layer spectrum computation (5000 wavelengths)
+ * - Pass 2 (Spectrum): Layer-by-layer spectrum computation (5000 wavelengths)
  * - Pass 3 (averageSpectrum): GPU averaging over circular region
  */
 
@@ -110,6 +105,189 @@ export interface PassTiming {
   duration: number;
 }
 
+// ============================================================================
+// DEBUG LAYER ORDER INVESTIGATION
+// ============================================================================
+
+/**
+ * Debug data captured for a single layer during processing
+ */
+export interface DebugLayerData {
+  layerIndex: number;
+  shapeCount: number;
+  shapesBufferSize: number;       // Actual buffer size in bytes
+  expectedBufferSize: number;     // Expected: shapeCount * 48
+  arrayLengthWouldReturn: number; // What arrayLength(&shapes) would return in shader
+  shapes: Array<{name: string, layer: number, temperature: number, materialIndex: number}>;
+  beforeAbsorption: {buffer: string, sampleValues: number[]};
+  afterAbsorption: {buffer: string, sampleValues: number[]};
+  afterCombine: {buffer: string, sampleValues: number[]};
+}
+
+/**
+ * Complete debug report for layer order investigation
+ */
+export interface DebugReport {
+  timestamp: string;
+  testCase: string;  // e.g., "hot_square", "hot_circle"
+  testPixel: {x: number, y: number};
+  backgroundMode: string;
+  enableEmission: boolean;
+  shapeConfig: Array<{name: string, layer: number, position: [number, number], temperature: number}>;
+  layerOrder: number[];  // e.g., [0, 1, 2, 3]
+  layers: DebugLayerData[];
+  finalSpectralInput: number[];  // Sample values before integration
+  finalRGB?: {r: number, g: number, b: number};  // At test pixel (if available)
+  spectralPlotValues?: number[];  // First 100 wavelengths (if available)
+}
+
+/**
+ * Debug collector for layer order investigation
+ */
+export class DebugCollector {
+  public enabled: boolean = false;
+  public testPixelX: number = 150;
+  public testPixelY: number = 180;
+  
+  public currentReport: Partial<DebugReport> | null = null;  // Made public for external clear
+  private allReports: DebugReport[] = [];
+  
+  /**
+   * Start collecting debug data for a new test case
+   */
+  startCapture(testCase: string, backgroundMode: string, enableEmission: boolean, shapeConfig: DebugReport['shapeConfig']): void {
+    if (!this.enabled) return;
+    
+    this.currentReport = {
+      timestamp: new Date().toISOString(),
+      testCase,
+      testPixel: { x: this.testPixelX, y: this.testPixelY },
+      backgroundMode,
+      enableEmission,
+      shapeConfig,
+      layerOrder: [],
+      layers: [],
+    };
+  }
+  
+  /**
+   * Record layer order as layers are processed
+   */
+  recordLayerOrder(layerIndices: number[]): void {
+    if (!this.enabled || !this.currentReport) return;
+    this.currentReport.layerOrder = layerIndices;
+  }
+  
+  /**
+   * Start recording data for a specific layer
+   */
+  startLayer(
+    layerIndex: number,
+    shapes: DebugLayerData['shapes'],
+    bufferInfo?: {
+      shapesBufferSize: number;
+      expectedBufferSize: number;
+      arrayLengthWouldReturn: number;
+    }
+  ): void {
+    if (!this.enabled || !this.currentReport) return;
+    
+    const layerData: DebugLayerData = {
+      layerIndex,
+      shapeCount: shapes.length,
+      shapesBufferSize: bufferInfo?.shapesBufferSize ?? 0,
+      expectedBufferSize: bufferInfo?.expectedBufferSize ?? 0,
+      arrayLengthWouldReturn: bufferInfo?.arrayLengthWouldReturn ?? 0,
+      shapes,
+      beforeAbsorption: { buffer: '', sampleValues: [] },
+      afterAbsorption: { buffer: '', sampleValues: [] },
+      afterCombine: { buffer: '', sampleValues: [] },
+    };
+    
+    this.currentReport.layers = this.currentReport.layers || [];
+    this.currentReport.layers.push(layerData);
+  }
+  
+  /**
+   * Record buffer state at a specific point
+   */
+  recordBufferState(
+    phase: 'beforeAbsorption' | 'afterAbsorption' | 'afterCombine',
+    bufferName: string,
+    sampleValues: number[]
+  ): void {
+    if (!this.enabled || !this.currentReport) return;
+    
+    const layers = this.currentReport.layers;
+    if (!layers || layers.length === 0) return;
+    
+    const currentLayer = layers[layers.length - 1];
+    currentLayer[phase] = { buffer: bufferName, sampleValues };
+  }
+  
+  /**
+   * Record final spectral input before integration
+   */
+  recordFinalSpectralInput(values: number[]): void {
+    if (!this.enabled || !this.currentReport) return;
+    this.currentReport.finalSpectralInput = values;
+  }
+  
+  /**
+   * Record final RGB output at test pixel
+   */
+  recordFinalRGB(r: number, g: number, b: number): void {
+    if (!this.enabled || !this.currentReport) return;
+    this.currentReport.finalRGB = { r, g, b };
+  }
+  
+  /**
+   * Record spectral plot values
+   */
+  recordSpectralPlotValues(values: number[]): void {
+    if (!this.enabled || !this.currentReport) return;
+    this.currentReport.spectralPlotValues = values.slice(0, 100); // First 100 wavelengths
+  }
+  
+  /**
+   * Finish capture and store the report
+   */
+  finishCapture(): DebugReport | null {
+    if (!this.enabled || !this.currentReport) return null;
+    
+    const report = this.currentReport as DebugReport;
+    this.allReports.push(report);
+    this.currentReport = null;
+    return report;
+  }
+  
+  /**
+   * Get all collected reports
+   */
+  getAllReports(): DebugReport[] {
+    return this.allReports;
+  }
+  
+  /**
+   * Clear all reports
+   */
+  clear(): void {
+    this.allReports = [];
+    this.currentReport = null;
+  }
+  
+  /**
+   * Generate combined report as JSON string
+   */
+  generateReportJSON(): string {
+    return JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      testPixel: { x: this.testPixelX, y: this.testPixelY },
+      reports: this.allReports,
+    }, null, 2);
+  }
+}
+
 /**
  * SpectralComputePipeline class
  */
@@ -133,18 +311,9 @@ export class SpectralComputePipeline {
   private blurEmissionAuraHPipeline: GPUComputePipeline | null = null;
   private blurEmissionAuraVPipeline: GPUComputePipeline | null = null;
   
-  // High-res spectrum pipelines (5000 samples, 30×30 box)
-  // SHARED ARCHITECTURE: These use the same physics as rendering via computeLayerPhysics()
-  private initBackgroundHighResPipeline: GPUComputePipeline | null = null;
-  private layerAbsorptionHighResPipeline: GPUComputePipeline | null = null;
-  private blurHorizontalHighResPipeline: GPUComputePipeline | null = null;
-  private blurVerticalHighResPipeline: GPUComputePipeline | null = null;
-  private blurTransmittedHHighResPipeline: GPUComputePipeline | null = null;  // Dual-path: blur->mask
-  private blurTransmittedVHighResPipeline: GPUComputePipeline | null = null;  // Dual-path: blur->mask
-  private combineScatteredHighResPipeline: GPUComputePipeline | null = null;
-  private blurEmissionAuraHHighResPipeline: GPUComputePipeline | null = null;
-  private blurEmissionAuraVHighResPipeline: GPUComputePipeline | null = null;
-  private finalCombineHighResPipeline: GPUComputePipeline | null = null;
+  // High-res spectrum now uses unified pipelines with mode='spectrum' params
+  // All _HighRes pipelines have been removed - use same pipelines with different params
+  private finalCombinePipeline: GPUComputePipeline | null = null;
   
   // Explicit bind group layouts (shared across all pipelines)
   // NOTE: WebGPU has a maximum of 4 bind groups
@@ -192,6 +361,9 @@ export class SpectralComputePipeline {
   // Global max intensity from last render (for plot normalization)
   private lastGlobalMaxIntensity: number = 1.0;  // Max Y (luminance) for screen
   private lastGlobalMaxSpectral: number = 1.0;   // Max spectral intensity for plot
+  
+  // Debug layer order investigation
+  public debugCollector: DebugCollector = new DebugCollector();
   
   // Textures
   private materialPaletteTexture: GPUTexture | null = null;
@@ -391,96 +563,14 @@ export class SpectralComputePipeline {
       },
     });
     
-    // High-res spectrum pipelines (5000 samples, 30×30 box)
-    // SHARED ARCHITECTURE: These use the same physics functions as the rendering pipeline
-    this.initBackgroundHighResPipeline = this.device.createComputePipeline({
-      label: 'Init Background High-Res Pipeline',
+    // High-res spectrum now uses unified pipelines with mode='spectrum' params
+    // Only finalCombine needs a separate pipeline (writes to spectrumBox)
+    this.finalCombinePipeline = this.device.createComputePipeline({
+      label: 'Final Combine Pipeline',
       layout: this.blurPipelineLayout,
       compute: {
         module: shaderModule,
-        entryPoint: 'initBackgroundSpectrum_HighRes',
-      },
-    });
-    
-    this.layerAbsorptionHighResPipeline = this.device.createComputePipeline({
-      label: 'Layer Absorption High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'applyLayerAbsorption_HighRes',
-      },
-    });
-    
-    this.blurHorizontalHighResPipeline = this.device.createComputePipeline({
-      label: 'Blur Horizontal High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'blurHorizontal_HighRes',
-      },
-    });
-    
-    this.blurVerticalHighResPipeline = this.device.createComputePipeline({
-      label: 'Blur Vertical High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'blurVertical_HighRes',
-      },
-    });
-    
-    // Dual-path scattering high-res: blur transmitted image (blur->mask path)
-    this.blurTransmittedHHighResPipeline = this.device.createComputePipeline({
-      label: 'Blur Transmitted H High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'blurTransmittedH_HighRes',
-      },
-    });
-    
-    this.blurTransmittedVHighResPipeline = this.device.createComputePipeline({
-      label: 'Blur Transmitted V High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'blurTransmittedV_HighRes',
-      },
-    });
-    
-    this.combineScatteredHighResPipeline = this.device.createComputePipeline({
-      label: 'Combine Scattered High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'combineScattered_HighRes',
-      },
-    });
-    
-    this.blurEmissionAuraHHighResPipeline = this.device.createComputePipeline({
-      label: 'Blur Emission Aura H High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'blurEmissionAuraH_HighRes',
-      },
-    });
-    
-    this.blurEmissionAuraVHighResPipeline = this.device.createComputePipeline({
-      label: 'Blur Emission Aura V High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'blurEmissionAuraV_HighRes',
-      },
-    });
-    
-    this.finalCombineHighResPipeline = this.device.createComputePipeline({
-      label: 'Final Combine High-Res Pipeline',
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: 'finalCombine_HighRes',
+        entryPoint: 'finalCombine',
       },
     });
     
@@ -675,8 +765,10 @@ export class SpectralComputePipeline {
    * Initialize spectrum box buffer for parallel spectrum computation
    */
   private initSpectrumBoxBuffer(): void {
-    // boxSize² pixels × plotResolution wavelengths × 2 bytes (f16 for reduced memory bandwidth)
-    const bufferSize = this.boxSize * this.boxSize * this.plotResolution * 2;
+    // SPECTRUM_BOX_SIZE² pixels × plotResolution wavelengths × 2 bytes (f16 for reduced memory bandwidth)
+    // Use SPECTRUM_BOX_SIZE (30) to match the high-res buffer allocation
+    const spectrumBoxSize = SpectralComputePipeline.SPECTRUM_BOX_SIZE;
+    const bufferSize = spectrumBoxSize * spectrumBoxSize * this.plotResolution * 2;
     
     this.spectrumBoxBuffer = this.device.createBuffer({
       label: 'Spectrum Box (f16)',
@@ -1090,6 +1182,72 @@ export class SpectralComputePipeline {
   }
   
   /**
+   * Debug helper to read spectral values at a specific pixel for layer order investigation
+   * Reads wavelength samples for a specific (x, y) pixel from an f16 spectral buffer
+   * 
+   * @param buffer - The f16 spectral buffer to read from
+   * @param pixelX - X coordinate of the pixel
+   * @param pixelY - Y coordinate of the pixel
+   * @param width - Buffer width (params.width for render, boxSize for spectrum)
+   * @param sampleCount - Number of wavelength samples (16 for render, 5000 for spectrum)
+   * @returns Array of f32 values for each wavelength sample
+   */
+  private async debugReadPixelSpectrum(
+    buffer: GPUBuffer,
+    pixelX: number,
+    pixelY: number,
+    width: number,
+    sampleCount: number
+  ): Promise<number[]> {
+    // Calculate byte offset for this pixel
+    // Buffer layout: (y * width + x) * sampleCount * 2 bytes (f16)
+    const pixelOffset = (pixelY * width + pixelX) * sampleCount * 2;
+    const byteSize = sampleCount * 2;
+    
+    // Ensure we don't read past buffer end
+    if (pixelOffset + byteSize > buffer.size) {
+      console.warn(`[DEBUG-LAYERS] Pixel (${pixelX}, ${pixelY}) out of bounds for buffer`);
+      return [];
+    }
+    
+    // Create readback buffer
+    const readbackBuffer = this.device.createBuffer({
+      label: `Debug Pixel Readback (${pixelX}, ${pixelY})`,
+      size: byteSize,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    
+    // Copy the specific pixel's data
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(buffer, pixelOffset, readbackBuffer, 0, byteSize);
+    this.device.queue.submit([encoder.finish()]);
+    
+    await this.device.queue.onSubmittedWorkDone();
+    await readbackBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Uint16Array(readbackBuffer.getMappedRange());
+    
+    // Convert f16 to f32
+    const f16ToF32 = (f16: number): number => {
+      const sign = (f16 >> 15) & 1;
+      const exp = (f16 >> 10) & 0x1f;
+      const frac = f16 & 0x3ff;
+      if (exp === 0) return (sign ? -1 : 1) * Math.pow(2, -14) * (frac / 1024);
+      if (exp === 31) return frac ? NaN : (sign ? -Infinity : Infinity);
+      return (sign ? -1 : 1) * Math.pow(2, exp - 15) * (1 + frac / 1024);
+    };
+    
+    const result: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+      result.push(f16ToF32(data[i]));
+    }
+    
+    readbackBuffer.unmap();
+    readbackBuffer.destroy();
+    
+    return result;
+  }
+  
+  /**
    * Destroy high-resolution spectrum buffers to free memory.
    * Called when spectrum probing is no longer needed.
    */
@@ -1143,9 +1301,9 @@ export class SpectralComputePipeline {
   private computeGlobalMaxSigma(shapes: GPUShape[]): number {
     let maxSigma = 0;
     
-    // Constants matching WGSL
-    const RAYLEIGH_BLUR_SCALE = 1e-12;
-    const MIE_BLUR_SCALE = 1e-8;
+    // Constants matching WGSL (must stay in sync with SpectralCompute.wgsl)
+    const RAYLEIGH_BLUR_SCALE = 1e-10;
+    const MIE_BLUR_SCALE = 1e-6;
     
     for (const shape of shapes) {
       const smallDensity = shape.smallParticleDensity ?? 0;
@@ -1192,6 +1350,14 @@ export class SpectralComputePipeline {
   ): Promise<{globalMaxY: number, globalMaxSpectral: number}> {
     // Sort shapes by layer
     const layerGroups = this.sortShapesByLayer(shapes);
+    
+    // DEBUG: Record layer order if debug is enabled
+    const debugEnabled = this.debugCollector.enabled;
+    if (debugEnabled) {
+      const layerOrder = Array.from(layerGroups.keys());
+      this.debugCollector.recordLayerOrder(layerOrder);
+      console.log('[DEBUG-LAYERS] Layer order:', layerOrder);
+    }
     
     // Reset spectral buffer state
     this.spectralBufferSwapped = false;
@@ -1263,6 +1429,45 @@ export class SpectralComputePipeline {
         return { globalMaxY: 1.0, globalMaxSpectral: 1.0 };
       }
       
+      // DEBUG: Start recording this layer (after buffer update so we can verify sizes)
+      if (debugEnabled) {
+        const shapeInfo = layerShapes.map(s => ({
+          name: `shape_${s.maskIndex}`,
+          layer: s.layer,
+          temperature: s.temperature,
+          materialIndex: s.materialIndex,
+        }));
+        const expectedSize = layerShapes.length * 48;
+        const actualSize = this.shapesBuffer?.size ?? 0;
+        const arrayLengthResult = actualSize / 48;
+        
+        console.log(`[DEBUG-LAYERS] Layer ${layerIndex}: shapes=${layerShapes.length}, ` +
+          `bufferSize=${actualSize}, expected=${expectedSize}, ` +
+          `arrayLength=${arrayLengthResult}, match=${actualSize === expectedSize}`);
+        
+        this.debugCollector.startLayer(layerIndex, shapeInfo, {
+          shapesBufferSize: actualSize,
+          expectedBufferSize: expectedSize,
+          arrayLengthWouldReturn: arrayLengthResult,
+        });
+      }
+      
+      // DEBUG: Capture spectralInput BEFORE absorption (what this layer receives from previous)
+      if (debugEnabled) {
+        await this.device.queue.onSubmittedWorkDone();
+        const inputBuffer = this.spectralBufferSwapped ? this.spectralBufferB! : this.spectralBufferA!;
+        const inputValues = await this.debugReadPixelSpectrum(
+          inputBuffer,
+          this.debugCollector.testPixelX,
+          this.debugCollector.testPixelY,
+          params.width,
+          SpectralComputePipeline.SPECTRAL_SAMPLES
+        );
+        this.debugCollector.recordBufferState('beforeAbsorption', 
+          this.spectralBufferSwapped ? 'BufferB' : 'BufferA', inputValues);
+        console.log(`[DEBUG-LAYERS] Layer ${layerIndex} input (first 4):`, inputValues.slice(0, 4).map(v => v.toExponential(3)));
+      }
+      
       // Apply layer absorption/emission
       // Reads from spectralInput, writes to:
       // - spectralOutput: transmitted + direct emission
@@ -1278,60 +1483,76 @@ export class SpectralComputePipeline {
       absPass.end();
       this.device.queue.submit([absEncoder.finish()]);
       
+      // DEBUG: Capture spectralOutput AFTER absorption (transmitted + emission)
+      if (debugEnabled) {
+        await this.device.queue.onSubmittedWorkDone();
+        const outputBuffer = this.spectralBufferSwapped ? this.spectralBufferA! : this.spectralBufferB!;
+        const outputValues = await this.debugReadPixelSpectrum(
+          outputBuffer,
+          this.debugCollector.testPixelX,
+          this.debugCollector.testPixelY,
+          params.width,
+          SpectralComputePipeline.SPECTRAL_SAMPLES
+        );
+        this.debugCollector.recordBufferState('afterAbsorption',
+          this.spectralBufferSwapped ? 'BufferA' : 'BufferB', outputValues);
+        console.log(`[DEBUG-LAYERS] Layer ${layerIndex} after absorption (first 4):`, outputValues.slice(0, 4).map(v => v.toExponential(3)));
+      }
+      
       // === Dual-path scattering blur ===
       // Path 1 (blur→mask): Blur full transmitted image, background bleeds INTO shapes
       // Path 2 (mask→blur): Blur aura source, shape light bleeds OUT
-      if (layerMaxSigma > 0) {
-        // Path 1: Blur full transmitted image
-        // blurTransmittedH: spectralOutput → spectralInput (H-blurred)
-        const blurTransHEncoder = this.device.createCommandEncoder();
-        const blurTransHPass = blurTransHEncoder.beginComputePass();
-        blurTransHPass.setPipeline(this.blurTransmittedHPipeline!);
-        blurTransHPass.setBindGroup(0, this.bindGroup0!);
-        blurTransHPass.setBindGroup(1, this.bindGroup1!);
-        blurTransHPass.setBindGroup(2, this.bindGroup2!);
-        blurTransHPass.setBindGroup(3, this.bindGroup3!);
-        blurTransHPass.dispatchWorkgroups(Math.ceil(params.width / 256), params.height);
-        blurTransHPass.end();
-        this.device.queue.submit([blurTransHEncoder.finish()]);
-        
-        // blurTransmittedV: spectralInput → emissionAura (blurred full, temp storage)
-        const blurTransVEncoder = this.device.createCommandEncoder();
-        const blurTransVPass = blurTransVEncoder.beginComputePass();
-        blurTransVPass.setPipeline(this.blurTransmittedVPipeline!);
-        blurTransVPass.setBindGroup(0, this.bindGroup0!);
-        blurTransVPass.setBindGroup(1, this.bindGroup1!);
-        blurTransVPass.setBindGroup(2, this.bindGroup2!);
-        blurTransVPass.setBindGroup(3, this.bindGroup3!);
-        blurTransVPass.dispatchWorkgroups(params.width, Math.ceil(params.height / 256));
-        blurTransVPass.end();
-        this.device.queue.submit([blurTransVEncoder.finish()]);
-        
-        // Path 2: Blur aura source (already computed in absorption pass)
-        // blurHorizontal: scatterSource → spectralInput (H-blurred aura)
-        const hBlurEncoder = this.device.createCommandEncoder();
-        const hBlurPass = hBlurEncoder.beginComputePass();
-        hBlurPass.setPipeline(this.blurHorizontalPipeline!);
-        hBlurPass.setBindGroup(0, this.bindGroup0!);
-        hBlurPass.setBindGroup(1, this.bindGroup1!);
-        hBlurPass.setBindGroup(2, this.bindGroup2!);
-        hBlurPass.setBindGroup(3, this.bindGroup3!);
-        hBlurPass.dispatchWorkgroups(Math.ceil(params.width / 256), params.height);
-        hBlurPass.end();
-        this.device.queue.submit([hBlurEncoder.finish()]);
-        
-        // blurVertical: spectralInput → scatterSource (blurred aura)
-        const vBlurEncoder = this.device.createCommandEncoder();
-        const vBlurPass = vBlurEncoder.beginComputePass();
-        vBlurPass.setPipeline(this.blurVerticalPipeline!);
-        vBlurPass.setBindGroup(0, this.bindGroup0!);
-        vBlurPass.setBindGroup(1, this.bindGroup1!);
-        vBlurPass.setBindGroup(2, this.bindGroup2!);
-        vBlurPass.setBindGroup(3, this.bindGroup3!);
-        vBlurPass.dispatchWorkgroups(params.width, Math.ceil(params.height / 256));
-        vBlurPass.end();
-        this.device.queue.submit([vBlurEncoder.finish()]);
-      }
+      // Always run blur passes - shader handles sigma=0 by copying (sets up buffers for combine)
+      
+      // Path 1: Blur full transmitted image
+      // blurTransmittedH: spectralOutput → spectralInput (H-blurred)
+      const blurTransHEncoder = this.device.createCommandEncoder();
+      const blurTransHPass = blurTransHEncoder.beginComputePass();
+      blurTransHPass.setPipeline(this.blurTransmittedHPipeline!);
+      blurTransHPass.setBindGroup(0, this.bindGroup0!);
+      blurTransHPass.setBindGroup(1, this.bindGroup1!);
+      blurTransHPass.setBindGroup(2, this.bindGroup2!);
+      blurTransHPass.setBindGroup(3, this.bindGroup3!);
+      blurTransHPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      blurTransHPass.end();
+      this.device.queue.submit([blurTransHEncoder.finish()]);
+      
+      // blurTransmittedV: spectralInput → emissionAura (blurred full, temp storage)
+      const blurTransVEncoder = this.device.createCommandEncoder();
+      const blurTransVPass = blurTransVEncoder.beginComputePass();
+      blurTransVPass.setPipeline(this.blurTransmittedVPipeline!);
+      blurTransVPass.setBindGroup(0, this.bindGroup0!);
+      blurTransVPass.setBindGroup(1, this.bindGroup1!);
+      blurTransVPass.setBindGroup(2, this.bindGroup2!);
+      blurTransVPass.setBindGroup(3, this.bindGroup3!);
+      blurTransVPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      blurTransVPass.end();
+      this.device.queue.submit([blurTransVEncoder.finish()]);
+      
+      // Path 2: Blur aura source (already computed in absorption pass)
+      // blurHorizontal: scatterSource → spectralInput (H-blurred aura)
+      const hBlurEncoder = this.device.createCommandEncoder();
+      const hBlurPass = hBlurEncoder.beginComputePass();
+      hBlurPass.setPipeline(this.blurHorizontalPipeline!);
+      hBlurPass.setBindGroup(0, this.bindGroup0!);
+      hBlurPass.setBindGroup(1, this.bindGroup1!);
+      hBlurPass.setBindGroup(2, this.bindGroup2!);
+      hBlurPass.setBindGroup(3, this.bindGroup3!);
+      hBlurPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      hBlurPass.end();
+      this.device.queue.submit([hBlurEncoder.finish()]);
+      
+      // blurVertical: spectralInput → scatterSource (blurred aura)
+      const vBlurEncoder = this.device.createCommandEncoder();
+      const vBlurPass = vBlurEncoder.beginComputePass();
+      vBlurPass.setPipeline(this.blurVerticalPipeline!);
+      vBlurPass.setBindGroup(0, this.bindGroup0!);
+      vBlurPass.setBindGroup(1, this.bindGroup1!);
+      vBlurPass.setBindGroup(2, this.bindGroup2!);
+      vBlurPass.setBindGroup(3, this.bindGroup3!);
+      vBlurPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      vBlurPass.end();
+      this.device.queue.submit([vBlurEncoder.finish()]);
       
       // Note: Emission aura buffer is now used for blurred transmitted (dual-path scatter).
       // Emission aura blur is currently disabled in favor of the new scattering model.
@@ -1350,6 +1571,37 @@ export class SpectralComputePipeline {
       combinePass.dispatchWorkgroups(workgroupsX, workgroupsY);
       combinePass.end();
       this.device.queue.submit([combineEncoder.finish()]);
+      
+      // DEBUG: Capture spectralInput AFTER combine (final result for this layer)
+      if (debugEnabled) {
+        await this.device.queue.onSubmittedWorkDone();
+        const combineBuffer = this.spectralBufferSwapped ? this.spectralBufferB! : this.spectralBufferA!;
+        const combineValues = await this.debugReadPixelSpectrum(
+          combineBuffer,
+          this.debugCollector.testPixelX,
+          this.debugCollector.testPixelY,
+          params.width,
+          SpectralComputePipeline.SPECTRAL_SAMPLES
+        );
+        this.debugCollector.recordBufferState('afterCombine',
+          this.spectralBufferSwapped ? 'BufferB' : 'BufferA', combineValues);
+        console.log(`[DEBUG-LAYERS] Layer ${layerIndex} after combine (first 4):`, combineValues.slice(0, 4).map(v => v.toExponential(3)));
+      }
+    }
+    
+    // DEBUG: Capture final spectralInput before integration
+    if (debugEnabled) {
+      await this.device.queue.onSubmittedWorkDone();
+      const finalBuffer = this.spectralBufferSwapped ? this.spectralBufferB! : this.spectralBufferA!;
+      const finalValues = await this.debugReadPixelSpectrum(
+        finalBuffer,
+        this.debugCollector.testPixelX,
+        this.debugCollector.testPixelY,
+        params.width,
+        SpectralComputePipeline.SPECTRAL_SAMPLES
+      );
+      this.debugCollector.recordFinalSpectralInput(finalValues);
+      console.log('[DEBUG-LAYERS] Final spectral input (first 4):', finalValues.slice(0, 4).map(v => v.toExponential(3)));
     }
     
     // Restore full shapes buffer for spectrum integration
@@ -1491,24 +1743,22 @@ export class SpectralComputePipeline {
     // SHARED ARCHITECTURE: This pipeline mirrors the rendering pipeline exactly,
     // using the same physics via computeLayerPhysics(), but at 5000 wavelengths.
     if (isSampling && this.averagePipeline) {
+      const spectrumBoxSize = SpectralComputePipeline.SPECTRUM_BOX_SIZE;
       console.log('[DEBUG-SPECTRUM] === Starting high-res spectrum pipeline ===');
       console.log('[DEBUG-SPECTRUM] Sample position:', params.sampleX, params.sampleY);
-      console.log('[DEBUG-SPECTRUM] Box size (this.boxSize):', this.boxSize, 'Plot resolution:', this.plotResolution);
-      console.log('[DEBUG-SPECTRUM] SPECTRUM_BOX_SIZE (static):', SpectralComputePipeline.SPECTRUM_BOX_SIZE);
-      console.log('[DEBUG-SPECTRUM] params.boxSize:', params.boxSize, 'params.plotResolution:', params.plotResolution);
+      console.log('[DEBUG-SPECTRUM] SPECTRUM_BOX_SIZE:', spectrumBoxSize, 'Plot resolution:', this.plotResolution);
       
-      // Calculate expected pixel positions
-      const halfBox = Math.floor(this.boxSize / 2);
+      // Calculate expected pixel positions using SPECTRUM_BOX_SIZE
+      const halfBox = Math.floor(spectrumBoxSize / 2);
       const pixel00Screen = { x: (params.sampleX ?? 0) - halfBox, y: (params.sampleY ?? 0) - halfBox };
       console.log('[DEBUG-SPECTRUM] Pixel (0,0) screen pos:', pixel00Screen, 'inBounds:', 
         pixel00Screen.x >= 0 && pixel00Screen.x < params.width && pixel00Screen.y >= 0 && pixel00Screen.y < params.height);
       
       const pass2Start = performance.now();
       
-      // CRITICAL: Update params buffer with correct values for high-res pipeline
-      // This ensures boxSize, plotResolution, sampleX, sampleY are set correctly
-      this.updateParamsBuffer(params, 0, 1.0, 0);
-      console.log('[DEBUG-SPECTRUM] Updated params buffer for high-res pipeline');
+      // CRITICAL: Update params buffer with spectrum mode (uses SPECTRUM_BOX_SIZE)
+      this.updateParamsBuffer(params, 0, 1.0, 0, 'spectrum');
+      console.log('[DEBUG-SPECTRUM] Updated params buffer for high-res pipeline (mode=spectrum)');
       
       // Ensure high-res buffers are allocated
       this.ensureHighResBuffers();
@@ -1541,9 +1791,11 @@ export class SpectralComputePipeline {
         // Skip to end of spectrum computation
       } else {
       
-      const boxWorkgroupsX = Math.ceil(this.boxSize / 8);
-      const boxWorkgroupsY = Math.ceil(this.boxSize / 8);
-      console.log('[DEBUG-SPECTRUM] Workgroups:', boxWorkgroupsX, 'x', boxWorkgroupsY);
+      // Use SPECTRUM_BOX_SIZE (30) for workgroup calculation, not this.boxSize
+      const spectrumBoxSize = SpectralComputePipeline.SPECTRUM_BOX_SIZE;
+      const boxWorkgroupsX = Math.ceil(spectrumBoxSize / 8);
+      const boxWorkgroupsY = Math.ceil(spectrumBoxSize / 8);
+      console.log('[DEBUG-SPECTRUM] Workgroups:', boxWorkgroupsX, 'x', boxWorkgroupsY, '(boxSize:', spectrumBoxSize, ')');
       
       let dispatchCount = 0;
       // Helper to dispatch a high-res pass - captures bind groups at dispatch time
@@ -1571,12 +1823,20 @@ export class SpectralComputePipeline {
         this.device.queue.submit([encoder.finish()]);
       };
       
-      // Step 1: Initialize high-res background spectrum
-      dispatchHighRes(this.initBackgroundHighResPipeline!, 'High-Res Init Background');
+      // Step 1: Initialize high-res background spectrum (uses unified pipeline with mode='spectrum')
+      this.updateParamsBuffer(params, 0, 1.0, 0, 'spectrum');
+      this.bindGroup0 = null;
+      this.ensureBindGroups();
+      dispatchHighRes(this.initBackgroundPipeline!, 'High-Res Init Background');
       
-      // DEBUG: Check if background was written to input buffer (A when not swapped)
+      // Swap buffers: output becomes input for first layer (matches rendering pipeline)
+      this.swapHighResSpectralBuffers();
+      this.bindGroup0 = null;
+      this.ensureBindGroups();
+      
+      // DEBUG: Check if background was written to input buffer (now swapped)
       await this.device.queue.onSubmittedWorkDone();
-      // Init writes to spectralInput which is buffer A when not swapped
+      // After swap, spectralInput contains the background
       const inputBufferAfterInit = this.spectrumHighResSwapped ? this.spectrumHighResB! : this.spectrumHighResA!;
       console.log('[DEBUG-SPECTRUM] Reading from buffer:', inputBufferAfterInit.label, 'size:', inputBufferAfterInit.size);
       await this.debugReadbackBuffer(inputBufferAfterInit, 'AFTER init - shader write (should have background)');
@@ -1596,9 +1856,9 @@ export class SpectralComputePipeline {
         const layerMaxSigma = this.computeGlobalMaxSigma(layerShapes);
         console.log(`[DEBUG-SPECTRUM] Layer ${layer}: scatter sigma = ${layerMaxSigma}`);
         
-        // Update shapes and params buffers (mirrors rendering pipeline)
+        // Update shapes and params buffers (uses unified pipeline with mode='spectrum')
         this.updateShapesBuffer(layerShapes);
-        this.updateParamsBuffer(params, 0, 1.0, layerMaxSigma);
+        this.updateParamsBuffer(params, 0, 1.0, layerMaxSigma, 'spectrum');
         this.bindGroup0 = null; // Invalidate since shapes/params changed
         this.ensureBindGroups();
         
@@ -1608,8 +1868,8 @@ export class SpectralComputePipeline {
         console.log(`[DEBUG-SPECTRUM] BEFORE Layer ${layer} absorption, spectralInput=${inputBeforeAbs.label}, swapped=${this.spectrumHighResSwapped}`);
         await this.debugReadbackBuffer(inputBeforeAbs, `spectralInput BEFORE Layer ${layer} absorption`);
         
-        // Apply layer absorption/emission (uses SHARED computeLayerPhysics)
-        dispatchHighRes(this.layerAbsorptionHighResPipeline!, `High-Res Layer ${layer} Absorption`);
+        // Apply layer absorption/emission (uses unified pipeline with spectrum params)
+        dispatchHighRes(this.layerAbsorptionPipeline!, `High-Res Layer ${layer} Absorption`);
         
         // DEBUG: Check buffer contents after absorption
         await this.device.queue.onSubmittedWorkDone();
@@ -1618,29 +1878,23 @@ export class SpectralComputePipeline {
         console.log(`[DEBUG-SPECTRUM] After Layer ${layer} absorption, swapped=${this.spectrumHighResSwapped}`);
         await this.debugReadbackBuffer(outputAfterAbs, `spectralOutput after Layer ${layer} absorption`);
         
-        // Check if this layer has scattering
-        const hasScattering = layerShapes.some(s => 
-          (s.smallParticleDensity ?? 0) > 0 || (s.largeParticleDensity ?? 0) > 0
-        );
+        // === Dual-path scattering blur (uses unified pipelines with spectrum params) ===
+        // Always run blur passes - shader handles sigma=0 by copying (sets up buffers for combine)
+        // Path 1 (blur→mask): Blur full transmitted, background bleeds INTO shapes
+        dispatchHighRes(this.blurTransmittedHPipeline!, `High-Res Layer ${layer} BlurTrans H`);
+        dispatchHighRes(this.blurTransmittedVPipeline!, `High-Res Layer ${layer} BlurTrans V`);
         
-        if (hasScattering) {
-          // === Dual-path scattering blur ===
-          // Path 1 (blur→mask): Blur full transmitted, background bleeds INTO shapes
-          dispatchHighRes(this.blurTransmittedHHighResPipeline!, `High-Res Layer ${layer} BlurTrans H`);
-          dispatchHighRes(this.blurTransmittedVHighResPipeline!, `High-Res Layer ${layer} BlurTrans V`);
-          
-          // Path 2 (mask→blur): Blur aura source, shape light bleeds OUT
-          dispatchHighRes(this.blurHorizontalHighResPipeline!, `High-Res Layer ${layer} Blur H`);
-          dispatchHighRes(this.blurVerticalHighResPipeline!, `High-Res Layer ${layer} Blur V`);
-        }
+        // Path 2 (mask→blur): Blur aura source, shape light bleeds OUT
+        dispatchHighRes(this.blurHorizontalPipeline!, `High-Res Layer ${layer} Blur H`);
+        dispatchHighRes(this.blurVerticalPipeline!, `High-Res Layer ${layer} Blur V`);
         
         // Note: Emission aura buffer is now used for blurred transmitted (dual-path scatter).
         // Emission aura blur is currently disabled in favor of the new scattering model.
         const emissionAuraSigma = params.emissionAuraSigma ?? 3.0;
         void emissionAuraSigma; // Suppress unused warning
         
-        // Combine scattered with transmitted (AFTER emission blur, so emissionAura is ready)
-        dispatchHighRes(this.combineScatteredHighResPipeline!, `High-Res Layer ${layer} Combine`);
+        // Combine scattered with transmitted (uses unified pipeline with spectrum params)
+        dispatchHighRes(this.combineScatteredPipeline!, `High-Res Layer ${layer} Combine`);
         
         // DEBUG: Check buffer contents after each layer's combine
         await this.device.queue.onSubmittedWorkDone();
@@ -1650,18 +1904,9 @@ export class SpectralComputePipeline {
         await this.debugReadbackBuffer(inputAfterCombine, `spectralInput after Layer ${layer} combine`);
         await this.debugReadbackBuffer(outputAfterCombine, `spectralOutput after Layer ${layer} combine`);
         
-        // Swap high-res buffers for next layer (but NOT after the last layer)
-        // After combine writes to spectralOutput, swap makes it spectralInput for next layer
-        // For the last layer, we skip the swap so finalCombine reads from spectralOutput directly
-        if (!isLastLayer) {
-          console.log(`[DEBUG-SPECTRUM] Layer ${layer} done, swapping buffers. Before: swapped=${this.spectrumHighResSwapped}`);
-          this.swapHighResSpectralBuffers();
-          console.log(`[DEBUG-SPECTRUM] After swap: swapped=${this.spectrumHighResSwapped}`);
-          this.bindGroup0 = null;
-          this.ensureBindGroups();
-        } else {
-          console.log(`[DEBUG-SPECTRUM] Layer ${layer} done (last layer, no swap)`);
-        }
+        // No swap needed between layers - combine writes to spectralInput,
+        // and next layer absorption reads from spectralInput
+        console.log(`[DEBUG-SPECTRUM] Layer ${layer} done`);
       }
       
       // Restore full shapes for bind group
@@ -1678,7 +1923,7 @@ export class SpectralComputePipeline {
       await this.debugReadbackBuffer(inputBeforeFinal, 'spectralInput before Final');
       await this.debugReadbackBuffer(outputBeforeFinal, 'spectralOutput before Final');
       
-      dispatchHighRes(this.finalCombineHighResPipeline!, 'High-Res Final Combine');
+      dispatchHighRes(this.finalCombinePipeline!, 'High-Res Final Combine');
       await this.device.queue.onSubmittedWorkDone();
       
       // DEBUG: Check spectrumBox after final combine
@@ -1732,9 +1977,13 @@ export class SpectralComputePipeline {
       // PASS 3: Average spectrum (GPU reduction)
       console.log('[DEBUG-SPECTRUM] === Starting averaging pass ===');
       console.log('[DEBUG-SPECTRUM] useHighResBuffers:', this.useHighResBuffers);
-      console.log('[DEBUG-SPECTRUM] plotResolution:', this.plotResolution, 'boxSize:', this.boxSize);
+      console.log('[DEBUG-SPECTRUM] plotResolution:', this.plotResolution);
       
       const pass3Start = performance.now();
+      
+      // Update params with spectrum mode so averageSpectrum has correct bufferWidth (SPECTRUM_BOX_SIZE)
+      this.updateParamsBuffer(params, 0, 1.0, 0, 'spectrum');
+      this.bindGroup0 = null;
       this.ensureBindGroups();
       
       const avgWorkgroups = Math.ceil(this.plotResolution / 256);
@@ -1907,23 +2156,39 @@ export class SpectralComputePipeline {
    * - globalMaxScatterSigma: f32 (64)
    * - emissionSpreadFactor: f32 (68)
    * - emissionAuraSigma: f32 (72)
-   * Total: 80 bytes (must be aligned to 16 bytes)
+   * - bufferWidth: u32 (76)      // Unified: width for render, boxSize for spectrum
+   * - bufferHeight: u32 (80)     // Unified: height for render, boxSize for spectrum
+   * - sampleCount: u32 (84)      // Unified: 16 for render, plotResolution for spectrum
+   * - coordOffsetX: i32 (88)     // Unified: 0 for render, sampleX - boxSize/2 for spectrum
+   * - coordOffsetY: i32 (92)     // Unified: 0 for render, sampleY - boxSize/2 for spectrum
+   * Total: 96 bytes (aligned to 16 bytes)
    */
   private updateParamsBuffer(
     params: ComputeParams,
     isNormalizationPass: number = 0,
     globalMaxIntensity: number = 1.0,
-    globalMaxScatterSigma: number = 0.0
+    globalMaxScatterSigma: number = 0.0,
+    mode: 'render' | 'spectrum' = 'render'
   ): void {
     if (!this.paramsBuffer) {
-      this.paramsBuffer = createUniformBuffer(this.device, 80);
+      this.paramsBuffer = createUniformBuffer(this.device, 96);
     }
     
     const backgroundModeIndex =
       params.backgroundMode === 'normal' ? 0 :
       params.backgroundMode === 'uv' ? 1 : 2;
     
-    const data = new ArrayBuffer(80);
+    // Compute unified params based on mode
+    // For spectrum mode, use SPECTRUM_BOX_SIZE (30) - the buffer allocation size
+    const isSpectrum = mode === 'spectrum';
+    const spectrumBoxSize = SpectralComputePipeline.SPECTRUM_BOX_SIZE;
+    const bufferWidth = isSpectrum ? spectrumBoxSize : params.width;
+    const bufferHeight = isSpectrum ? spectrumBoxSize : params.height;
+    const sampleCount = isSpectrum ? (params.plotResolution ?? 5000) : 16;
+    const coordOffsetX = isSpectrum ? (params.sampleX ?? 0) - Math.floor(spectrumBoxSize / 2) : 0;
+    const coordOffsetY = isSpectrum ? (params.sampleY ?? 0) - Math.floor(spectrumBoxSize / 2) : 0;
+    
+    const data = new ArrayBuffer(96);
     const view = new DataView(data);
     
     view.setUint32(0, params.width, true);
@@ -1945,6 +2210,12 @@ export class SpectralComputePipeline {
     view.setFloat32(64, globalMaxScatterSigma, true);
     view.setFloat32(68, params.emissionSpreadFactor ?? 0.3, true);
     view.setFloat32(72, params.emissionAuraSigma ?? 3.0, true);
+    // Unified pipeline params
+    view.setUint32(76, bufferWidth, true);
+    view.setUint32(80, bufferHeight, true);
+    view.setUint32(84, sampleCount, true);
+    view.setInt32(88, coordOffsetX, true);
+    view.setInt32(92, coordOffsetY, true);
     
     // Debug logging for spectrum params
     if ((params.sampleX ?? -1) >= 0) {
@@ -1958,6 +2229,12 @@ export class SpectralComputePipeline {
         averageRadius: params.averageRadius ?? 5,
         enableEmission: params.enableEmission,
         backgroundMode: params.backgroundMode,
+        mode,
+        bufferWidth,
+        bufferHeight,
+        sampleCount,
+        coordOffsetX,
+        coordOffsetY,
       });
     }
     
@@ -1998,8 +2275,10 @@ export class SpectralComputePipeline {
       view.setFloat32(offset + 44, shape.largeParticleDensity ?? 0, true);
     }
     
-    // Recreate buffer if size changed
-    if (!this.shapesBuffer || this.shapesBuffer.size < data.byteLength) {
+    // Recreate buffer if size changed IN EITHER DIRECTION
+    // This ensures arrayLength(&shapes) always returns the correct count
+    // and prevents stale shape data from affecting layer processing
+    if (!this.shapesBuffer || this.shapesBuffer.size !== data.byteLength) {
       this.shapesBuffer?.destroy();
       this.shapesBuffer = this.device.createBuffer({
         label: 'Shapes',
