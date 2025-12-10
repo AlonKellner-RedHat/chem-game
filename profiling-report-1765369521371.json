@@ -1,0 +1,2076 @@
+{
+  "timestamp": "2025-12-10T12:25:21.369Z",
+  "config": {
+    "boxSize": 11,
+    "plotResolution": 5000,
+    "averageRadius": 5,
+    "colorResolution": 16,
+    "screenWidth": 888,
+    "screenHeight": 500
+  },
+  "summary": {
+    "avgFPS": 2.232583061427965,
+    "avgFrameTime": 447.9116666595141,
+    "avgPass0": 48.413333322604494,
+    "avgPass1": 0,
+    "avgPass2": 382.0133333404859,
+    "avgPass3": 5.363333328564962,
+    "avgReadback": 6.92000000278155,
+    "cacheHitRate": 0,
+    "minFrameTime": 434.39999997615814,
+    "maxFrameTime": 544.2999999523163
+  },
+  "frames": [
+    {
+      "frameNumber": 379,
+      "timestamp": 33859.10000002384,
+      "frameTime": 442.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 33416.700000047684,
+          "endTime": 33463.89999997616,
+          "duration": 47.199999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 33464,
+          "endTime": 33843.5,
+          "duration": 379.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 33843.60000002384,
+          "endTime": 33848.89999997616,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 380,
+      "timestamp": 34301.300000071526,
+      "frameTime": 441.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 33859.89999997616,
+          "endTime": 33906.89999997616,
+          "duration": 47
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 33907,
+          "endTime": 34284.89999997616,
+          "duration": 377.89999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 34284.89999997616,
+          "endTime": 34290.10000002384,
+          "duration": 5.200000047683716
+        }
+      ],
+      "readbackTime": 6.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 381,
+      "timestamp": 34743.39999997616,
+      "frameTime": 441.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 34302,
+          "endTime": 34348.5,
+          "duration": 46.5
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 34348.60000002384,
+          "endTime": 34728.200000047684,
+          "duration": 379.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 34728.200000047684,
+          "endTime": 34733.700000047684,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.199999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 382,
+      "timestamp": 35182,
+      "frameTime": 437.89999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 34744.10000002384,
+          "endTime": 34790.39999997616,
+          "duration": 46.299999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 34790.60000002384,
+          "endTime": 35167.200000047684,
+          "duration": 376.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 35167.300000071526,
+          "endTime": 35172.300000071526,
+          "duration": 5
+        }
+      ],
+      "readbackTime": 6.199999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 383,
+      "timestamp": 35623.300000071526,
+      "frameTime": 440.8000000715256,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 35182.60000002384,
+          "endTime": 35228.39999997616,
+          "duration": 45.799999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 35228.5,
+          "endTime": 35608.10000002384,
+          "duration": 379.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 35608.200000047684,
+          "endTime": 35613.60000002384,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 6.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 384,
+      "timestamp": 36067.10000002384,
+      "frameTime": 443,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 35624.10000002384,
+          "endTime": 35670.39999997616,
+          "duration": 46.299999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 35670.39999997616,
+          "endTime": 36050.39999997616,
+          "duration": 380
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 36050.5,
+          "endTime": 36055.800000071526,
+          "duration": 5.300000071525574
+        }
+      ],
+      "readbackTime": 6.099999904632568,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 385,
+      "timestamp": 36506.39999997616,
+      "frameTime": 438.6999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 36067.700000047684,
+          "endTime": 36113.89999997616,
+          "duration": 46.199999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 36113.89999997616,
+          "endTime": 36490.39999997616,
+          "duration": 376.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 36490.39999997616,
+          "endTime": 36495.700000047684,
+          "duration": 5.300000071525574
+        }
+      ],
+      "readbackTime": 6.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 386,
+      "timestamp": 36953.200000047684,
+      "frameTime": 446.10000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 36507.10000002384,
+          "endTime": 36554.700000047684,
+          "duration": 47.60000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 36554.800000071526,
+          "endTime": 36937.200000047684,
+          "duration": 382.39999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 36937.200000047684,
+          "endTime": 36942.60000002384,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 6.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 387,
+      "timestamp": 37398.39999997616,
+      "frameTime": 444.6999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 36953.800000071526,
+          "endTime": 37000.5,
+          "duration": 46.699999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 37000.60000002384,
+          "endTime": 37382.10000002384,
+          "duration": 381.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 37382.10000002384,
+          "endTime": 37387.60000002384,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.5,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 388,
+      "timestamp": 37840.5,
+      "frameTime": 441.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 37399.10000002384,
+          "endTime": 37446.300000071526,
+          "duration": 47.200000047683716
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 37446.39999997616,
+          "endTime": 37822.60000002384,
+          "duration": 376.2000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 37822.60000002384,
+          "endTime": 37827.700000047684,
+          "duration": 5.100000023841858
+        }
+      ],
+      "readbackTime": 6.199999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 389,
+      "timestamp": 38280.60000002384,
+      "frameTime": 439.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 37841.200000047684,
+          "endTime": 37887.39999997616,
+          "duration": 46.199999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 37887.39999997616,
+          "endTime": 38264.39999997616,
+          "duration": 377
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 38264.5,
+          "endTime": 38270.10000002384,
+          "duration": 5.600000023841858
+        }
+      ],
+      "readbackTime": 6.600000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 390,
+      "timestamp": 38720.700000047684,
+      "frameTime": 439.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 38281.300000071526,
+          "endTime": 38328.700000047684,
+          "duration": 47.39999997615814
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 38328.89999997616,
+          "endTime": 38705.800000071526,
+          "duration": 376.90000009536743
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 38705.89999997616,
+          "endTime": 38711.300000071526,
+          "duration": 5.400000095367432
+        }
+      ],
+      "readbackTime": 6,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 391,
+      "timestamp": 39159.700000047684,
+      "frameTime": 438.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 38721.300000071526,
+          "endTime": 38768.39999997616,
+          "duration": 47.09999990463257
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 38768.39999997616,
+          "endTime": 39144.39999997616,
+          "duration": 376
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 39144.39999997616,
+          "endTime": 39149.800000071526,
+          "duration": 5.400000095367432
+        }
+      ],
+      "readbackTime": 6,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 392,
+      "timestamp": 39603.89999997616,
+      "frameTime": 443.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 39160.39999997616,
+          "endTime": 39206.800000071526,
+          "duration": 46.40000009536743
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 39206.800000071526,
+          "endTime": 39587,
+          "duration": 380.1999999284744
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 39587.10000002384,
+          "endTime": 39592.39999997616,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 393,
+      "timestamp": 40106.10000002384,
+      "frameTime": 501.60000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 39604.60000002384,
+          "endTime": 39651.39999997616,
+          "duration": 46.799999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 39651.39999997616,
+          "endTime": 40075.800000071526,
+          "duration": 424.40000009536743
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 40075.89999997616,
+          "endTime": 40081.700000047684,
+          "duration": 5.800000071525574
+        }
+      ],
+      "readbackTime": 11.699999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 394,
+      "timestamp": 40551.89999997616,
+      "frameTime": 444,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 40107.89999997616,
+          "endTime": 40155.60000002384,
+          "duration": 47.700000047683716
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 40155.700000047684,
+          "endTime": 40536.10000002384,
+          "duration": 380.39999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 40536.10000002384,
+          "endTime": 40541.60000002384,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 395,
+      "timestamp": 40991.800000071526,
+      "frameTime": 438.90000009536743,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 40553,
+          "endTime": 40600.200000047684,
+          "duration": 47.200000047683716
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 40600.200000047684,
+          "endTime": 40976.39999997616,
+          "duration": 376.1999999284744
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 40976.39999997616,
+          "endTime": 40981.700000047684,
+          "duration": 5.300000071525574
+        }
+      ],
+      "readbackTime": 6.199999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 396,
+      "timestamp": 41431.800000071526,
+      "frameTime": 439.3000000715256,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 40992.5,
+          "endTime": 41041.800000071526,
+          "duration": 49.300000071525574
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 41041.89999997616,
+          "endTime": 41415.700000047684,
+          "duration": 373.8000000715256
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 41415.800000071526,
+          "endTime": 41421,
+          "duration": 5.199999928474426
+        }
+      ],
+      "readbackTime": 6,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 397,
+      "timestamp": 41874.89999997616,
+      "frameTime": 442.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 41432.5,
+          "endTime": 41478.89999997616,
+          "duration": 46.39999997615814
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 41479,
+          "endTime": 41859.300000071526,
+          "duration": 380.3000000715256
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 41859.300000071526,
+          "endTime": 41865.39999997616,
+          "duration": 6.099999904632568
+        }
+      ],
+      "readbackTime": 5.899999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 398,
+      "timestamp": 42313.89999997616,
+      "frameTime": 438.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 41875.5,
+          "endTime": 41921,
+          "duration": 45.5
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 41921,
+          "endTime": 42298.5,
+          "duration": 377.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 42298.60000002384,
+          "endTime": 42304,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 399,
+      "timestamp": 42768.700000047684,
+      "frameTime": 453.89999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 42314.800000071526,
+          "endTime": 42373,
+          "duration": 58.199999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 42373.200000047684,
+          "endTime": 42754.10000002384,
+          "duration": 380.89999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 42754.300000071526,
+          "endTime": 42759.5,
+          "duration": 5.199999928474426
+        }
+      ],
+      "readbackTime": 5.899999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 400,
+      "timestamp": 43208.10000002384,
+      "frameTime": 438.7000000476837,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 42769.39999997616,
+          "endTime": 42816.39999997616,
+          "duration": 47
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 42816.5,
+          "endTime": 43191.60000002384,
+          "duration": 375.10000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 43191.700000047684,
+          "endTime": 43196.89999997616,
+          "duration": 5.199999928474426
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 401,
+      "timestamp": 43654.5,
+      "frameTime": 445.6999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 43208.89999997616,
+          "endTime": 43256.300000071526,
+          "duration": 47.40000009536743
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 43256.39999997616,
+          "endTime": 43637.200000047684,
+          "duration": 380.8000000715256
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 43637.300000071526,
+          "endTime": 43642.800000071526,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.099999904632568,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 402,
+      "timestamp": 44093.60000002384,
+      "frameTime": 438.2999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 43655.300000071526,
+          "endTime": 43702.300000071526,
+          "duration": 47
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 43702.39999997616,
+          "endTime": 44078.5,
+          "duration": 376.10000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 44078.60000002384,
+          "endTime": 44083.89999997616,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 403,
+      "timestamp": 44535.700000047684,
+      "frameTime": 441.60000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 44094.10000002384,
+          "endTime": 44140.700000047684,
+          "duration": 46.60000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 44140.800000071526,
+          "endTime": 44519.60000002384,
+          "duration": 378.7999999523163
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 44519.60000002384,
+          "endTime": 44525,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 404,
+      "timestamp": 44987.10000002384,
+      "frameTime": 450.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 44536.700000047684,
+          "endTime": 44586.10000002384,
+          "duration": 49.39999997615814
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 44586.200000047684,
+          "endTime": 44970,
+          "duration": 383.7999999523163
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 44970,
+          "endTime": 44975.5,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 405,
+      "timestamp": 45424.89999997616,
+      "frameTime": 437.09999990463257,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 44987.800000071526,
+          "endTime": 45033.5,
+          "duration": 45.699999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 45033.60000002384,
+          "endTime": 45409.39999997616,
+          "duration": 375.7999999523163
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 45409.39999997616,
+          "endTime": 45414.700000047684,
+          "duration": 5.300000071525574
+        }
+      ],
+      "readbackTime": 6.299999952316284,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 406,
+      "timestamp": 45864.800000071526,
+      "frameTime": 439.3000000715256,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 45425.60000002384,
+          "endTime": 45473.700000047684,
+          "duration": 48.10000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 45473.800000071526,
+          "endTime": 45850.5,
+          "duration": 376.6999999284744
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 45850.5,
+          "endTime": 45855.60000002384,
+          "duration": 5.100000023841858
+        }
+      ],
+      "readbackTime": 6,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 407,
+      "timestamp": 46304.5,
+      "frameTime": 439.10000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 45865.39999997616,
+          "endTime": 45911.39999997616,
+          "duration": 46
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 45911.5,
+          "endTime": 46288.700000047684,
+          "duration": 377.2000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 46288.800000071526,
+          "endTime": 46293.89999997616,
+          "duration": 5.099999904632568
+        }
+      ],
+      "readbackTime": 7.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 408,
+      "timestamp": 46749.5,
+      "frameTime": 444.2999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 46305.300000071526,
+          "endTime": 46351.39999997616,
+          "duration": 46.09999990463257
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 46351.5,
+          "endTime": 46731.700000047684,
+          "duration": 380.2000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 46731.800000071526,
+          "endTime": 46737,
+          "duration": 5.199999928474426
+        }
+      ],
+      "readbackTime": 6.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 409,
+      "timestamp": 47188.39999997616,
+      "frameTime": 438.1999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 46750.200000047684,
+          "endTime": 46798,
+          "duration": 47.799999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 46798.10000002384,
+          "endTime": 47172.89999997616,
+          "duration": 374.7999999523163
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 47173,
+          "endTime": 47178.10000002384,
+          "duration": 5.100000023841858
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 410,
+      "timestamp": 47649.10000002384,
+      "frameTime": 460,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 47189.10000002384,
+          "endTime": 47236.60000002384,
+          "duration": 47.5
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 47236.700000047684,
+          "endTime": 47633.200000047684,
+          "duration": 396.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 47633.200000047684,
+          "endTime": 47638.39999997616,
+          "duration": 5.199999928474426
+        }
+      ],
+      "readbackTime": 6.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 411,
+      "timestamp": 48092.60000002384,
+      "frameTime": 442.2000000476837,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 47650.39999997616,
+          "endTime": 47699.800000071526,
+          "duration": 49.40000009536743
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 47700,
+          "endTime": 48076.10000002384,
+          "duration": 376.10000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 48076.200000047684,
+          "endTime": 48081.700000047684,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 412,
+      "timestamp": 48536.800000071526,
+      "frameTime": 443.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 48093.300000071526,
+          "endTime": 48141.39999997616,
+          "duration": 48.09999990463257
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 48141.5,
+          "endTime": 48520,
+          "duration": 378.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 48520,
+          "endTime": 48525.300000071526,
+          "duration": 5.300000071525574
+        }
+      ],
+      "readbackTime": 6.199999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 413,
+      "timestamp": 48975.89999997616,
+      "frameTime": 438.6999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 48537.300000071526,
+          "endTime": 48583.89999997616,
+          "duration": 46.59999990463257
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 48584,
+          "endTime": 48960.200000047684,
+          "duration": 376.2000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 48960.200000047684,
+          "endTime": 48965.60000002384,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 6,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 414,
+      "timestamp": 49421.10000002384,
+      "frameTime": 444.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 48976.700000047684,
+          "endTime": 49023.39999997616,
+          "duration": 46.699999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 49023.5,
+          "endTime": 49398.800000071526,
+          "duration": 375.3000000715256
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 49398.89999997616,
+          "endTime": 49404.5,
+          "duration": 5.600000023841858
+        }
+      ],
+      "readbackTime": 11.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 415,
+      "timestamp": 49881.39999997616,
+      "frameTime": 459.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 49422,
+          "endTime": 49469.10000002384,
+          "duration": 47.10000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 49469.10000002384,
+          "endTime": 49853.300000071526,
+          "duration": 384.2000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 49853.300000071526,
+          "endTime": 49858.89999997616,
+          "duration": 5.599999904632568
+        }
+      ],
+      "readbackTime": 13.700000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 416,
+      "timestamp": 50352.300000071526,
+      "frameTime": 470,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 49882.39999997616,
+          "endTime": 49937,
+          "duration": 54.60000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 49937.800000071526,
+          "endTime": 50321.200000047684,
+          "duration": 383.39999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 50321.300000071526,
+          "endTime": 50326.700000047684,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 12,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 417,
+      "timestamp": 50850.10000002384,
+      "frameTime": 490.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 50359.700000047684,
+          "endTime": 50421.700000047684,
+          "duration": 62
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 50421.800000071526,
+          "endTime": 50832.300000071526,
+          "duration": 410.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 50832.300000071526,
+          "endTime": 50837.800000071526,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.900000095367432,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 418,
+      "timestamp": 51336.39999997616,
+      "frameTime": 485.1999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 50851.300000071526,
+          "endTime": 50927.300000071526,
+          "duration": 76
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 50927.60000002384,
+          "endTime": 51310.700000047684,
+          "duration": 383.10000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 51310.800000071526,
+          "endTime": 51315.89999997616,
+          "duration": 5.099999904632568
+        }
+      ],
+      "readbackTime": 10.600000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 419,
+      "timestamp": 51792.10000002384,
+      "frameTime": 454.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 51337.700000047684,
+          "endTime": 51389.10000002384,
+          "duration": 51.39999997615814
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 51389.39999997616,
+          "endTime": 51776,
+          "duration": 386.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 51776,
+          "endTime": 51781.60000002384,
+          "duration": 5.600000023841858
+        }
+      ],
+      "readbackTime": 6.5,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 420,
+      "timestamp": 52246,
+      "frameTime": 453.10000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 51792.89999997616,
+          "endTime": 51840.5,
+          "duration": 47.60000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 51840.60000002384,
+          "endTime": 52230.10000002384,
+          "duration": 389.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 52230.10000002384,
+          "endTime": 52235.300000071526,
+          "duration": 5.200000047683716
+        }
+      ],
+      "readbackTime": 6.200000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 421,
+      "timestamp": 52690.5,
+      "frameTime": 443.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 52247,
+          "endTime": 52293.5,
+          "duration": 46.5
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 52293.5,
+          "endTime": 52673.10000002384,
+          "duration": 379.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 52673.200000047684,
+          "endTime": 52678.5,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 422,
+      "timestamp": 53143,
+      "frameTime": 451.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 52691.60000002384,
+          "endTime": 52739.300000071526,
+          "duration": 47.700000047683716
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 52739.5,
+          "endTime": 53123,
+          "duration": 383.5
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 53123,
+          "endTime": 53128.89999997616,
+          "duration": 5.899999976158142
+        }
+      ],
+      "readbackTime": 8.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 423,
+      "timestamp": 53589.5,
+      "frameTime": 445.7999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 53143.700000047684,
+          "endTime": 53191.800000071526,
+          "duration": 48.10000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 53191.800000071526,
+          "endTime": 53573.10000002384,
+          "duration": 381.2999999523163
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 53573.200000047684,
+          "endTime": 53578.5,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.299999952316284,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 424,
+      "timestamp": 54030.39999997616,
+      "frameTime": 440.2999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 53590.200000047684,
+          "endTime": 53638.39999997616,
+          "duration": 48.199999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 53638.5,
+          "endTime": 54015.200000047684,
+          "duration": 376.7000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 54015.200000047684,
+          "endTime": 54020.5,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 425,
+      "timestamp": 54477.60000002384,
+      "frameTime": 446.60000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 54031,
+          "endTime": 54080.5,
+          "duration": 49.5
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 54080.60000002384,
+          "endTime": 54462,
+          "duration": 381.39999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 54462.10000002384,
+          "endTime": 54467.39999997616,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 426,
+      "timestamp": 54920,
+      "frameTime": 441.6999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 54478.300000071526,
+          "endTime": 54525.300000071526,
+          "duration": 47
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 54525.39999997616,
+          "endTime": 54902.200000047684,
+          "duration": 376.8000000715256
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 54902.200000047684,
+          "endTime": 54907.5,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 7.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 427,
+      "timestamp": 55359.200000047684,
+      "frameTime": 438.5,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 54920.700000047684,
+          "endTime": 54967,
+          "duration": 46.299999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 54967.10000002384,
+          "endTime": 55343.800000071526,
+          "duration": 376.7000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 55343.800000071526,
+          "endTime": 55349.10000002384,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.299999952316284,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 428,
+      "timestamp": 55797.60000002384,
+      "frameTime": 437.7000000476837,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 55359.89999997616,
+          "endTime": 55407.200000047684,
+          "duration": 47.300000071525574
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 55407.300000071526,
+          "endTime": 55782.5,
+          "duration": 375.1999999284744
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 55782.700000047684,
+          "endTime": 55787.800000071526,
+          "duration": 5.100000023841858
+        }
+      ],
+      "readbackTime": 6.199999928474426,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 429,
+      "timestamp": 56256.39999997616,
+      "frameTime": 458.1999999284744,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 55798.200000047684,
+          "endTime": 55845.700000047684,
+          "duration": 47.5
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 55845.89999997616,
+          "endTime": 56237.89999997616,
+          "duration": 392
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 56238,
+          "endTime": 56243.5,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 430,
+      "timestamp": 56703.300000071526,
+      "frameTime": 445.90000009536743,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 56257.39999997616,
+          "endTime": 56306.300000071526,
+          "duration": 48.90000009536743
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 56306.39999997616,
+          "endTime": 56683.39999997616,
+          "duration": 377
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 56683.39999997616,
+          "endTime": 56688.800000071526,
+          "duration": 5.400000095367432
+        }
+      ],
+      "readbackTime": 8.399999976158142,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 431,
+      "timestamp": 57142,
+      "frameTime": 438,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 56704,
+          "endTime": 56750.10000002384,
+          "duration": 46.10000002384186
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 56750.200000047684,
+          "endTime": 57126.800000071526,
+          "duration": 376.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 57126.800000071526,
+          "endTime": 57132.10000002384,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 432,
+      "timestamp": 57589.300000071526,
+      "frameTime": 446.7000000476837,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 57142.60000002384,
+          "endTime": 57191.39999997616,
+          "duration": 48.799999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 57191.5,
+          "endTime": 57573.89999997616,
+          "duration": 382.39999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 57573.89999997616,
+          "endTime": 57579.300000071526,
+          "duration": 5.400000095367432
+        }
+      ],
+      "readbackTime": 6.300000071525574,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 433,
+      "timestamp": 58030.10000002384,
+      "frameTime": 440.10000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 57590.10000002384,
+          "endTime": 57637.300000071526,
+          "duration": 47.200000047683716
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 57637.39999997616,
+          "endTime": 58014.60000002384,
+          "duration": 377.2000000476837
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 58014.60000002384,
+          "endTime": 58020.10000002384,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 434,
+      "timestamp": 58470.5,
+      "frameTime": 439.7999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 58030.700000047684,
+          "endTime": 58077.10000002384,
+          "duration": 46.39999997615814
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 58077.200000047684,
+          "endTime": 58452.800000071526,
+          "duration": 375.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 58452.800000071526,
+          "endTime": 58458.10000002384,
+          "duration": 5.299999952316284
+        }
+      ],
+      "readbackTime": 7.299999952316284,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 435,
+      "timestamp": 58911.300000071526,
+      "frameTime": 440.10000002384186,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 58471.200000047684,
+          "endTime": 58517.89999997616,
+          "duration": 46.699999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 58518.10000002384,
+          "endTime": 58896,
+          "duration": 377.89999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 58896.10000002384,
+          "endTime": 58901.5,
+          "duration": 5.399999976158142
+        }
+      ],
+      "readbackTime": 6.100000023841858,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 436,
+      "timestamp": 59346.39999997616,
+      "frameTime": 434.39999997615814,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 58912,
+          "endTime": 58957,
+          "duration": 45
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 58957,
+          "endTime": 59330.89999997616,
+          "duration": 373.89999997615814
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 59330.89999997616,
+          "endTime": 59336.200000047684,
+          "duration": 5.300000071525574
+        }
+      ],
+      "readbackTime": 6,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 437,
+      "timestamp": 59891.5,
+      "frameTime": 544.2999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 59347.300000071526,
+          "endTime": 59403.5,
+          "duration": 56.199999928474426
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 59403.60000002384,
+          "endTime": 59867.39999997616,
+          "duration": 463.7999999523163
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 59867.39999997616,
+          "endTime": 59872.89999997616,
+          "duration": 5.5
+        }
+      ],
+      "readbackTime": 9.700000047683716,
+      "cacheHit": false
+    },
+    {
+      "frameNumber": 438,
+      "timestamp": 60342.5,
+      "frameTime": 449.7999999523163,
+      "passTimings": [
+        {
+          "name": "Pass 0 (Spectral)",
+          "startTime": 59892.700000047684,
+          "endTime": 59941,
+          "duration": 48.299999952316284
+        },
+        {
+          "name": "Pass 2 (High-Res Spectrum)",
+          "startTime": 59941.200000047684,
+          "endTime": 60321.800000071526,
+          "duration": 380.60000002384186
+        },
+        {
+          "name": "Pass 3 (Average)",
+          "startTime": 60321.89999997616,
+          "endTime": 60327,
+          "duration": 5.100000023841858
+        }
+      ],
+      "readbackTime": 9.100000023841858,
+      "cacheHit": false
+    }
+  ],
+  "warnings": [
+    "Low FPS: 2.2 (target: 60)",
+    "High frame time: 447.91ms (target: <16.6ms)",
+    "Spectrum box computation slow: 382.01ms",
+    "Buffer readback slow: 6.92ms",
+    "Low cache hit rate: 0.0%"
+  ],
+  "deviceInfo": {
+    "hasF16": true,
+    "hasTimestampQuery": true
+  },
+  "gpuProfiling": {
+    "metadata": {
+      "timestamp": "2025-12-10T12:25:21.370Z",
+      "device": "Unknown GPU",
+      "features": [
+        "core-features-and-limits",
+        "float32-filterable",
+        "timestamp-query",
+        "shader-f16"
+      ],
+      "resolution": [
+        888,
+        500
+      ],
+      "spectralSamples": 16,
+      "plotResolution": 5000,
+      "framesProfiled": 60
+    },
+    "summary": {
+      "avgFrameTimeMs": 435.97999999721844,
+      "minFrameTimeMs": 424.2000000476837,
+      "maxFrameTimeMs": 525.6999999284744,
+      "avgGpuTimeMs": 348.7839999977748,
+      "avgCpuOverheadMs": 87.1959999994437,
+      "primaryBottleneck": "memory",
+      "hotspots": [
+        "initBackgroundSpectrum",
+        "integrateSpectrum_Normalize",
+        "applyLayerAbsorption",
+        "blurTransmittedH",
+        "blurHorizontal"
+      ]
+    },
+    "passes": [
+      {
+        "name": "initBackgroundSpectrum",
+        "startTimeMs": 0,
+        "endTimeMs": 2.8149999996026356,
+        "durationMs": 2.8149999996026356,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 0,
+        "totalBytesWritten": 14208000
+      },
+      {
+        "name": "integrateSpectrum_Normalize",
+        "startTimeMs": 0,
+        "endTimeMs": 2.560000006357829,
+        "durationMs": 2.560000006357829,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 7104000,
+        "totalBytesWritten": 7104000
+      },
+      {
+        "name": "integrateSpectrum_Pass0",
+        "startTimeMs": 0,
+        "endTimeMs": 0.02666666309038798,
+        "durationMs": 0.02666666309038798,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 14208000,
+        "totalBytesWritten": 8880000
+      },
+      {
+        "name": "applyLayerAbsorption",
+        "startTimeMs": 0,
+        "endTimeMs": 0.022500001390775046,
+        "durationMs": 0.022500001390775046,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 14208000,
+        "totalBytesWritten": 42624000
+      },
+      {
+        "name": "blurTransmittedH",
+        "startTimeMs": 0,
+        "endTimeMs": 0.0066666672627131145,
+        "durationMs": 0.0066666672627131145,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 14208000,
+        "totalBytesWritten": 14208000
+      },
+      {
+        "name": "blurTransmittedV",
+        "startTimeMs": 0,
+        "endTimeMs": 0.005416666467984517,
+        "durationMs": 0.005416666467984517,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 14208000,
+        "totalBytesWritten": 14208000
+      },
+      {
+        "name": "blurHorizontal",
+        "startTimeMs": 0,
+        "endTimeMs": 0.004166666666666667,
+        "durationMs": 0.004166666666666667,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 14208000,
+        "totalBytesWritten": 14208000
+      },
+      {
+        "name": "combineScattered",
+        "startTimeMs": 0,
+        "endTimeMs": 0.0033333336313565573,
+        "durationMs": 0.0033333336313565573,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 42624000,
+        "totalBytesWritten": 14208000
+      },
+      {
+        "name": "blurVertical",
+        "startTimeMs": 0,
+        "endTimeMs": 0.0029166663686434426,
+        "durationMs": 0.0029166663686434426,
+        "dispatches": [],
+        "totalInvocations": 447552,
+        "totalBytesRead": 14208000,
+        "totalBytesWritten": 14208000
+      }
+    ],
+    "layers": [
+      {
+        "layerIndex": 0,
+        "shapeCount": 1,
+        "startTimeMs": 3.399999976158142,
+        "passes": [
+          "applyLayerAbsorption",
+          "blurTransmittedH",
+          "blurTransmittedV",
+          "blurHorizontal",
+          "blurVertical",
+          "combineScattered"
+        ],
+        "hasScattering": false,
+        "scatterSigma": 5,
+        "endTimeMs": 11.899999976158142,
+        "durationMs": 8.5
+      },
+      {
+        "layerIndex": 1,
+        "shapeCount": 1,
+        "startTimeMs": 11.899999976158142,
+        "passes": [
+          "applyLayerAbsorption",
+          "blurTransmittedH",
+          "blurTransmittedV",
+          "blurHorizontal",
+          "blurVertical",
+          "combineScattered"
+        ],
+        "hasScattering": false,
+        "scatterSigma": 5,
+        "endTimeMs": 20.399999976158142,
+        "durationMs": 8.5
+      },
+      {
+        "layerIndex": 2,
+        "shapeCount": 1,
+        "startTimeMs": 20.399999976158142,
+        "passes": [
+          "applyLayerAbsorption",
+          "blurTransmittedH",
+          "blurTransmittedV",
+          "blurHorizontal",
+          "blurVertical",
+          "combineScattered"
+        ],
+        "hasScattering": true,
+        "scatterSigma": 5,
+        "endTimeMs": 28.5,
+        "durationMs": 8.100000023841858
+      },
+      {
+        "layerIndex": 3,
+        "shapeCount": 1,
+        "startTimeMs": 28.5,
+        "passes": [
+          "applyLayerAbsorption",
+          "blurTransmittedH",
+          "blurTransmittedV",
+          "blurHorizontal",
+          "blurVertical",
+          "combineScattered"
+        ],
+        "hasScattering": false,
+        "scatterSigma": 5,
+        "endTimeMs": 36.799999952316284,
+        "durationMs": 8.299999952316284
+      }
+    ],
+    "memory": {
+      "totalAllocated": 227498928,
+      "buffers": [
+        {
+          "name": "RGB Output 0",
+          "size": 4514912,
+          "usage": "storage",
+          "format": "vec4<f32>"
+        },
+        {
+          "name": "RGB Output 1",
+          "size": 4514912,
+          "usage": "storage",
+          "format": "vec4<f32>"
+        },
+        {
+          "name": "Spectrum Output 0",
+          "size": 20000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Spectrum Output 1",
+          "size": 20000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Max Per Pixel",
+          "size": 1128728,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Spectral Buffer A",
+          "size": 9029824,
+          "usage": "ping-pong",
+          "format": "f16"
+        },
+        {
+          "name": "Spectral Buffer B",
+          "size": 9029824,
+          "usage": "ping-pong",
+          "format": "f16"
+        },
+        {
+          "name": "Scattering Sigma",
+          "size": 1128728,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Scatter Source",
+          "size": 9029824,
+          "usage": "storage",
+          "format": "f16"
+        },
+        {
+          "name": "Emission Aura",
+          "size": 9029824,
+          "usage": "storage",
+          "format": "f16"
+        },
+        {
+          "name": "RGB Output 0",
+          "size": 10036224,
+          "usage": "storage",
+          "format": "vec4<f32>"
+        },
+        {
+          "name": "RGB Output 1",
+          "size": 10036224,
+          "usage": "storage",
+          "format": "vec4<f32>"
+        },
+        {
+          "name": "Spectrum Output 0",
+          "size": 20000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Spectrum Output 1",
+          "size": 20000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Max Per Pixel",
+          "size": 2509056,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Spectral Buffer A",
+          "size": 20072448,
+          "usage": "ping-pong",
+          "format": "f16"
+        },
+        {
+          "name": "Spectral Buffer B",
+          "size": 20072448,
+          "usage": "ping-pong",
+          "format": "f16"
+        },
+        {
+          "name": "Scattering Sigma",
+          "size": 2509056,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Scatter Source",
+          "size": 20072448,
+          "usage": "storage",
+          "format": "f16"
+        },
+        {
+          "name": "Emission Aura",
+          "size": 20072448,
+          "usage": "storage",
+          "format": "f16"
+        },
+        {
+          "name": "RGB Output 0",
+          "size": 7104000,
+          "usage": "storage",
+          "format": "vec4<f32>"
+        },
+        {
+          "name": "RGB Output 1",
+          "size": 7104000,
+          "usage": "storage",
+          "format": "vec4<f32>"
+        },
+        {
+          "name": "Spectrum Output 0",
+          "size": 20000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Spectrum Output 1",
+          "size": 20000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Max Per Pixel",
+          "size": 1776000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Spectral Buffer A",
+          "size": 14208000,
+          "usage": "ping-pong",
+          "format": "f16"
+        },
+        {
+          "name": "Spectral Buffer B",
+          "size": 14208000,
+          "usage": "ping-pong",
+          "format": "f16"
+        },
+        {
+          "name": "Scattering Sigma",
+          "size": 1776000,
+          "usage": "storage",
+          "format": "f32"
+        },
+        {
+          "name": "Scatter Source",
+          "size": 14208000,
+          "usage": "storage",
+          "format": "f16"
+        },
+        {
+          "name": "Emission Aura",
+          "size": 14208000,
+          "usage": "storage",
+          "format": "f16"
+        }
+      ],
+      "peakUsage": 227498928
+    },
+    "bottlenecks": {
+      "primaryBottleneck": "memory",
+      "confidence": 0.0004605112772407891,
+      "hotspots": [
+        "initBackgroundSpectrum",
+        "integrateSpectrum_Normalize",
+        "applyLayerAbsorption",
+        "blurTransmittedH",
+        "blurHorizontal"
+      ],
+      "computeBoundPasses": [],
+      "memoryBoundPasses": [
+        "blurTransmittedH",
+        "integrateSpectrum"
+      ],
+      "latencyBoundPasses": [],
+      "details": {
+        "avgComputeIntensity": 0.012576709796672829,
+        "avgBandwidthUtilization": 19.459254711021227,
+        "dispatchOverhead": 0,
+        "asyncWaitTime": 0
+      }
+    },
+    "recommendations": [
+      {
+        "issue": "Blur passes are memory-bound",
+        "impact": "medium",
+        "suggestion": "Consider using shared memory (workgroup storage) for blur kernels",
+        "affectedPasses": [
+          "blurHorizontal"
+        ]
+      },
+      {
+        "issue": "High memory usage: 217.0 MB",
+        "impact": "low",
+        "suggestion": "Consider reducing spectral resolution or buffer sizes for low-end devices"
+      }
+    ]
+  }
+}

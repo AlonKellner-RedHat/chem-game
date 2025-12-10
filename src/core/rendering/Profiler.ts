@@ -3,9 +3,16 @@
  * 
  * Tracks performance metrics for the spectral compute pipeline.
  * Provides logging, rolling averages, and report generation.
+ * 
+ * Enhanced with detailed GPU dispatch profiling for bottleneck analysis.
  */
 
-import { PassTiming } from './SpectralCompute';
+import { PassTiming, SpectralComputePipeline } from './SpectralCompute';
+import { 
+  ProfilingReport as GPUProfilingReport, 
+  BottleneckAnalysis,
+  Recommendation,
+} from './GPUProfiler';
 
 /**
  * Logging mode for the profiler
@@ -65,6 +72,8 @@ export interface ProfilingReport {
     hasF16: boolean;
     hasTimestampQuery: boolean;
   };
+  // Enhanced GPU profiling data (optional - only present if GPU profiling is enabled)
+  gpuProfiling?: GPUProfilingReport;
 }
 
 /**
@@ -99,8 +108,39 @@ export class Profiler {
     screenHeight: 720,
   };
   
+  // Reference to SpectralComputePipeline for GPU profiling
+  private computePipeline: SpectralComputePipeline | null = null;
+  private gpuProfilingEnabled: boolean = false;
+  
   constructor() {
     this.lastLogTime = performance.now();
+  }
+  
+  /**
+   * Set the SpectralComputePipeline reference for GPU profiling
+   */
+  setComputePipeline(pipeline: SpectralComputePipeline): void {
+    this.computePipeline = pipeline;
+  }
+  
+  /**
+   * Enable/disable GPU profiling (detailed dispatch-level analysis)
+   */
+  setGPUProfilingEnabled(enabled: boolean): void {
+    this.gpuProfilingEnabled = enabled;
+    if (this.computePipeline) {
+      this.computePipeline.setProfilingEnabled(enabled, false);
+      console.log(`[Profiler] GPU profiling: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    } else {
+      console.warn('[Profiler] Cannot enable GPU profiling: no compute pipeline set');
+    }
+  }
+  
+  /**
+   * Check if GPU profiling is enabled
+   */
+  isGPUProfilingEnabled(): boolean {
+    return this.gpuProfilingEnabled;
   }
   
   /**
@@ -342,7 +382,7 @@ export class Profiler {
    * Generate full profiling report
    */
   generateReport(): ProfilingReport {
-    return {
+    const report: ProfilingReport = {
       timestamp: new Date().toISOString(),
       config: this.config,
       summary: this.getSummary(),
@@ -353,6 +393,19 @@ export class Profiler {
         hasTimestampQuery: this.hasTimestampQuery,
       },
     };
+    
+    // Include GPU profiling data if available
+    if (this.gpuProfilingEnabled && this.computePipeline) {
+      try {
+        if (this.computePipeline.getProfilingSessionCount() > 0) {
+          report.gpuProfiling = this.computePipeline.generateProfilingReport();
+        }
+      } catch (e) {
+        console.warn('[Profiler] Could not generate GPU profiling report:', e);
+      }
+    }
+    
+    return report;
   }
   
   /**
@@ -395,8 +448,19 @@ export class Profiler {
     lines.push(`---`);
     lines.push(`Cache: ${(summary.cacheHitRate * 100).toFixed(0)}% hit`);
     lines.push(`f16: ${this.hasF16 ? 'ON' : 'OFF'}`);
+    
+    // GPU profiling status
+    lines.push(`---`);
+    if (this.gpuProfilingEnabled) {
+      const sessionCount = this.computePipeline?.getProfilingSessionCount() ?? 0;
+      lines.push(`GPU Profiling: ON (${sessionCount} frames)`);
+    } else {
+      lines.push(`GPU Profiling: OFF`);
+    }
+    
     lines.push(`---`);
     lines.push(`[P] Toggle overlay`);
+    lines.push(`[G] Toggle GPU profiling`);
     lines.push(`[D] Download report`);
     
     return lines;

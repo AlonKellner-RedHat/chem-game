@@ -137,6 +137,10 @@ struct Shape {
 @group(0) @binding(9) var<storage, read_write> scatterSource: array<f16>;    // Light to be scattered/blurred
 @group(0) @binding(10) var<storage, read_write> emissionAura: array<f16>;    // Emission aura (wavelength-independent blur)
 
+// Future: Pre-computed Rayleigh factor texture (binding 11)
+// @group(0) @binding(11) var rayleighLUT: texture_1d<f32>;
+// @group(0) @binding(12) var rayleighSampler: sampler;
+
 // NOTE: High-res spectrum uses the SAME buffer bindings (6-10) but with different
 // buffer references. The TypeScript swaps the actual GPUBuffer objects to point
 // to the high-res buffers when computing the spectrum plot.
@@ -145,7 +149,7 @@ struct Shape {
 const SPECTRAL_SAMPLES: u32 = 16u;
 
 // Blur constants
-const MAX_BLUR_RADIUS: i32 = 64;           // Maximum blur radius in pixels
+const MAX_BLUR_RADIUS: i32 = 16;           // Maximum blur radius in pixels (optimized for performance)
 const RAYLEIGH_BLUR_SCALE: f32 = 1e-10;    // Scale factor for Rayleigh blur (increased for visibility)
 const MIE_BLUR_SCALE: f32 = 1e-6;          // Scale factor for Mie blur (increased for visibility)
 
@@ -475,6 +479,84 @@ fn applyScattering(
   let mie = getMieScattering(wavelengthNm, largeDensity);
   let totalScatter = (rayleigh + mie) * pathLength;
   
+  return intensity * exp(-totalScatter);
+}
+
+// ============================================================
+// Downsampled Scattering Optimization
+// ============================================================
+
+// LUT size for downsampled scattering (compute at 64 wavelengths, interpolate for 5000)
+const SCATTER_LUT_SIZE: u32 = 64u;
+
+/**
+ * Pre-computed scattering data for a shape.
+ * Stores scattering coefficients at reduced wavelength resolution.
+ */
+struct ScatterLUT {
+  // Scattering coefficients at SCATTER_LUT_SIZE wavelength samples
+  coefficients: array<f32, 64>,
+}
+
+/**
+ * Build a scattering LUT for a shape's particle configuration.
+ * Computes scattering at SCATTER_LUT_SIZE wavelength samples for later interpolation.
+ */
+fn buildScatterLUT(
+  smallDensity: f32,
+  largeDensity: f32,
+  pathLength: f32
+) -> ScatterLUT {
+  var lut: ScatterLUT;
+  
+  if (pathLength <= 0.0 || (smallDensity <= 0.0 && largeDensity <= 0.0)) {
+    // No scattering - fill with zeros
+    for (var i: u32 = 0u; i < SCATTER_LUT_SIZE; i++) {
+      lut.coefficients[i] = 0.0;
+    }
+    return lut;
+  }
+  
+  let wavelengthRange = params.wavelengthMax - params.wavelengthMin;
+  
+  for (var i: u32 = 0u; i < SCATTER_LUT_SIZE; i++) {
+    let t = f32(i) / f32(SCATTER_LUT_SIZE - 1u);
+    let wavelength = params.wavelengthMin + t * wavelengthRange;
+    
+    let rayleigh = getRayleighScattering(wavelength, smallDensity);
+    let mie = getMieScattering(wavelength, largeDensity);
+    lut.coefficients[i] = (rayleigh + mie) * pathLength;
+  }
+  
+  return lut;
+}
+
+/**
+ * Sample scattering coefficient from pre-computed LUT with linear interpolation.
+ */
+fn sampleScatterLUT(lut: ptr<function, ScatterLUT>, wavelengthNm: f32) -> f32 {
+  let wavelengthRange = params.wavelengthMax - params.wavelengthMin;
+  let t = (wavelengthNm - params.wavelengthMin) / wavelengthRange;
+  let tClamped = clamp(t, 0.0, 1.0);
+  
+  let indexFloat = tClamped * f32(SCATTER_LUT_SIZE - 1u);
+  let indexLow = u32(floor(indexFloat));
+  let indexHigh = min(indexLow + 1u, SCATTER_LUT_SIZE - 1u);
+  let frac = indexFloat - f32(indexLow);
+  
+  return mix((*lut).coefficients[indexLow], (*lut).coefficients[indexHigh], frac);
+}
+
+/**
+ * Apply scattering using pre-computed LUT (faster for many wavelengths).
+ */
+fn applyScatteringFromLUT(
+  intensity: f32,
+  lut: ptr<function, ScatterLUT>,
+  wavelengthNm: f32,
+  mask: f32
+) -> f32 {
+  let totalScatter = sampleScatterLUT(lut, wavelengthNm) * mask;
   return intensity * exp(-totalScatter);
 }
 
@@ -990,7 +1072,7 @@ struct LayerPhysicsResult {
   scatterSrc: f32,       // Light to be scattered (Voigt blur)
   directEmission: f32,   // Emission that stays at pixel
   emissionAuraSrc: f32,  // Emission aura (Gaussian blur)
-  maxSigma: f32,         // Maximum blur sigma for this wavelength
+  // Note: maxSigma removed - we now use global atmospheric sigma instead of per-pixel
 }
 
 /**
@@ -1018,7 +1100,6 @@ fn computeLayerPhysics(
   result.scatterSrc = 0.0;
   result.directEmission = 0.0;
   result.emissionAuraSrc = 0.0;
-  result.maxSigma = 0.0;
   
   // Apply all shapes in this layer
   for (var i: u32 = 0u; i < numShapes; i++) {
@@ -1058,14 +1139,7 @@ fn computeLayerPhysics(
       // Update transmitted for next shape in layer (full brightness preserved)
       result.transmitted = directTrans;
       
-      // Calculate blur sigma for this wavelength
-      let sigma = getScatterBlurSigma(
-        wavelength,
-        shape.smallParticleDensity,
-        shape.largeParticleDensity,
-        pathLength * mask
-      );
-      result.maxSigma = max(result.maxSigma, sigma);
+      // Note: Per-pixel blur sigma calculation removed - we now use global atmospheric sigma
       
       // Handle emission with spread factor
       if (params.enableEmission == 1u) {
@@ -1083,6 +1157,95 @@ fn computeLayerPhysics(
         // Spread emission: part goes through scattering medium (Voigt blur)
         // and part is isotropic aura (Gaussian blur)
         // Scattered emission also loses most light to 3D scattering
+        result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
+        result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
+      }
+    }
+  }
+  
+  return result;
+}
+
+// Maximum shapes per layer for pre-computed masks array
+const MAX_SHAPES_PER_LAYER: u32 = 16u;
+
+/**
+ * Pre-computed shape data for optimized physics calculation.
+ * These values are wavelength-independent and can be computed once per pixel.
+ */
+struct PrecomputedShapeData {
+  mask: f32,
+  pathLength: f32,
+}
+
+/**
+ * OPTIMIZED: Compute layer physics using pre-computed masks.
+ * This avoids redundant MSDF texture samples per wavelength.
+ * 
+ * @param inputIntensity - Incoming light intensity at this wavelength
+ * @param wavelength - Wavelength in nm
+ * @param numShapes - Number of shapes to process
+ * @param shapeData - Pre-computed mask and pathLength for each shape
+ * @returns LayerPhysicsResult with all output components
+ */
+fn computeLayerPhysicsOptimized(
+  inputIntensity: f32,
+  wavelength: f32,
+  numShapes: u32,
+  shapeData: ptr<function, array<PrecomputedShapeData, 16>>
+) -> LayerPhysicsResult {
+  var result: LayerPhysicsResult;
+  result.transmitted = inputIntensity;
+  result.scatterSrc = 0.0;
+  result.directEmission = 0.0;
+  result.emissionAuraSrc = 0.0;
+  
+  // Apply all shapes in this layer using pre-computed masks
+  for (var i: u32 = 0u; i < numShapes; i++) {
+    let data = (*shapeData)[i];
+    let mask = data.mask;
+    
+    if (mask > 0.0) {
+      let shape = shapes[i];
+      let pathLength = data.pathLength;
+      let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+      
+      // Get scattering transmission (how much light passes without scattering)
+      let scatterTrans = applyScattering(
+        1.0,
+        wavelength,
+        shape.smallParticleDensity,
+        shape.largeParticleDensity,
+        pathLength * mask
+      );
+      
+      // Scatter probability = 1 - scatterTrans (fraction that scatters)
+      let scatterProb = 1.0 - scatterTrans;
+      
+      // Apply material absorption first
+      let absorption = mix(1.0, materialTrans, mask);
+      let absorbedInput = result.transmitted * absorption;
+      
+      // Scattering creates a blur effect but doesn't dim the shape itself.
+      let directTrans = absorbedInput;
+      
+      // Compute scattered light for the aura effect
+      let scatteredFrac = absorbedInput * scatterProb;
+      result.scatterSrc += scatteredFrac * AURA_SCATTER_FRACTION;
+      
+      // Update transmitted for next shape in layer
+      result.transmitted = directTrans;
+      
+      // Handle emission with spread factor
+      if (params.enableEmission == 1u) {
+        let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
+        let maskedEmission = em * mask;
+        
+        let spreadFactor = params.emissionSpreadFactor;
+        let directFraction = 1.0 - spreadFactor;
+        let spreadAmount = maskedEmission * spreadFactor;
+        
+        result.directEmission += maskedEmission * directFraction;
         result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
         result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
       }
@@ -1169,10 +1332,36 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
   let numShapes = arrayLength(&shapes);
   let pixelIdx = localY * params.bufferWidth + localX;
   
-  // Track maximum scattering sigma for this layer
-  var maxSigma: f32 = 0.0;
+  // OPTIMIZATION: Pre-compute masks and pathLengths ONCE per pixel (not per wavelength)
+  // This avoids redundant MSDF texture samples (major speedup for 5000 wavelengths)
+  var shapeData: array<PrecomputedShapeData, 16>;
+  var anyMask: bool = false;
+  let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
   
-  // Process each wavelength using unified sample count
+  if (inBounds) {
+    for (var i: u32 = 0u; i < shapesToProcess; i++) {
+      let mask = getShapeMask(shapes[i], fx, fy);
+      let pathLength = max(shapes[i].width, shapes[i].height) * 0.01;
+      shapeData[i] = PrecomputedShapeData(mask, pathLength);
+      anyMask = anyMask || (mask > 0.0);
+    }
+  }
+  
+  // OPTIMIZATION: Early exit for pixels with no shape coverage
+  // This skips all wavelength physics for ~70-90% of pixels
+  if (!anyMask || !inBounds) {
+    // Fast path: copy input to output, zero scatter/emission
+    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
+      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+      spectralOutput[spectralIdx] = spectralInput[spectralIdx];
+      scatterSource[spectralIdx] = f16(0.0);
+      emissionAura[spectralIdx] = f16(0.0);
+    }
+    scatteringSigma[pixelIdx] = 0.0;
+    return;
+  }
+  
+  // Process each wavelength using pre-computed shape data
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
@@ -1180,32 +1369,17 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
     // Read current intensity from input buffer (f16 -> f32 for physics calc)
     let inputIntensity = f32(spectralInput[spectralIdx]);
     
-    // For out-of-bounds pixels (spectrum mode edge case), pass through unchanged
-    var transmitted: f16 = spectralInput[spectralIdx];
-    var scatterSrc: f16 = f16(0.0);
-    var directEmission: f16 = f16(0.0);
-    var emissionAuraSrc: f16 = f16(0.0);
+    // Use optimized physics with pre-computed masks
+    let result = computeLayerPhysicsOptimized(inputIntensity, wavelength, shapesToProcess, &shapeData);
     
-    if (inBounds) {
-      // SHARED: Use common physics function (returns f32 for precision in exp/pow)
-      let result = computeLayerPhysics(inputIntensity, wavelength, fx, fy, numShapes);
-      
-      // Convert results to f16 for output
-      transmitted = f16(result.transmitted);
-      scatterSrc = f16(result.scatterSrc);
-      directEmission = f16(result.directEmission);
-      emissionAuraSrc = f16(result.emissionAuraSrc);
-      maxSigma = max(maxSigma, result.maxSigma);
-    }
-    
-    // Write outputs (already f16)
-    spectralOutput[spectralIdx] = transmitted + directEmission;
-    scatterSource[spectralIdx] = scatterSrc;
-    emissionAura[spectralIdx] = emissionAuraSrc;
+    // Write outputs (convert f32 to f16)
+    spectralOutput[spectralIdx] = f16(result.transmitted + result.directEmission);
+    scatterSource[spectralIdx] = f16(result.scatterSrc);
+    emissionAura[spectralIdx] = f16(result.emissionAuraSrc);
   }
   
-  // Store maximum sigma for blur passes
-  scatteringSigma[pixelIdx] = maxSigma;
+  // Note: Per-pixel sigma removed - we use global atmospheric sigma from params
+  scatteringSigma[pixelIdx] = 0.0;
 }
 
 // ============================================================
@@ -1213,7 +1387,7 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
 // ============================================================
 
 /**
- * UNIFIED: Apply horizontal wavelength-dependent Voigt blur to scatter source.
+ * UNIFIED: Apply horizontal Voigt blur to scatter source (constant sigma for all wavelengths).
  * Used for aura effect (mask->blur path).
  * 
  * Reads from scatterSource (scattered light), writes blurred result to spectralInput.
@@ -1239,16 +1413,12 @@ fn blurHorizontal(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  // Process each wavelength with wavelength-dependent blur
+  // Constant blur params for all wavelengths (scattering intensity varies per wavelength, blur does not)
+  let sigma = baseSigma;
+  let radius = MAX_BLUR_RADIUS;
+  
+  // Process each wavelength with same blur sigma
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    let wavelength = getWavelength(wIdx);
-    
-    // Wavelength-dependent sigma: blue blurs more for Rayleigh
-    let rayleighFactor = pow(550.0 / wavelength, 2.0);
-    let sigma = baseSigma * rayleighFactor;
-    
-    let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
-    
     var sum: f32 = 0.0;
     var weightSum: f32 = 0.0;
     
@@ -1278,7 +1448,7 @@ fn blurHorizontal(@builtin(global_invocation_id) id: vec3<u32>) {
 // ============================================================
 
 /**
- * UNIFIED: Apply vertical wavelength-dependent Voigt blur to scatter source.
+ * UNIFIED: Apply vertical Voigt blur to scatter source (constant sigma for all wavelengths).
  * Reads from spectralInput (H-blurred), writes to scatterSource (fully blurred).
  */
 @compute @workgroup_size(8, 8)
@@ -1302,16 +1472,12 @@ fn blurVertical(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  // Process each wavelength with wavelength-dependent blur
+  // Constant blur params for all wavelengths
+  let sigma = baseSigma;
+  let radius = MAX_BLUR_RADIUS;
+  
+  // Process each wavelength with same blur sigma
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    let wavelength = getWavelength(wIdx);
-    
-    // Wavelength-dependent sigma
-    let rayleighFactor = pow(550.0 / wavelength, 2.0);
-    let sigma = baseSigma * rayleighFactor;
-    
-    let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
-    
     var sum: f32 = 0.0;
     var weightSum: f32 = 0.0;
     
@@ -1341,7 +1507,7 @@ fn blurVertical(@builtin(global_invocation_id) id: vec3<u32>) {
 // ============================================================
 
 /**
- * UNIFIED: Apply horizontal wavelength-dependent Voigt blur to transmitted image.
+ * UNIFIED: Apply horizontal Voigt blur to transmitted image (constant sigma for all wavelengths).
  * This is the blur->mask path: background bleeds INTO shapes.
  * 
  * Reads from spectralOutput, writes to spectralInput (temp).
@@ -1366,16 +1532,12 @@ fn blurTransmittedH(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  // Process each wavelength with wavelength-dependent blur
+  // Constant blur params for all wavelengths
+  let sigma = baseSigma;
+  let radius = MAX_BLUR_RADIUS;
+  
+  // Process each wavelength with same blur sigma
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    let wavelength = getWavelength(wIdx);
-    
-    // Wavelength-dependent sigma: blue blurs more for Rayleigh
-    let rayleighFactor = pow(550.0 / wavelength, 2.0);
-    let sigma = baseSigma * rayleighFactor;
-    
-    let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
-    
     var sum: f32 = 0.0;
     var weightSum: f32 = 0.0;
     
@@ -1405,7 +1567,7 @@ fn blurTransmittedH(@builtin(global_invocation_id) id: vec3<u32>) {
 // ============================================================
 
 /**
- * UNIFIED: Apply vertical wavelength-dependent Voigt blur to transmitted image.
+ * UNIFIED: Apply vertical Voigt blur to transmitted image (constant sigma for all wavelengths).
  * Reads from spectralInput (H-blurred), writes to emissionAura (temp).
  */
 @compute @workgroup_size(8, 8)
@@ -1428,16 +1590,12 @@ fn blurTransmittedV(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  // Process each wavelength with wavelength-dependent blur
+  // Constant blur params for all wavelengths
+  let sigma = baseSigma;
+  let radius = MAX_BLUR_RADIUS;
+  
+  // Process each wavelength with same blur sigma
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    let wavelength = getWavelength(wIdx);
-    
-    // Wavelength-dependent sigma
-    let rayleighFactor = pow(550.0 / wavelength, 2.0);
-    let sigma = baseSigma * rayleighFactor;
-    
-    let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
-    
     var sum: f32 = 0.0;
     var weightSum: f32 = 0.0;
     
@@ -1507,7 +1665,7 @@ fn blurEmissionAuraH(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
+  let radius = MAX_BLUR_RADIUS;  // Constant radius for predictable performance
   
   // Apply same blur to all wavelengths (wavelength-independent)
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
@@ -1561,7 +1719,7 @@ fn blurEmissionAuraV(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  let radius = min(i32(ceil(sigma * 3.0)), MAX_BLUR_RADIUS);
+  let radius = MAX_BLUR_RADIUS;  // Constant radius for predictable performance
   
   // Apply same blur to all wavelengths
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {

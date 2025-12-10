@@ -207,6 +207,20 @@ export class SpectralDemo implements Demo {
         }
         // Set profiler logging mode
         profiler.setLoggingMode(this.profilingVisible ? 'summary' : 'silent');
+        
+        // Set compute pipeline reference when opening overlay
+        if (this.profilingVisible) {
+          const pipeline = scene.getRenderer()?.getComputePipeline();
+          if (pipeline) {
+            profiler.setComputePipeline(pipeline);
+          }
+        }
+      } else if (e.key === 'g' || e.key === 'G') {
+        // Toggle GPU profiling (detailed dispatch-level analysis)
+        if (this.profilingVisible) {
+          const newState = !profiler.isGPUProfilingEnabled();
+          profiler.setGPUProfilingEnabled(newState);
+        }
       } else if (e.key === 'd' || e.key === 'D') {
         // Download profiling report (only if overlay is visible)
         if (this.profilingVisible) {

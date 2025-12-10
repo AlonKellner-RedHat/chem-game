@@ -33,6 +33,11 @@ export {
   type MieParams,
 } from './scattering';
 
+export {
+  ScatteringLUT,
+  type ScatteringLUTConfig,
+} from './ScatteringLUT';
+
 // Import for engine implementation
 import {
   SpectralPhysicsConfig,

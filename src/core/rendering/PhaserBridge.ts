@@ -27,6 +27,9 @@ export interface Renderer {
   /** Resize the render target */
   resize(width: number, height: number): void;
   
+  /** Get the compute pipeline (for profiling integration) */
+  getComputePipeline(): SpectralComputePipeline | null;
+  
   /** Set material transmission spectra */
   setMaterials(materials: Float32Array[]): void;
   
@@ -112,7 +115,7 @@ export class WebGPURenderer implements Renderer {
   
   // Spectrum throttling - only compute every N frames or when mouse moves significantly
   private spectrumFrameCounter = 0;
-  private spectrumThrottleFrames = 2;  // Compute spectrum every 2nd frame
+  private spectrumThrottleFrames = 10;  // Compute spectrum every 10th frame (perf optimization)
   private spectrumMovementThreshold = 3;  // Recompute if mouse moves > 3 pixels
   private lastComputedX = -1;
   private lastComputedY = -1;
@@ -366,6 +369,13 @@ export class WebGPURenderer implements Renderer {
   }
   
   /**
+   * Get the compute pipeline for profiling integration
+   */
+  getComputePipeline(): SpectralComputePipeline | null {
+    return this.pipeline;
+  }
+  
+  /**
    * Get global max spectral intensity from last render - for plot normalization
    */
   getGlobalMaxSpectral(): number {
@@ -536,6 +546,14 @@ export class CPURenderer implements Renderer {
   
   getMsdfPxRange(): number {
     return 4.0;  // Default
+  }
+  
+  getDebugCollector(): DebugCollector | null {
+    return null;  // CPU renderer doesn't support debug collection
+  }
+  
+  getComputePipeline(): SpectralComputePipeline | null {
+    return null;  // CPU renderer doesn't have a compute pipeline
   }
   
   destroy(): void {

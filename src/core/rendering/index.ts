@@ -37,3 +37,23 @@ export {
   CPURenderer,
   type Renderer,
 } from './PhaserBridge';
+
+export {
+  GPUProfiler,
+  type ProfilingReport,
+  type ProfilingSession,
+  type PassProfile,
+  type LayerProfile,
+  type DispatchProfile,
+  type BottleneckAnalysis,
+  type Recommendation,
+  type MemoryProfile,
+  type BufferProfile,
+  type BottleneckType,
+} from './GPUProfiler';
+
+export {
+  OptimizationConfig,
+  type OptimizationFlags,
+  OptimizationPreset,
+} from './OptimizationConfig';
