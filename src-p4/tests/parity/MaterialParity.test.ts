@@ -2,6 +2,7 @@
  * Material Parity Tests
  * 
  * Verifies that P4 material calculations match P3 behavior.
+ * Updated to use mole fractions instead of concentrations.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -17,9 +18,9 @@ describe('Material Parity with P3', () => {
       const water = createWaterMaterial();
       const props = createDefaultProperties(water);
       
-      // Set high copper sulfate concentration
-      props.concentrations['copper-sulfate'] = 0.1;
-      props.concentrations['methylene-blue'] = 0;
+      // Set high copper sulfate mole fraction
+      props.moleFractions['copper-sulfate'] = 0.01;
+      props.moleFractions['methylene-blue'] = 0;
       
       const spectrum = water.generateTransmissionSpectrum(400, 900, 100, props);
       
@@ -35,8 +36,8 @@ describe('Material Parity with P3', () => {
       const water = createWaterMaterial();
       const props = createDefaultProperties(water);
       
-      props.concentrations['copper-sulfate'] = 0;
-      props.concentrations['methylene-blue'] = 0.001;
+      props.moleFractions['copper-sulfate'] = 0;
+      props.moleFractions['methylene-blue'] = 0.0001;
       
       const spectrum = water.generateTransmissionSpectrum(400, 700, 100, props);
       
@@ -53,8 +54,8 @@ describe('Material Parity with P3', () => {
       const crystal = createCrystalMaterial();
       const props = createDefaultProperties(crystal);
       
-      props.concentrations['chromium-ion'] = 0.1;
-      props.concentrations['potassium-permanganate'] = 0;
+      props.moleFractions['chromium-ion'] = 0.01;
+      props.moleFractions['potassium-permanganate'] = 0;
       
       const spectrum = crystal.generateTransmissionSpectrum(400, 700, 100, props);
       
@@ -71,9 +72,9 @@ describe('Material Parity with P3', () => {
       const gas = createGasMaterial();
       const props = createDefaultProperties(gas);
       
-      props.concentrations['sodium'] = 0.001;
-      props.concentrations['neon'] = 0;
-      props.concentrations['mercury'] = 0;
+      props.moleFractions['sodium'] = 0.001;
+      props.moleFractions['neon'] = 0;
+      props.moleFractions['mercury'] = 0;
       
       // Use fine resolution to see narrow lines
       const spectrum = gas.generateTransmissionSpectrum(580, 600, 100, props);
@@ -87,16 +88,16 @@ describe('Material Parity with P3', () => {
   });
   
   describe('Beer-Lambert Law', () => {
-    it('transmission decreases exponentially with concentration', () => {
+    it('transmission decreases exponentially with mole fraction', () => {
       const water = createWaterMaterial();
       
-      const conc1 = createDefaultProperties(water, 0.01);
-      const conc2 = createDefaultProperties(water, 0.1);
+      const lowFrac = createDefaultProperties(water, 0.0001);
+      const highFrac = createDefaultProperties(water, 0.01);
       
-      const spectrum1 = water.generateTransmissionSpectrum(400, 700, 100, conc1);
-      const spectrum2 = water.generateTransmissionSpectrum(400, 700, 100, conc2);
+      const spectrum1 = water.generateTransmissionSpectrum(400, 900, 100, lowFrac);
+      const spectrum2 = water.generateTransmissionSpectrum(400, 900, 100, highFrac);
       
-      // Average transmission should decrease with concentration
+      // Average transmission should decrease with mole fraction
       const avg1 = spectrum1.reduce((a, b) => a + b, 0) / 100;
       const avg2 = spectrum2.reduce((a, b) => a + b, 0) / 100;
       
@@ -122,7 +123,3 @@ describe('Material Parity with P3', () => {
     });
   });
 });
-
-
-
-

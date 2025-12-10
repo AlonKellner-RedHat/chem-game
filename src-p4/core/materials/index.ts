@@ -1,7 +1,7 @@
 /**
  * Materials Module
  * 
- * Simplified material system for spectral calculations.
+ * Mole fraction-based material system for spectral calculations.
  */
 
 export {
@@ -12,6 +12,21 @@ export {
   type Molecule,
   type AbsorptionPeak,
 } from './Material';
+
+export {
+  type AbsorptionModel,
+  BaseMaterialAbsorption,
+  MoleculeAbsorption,
+  CompositeAbsorption,
+} from './AbsorptionModel';
+
+export {
+  type AbsorptionDataPoint,
+  PURE_WATER_ABSORPTION,
+  PURE_CORUNDUM_ABSORPTION,
+  AIR_ABSORPTION,
+  MATERIAL_CONSTANTS,
+} from './AbsorptionData';
 
 export { createWaterMaterial, CopperSulfate, MethyleneBlue } from './WaterMaterial';
 export { createCrystalMaterial, ChromiumIon, PotassiumPermanganate } from './CrystalMaterial';
@@ -39,7 +54,3 @@ export function getAllMaterials(): Material[] {
 export function getMaterialById(id: string): Material | undefined {
   return getAllMaterials().find(m => m.id === id);
 }
-
-
-
-

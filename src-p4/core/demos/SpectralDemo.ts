@@ -93,7 +93,10 @@ export class SpectralDemo implements Demo {
       molecules: [],  // No absorption peaks - just flat transmission
       bandGap: 0,     // No band gap (transparent in visible)
       uvCutoff: 0,    // No UV cutoff
-      generateTransmissionSpectrum: (minWl: number, maxWl: number, resolution: number) => {
+      baseAbsorption: { id: 'none', getExtinction: () => 0 },
+      baseMolarConcentration: 1,
+      getBaseMoleFraction: () => 1.0,
+      generateTransmissionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
         // Flat 66% transmission across all wavelengths
         return new Float32Array(resolution).fill(0.66);
       },
@@ -256,9 +259,9 @@ export class SpectralDemo implements Demo {
       const panel = this.controlPanels[panelIndex];
       if (!panel) continue;
       
-      // Reset concentration sliders
+      // Reset mole fraction sliders
       for (const molecule of shape.material.molecules) {
-        panel.setSliderValue(molecule.id, shape.properties.concentrations[molecule.id] || 0.01);
+        panel.setSliderValue(molecule.id, shape.properties.moleFractions[molecule.id] || 0.0001);
       }
       
       // Reset depth slider
@@ -663,16 +666,27 @@ export class SpectralDemo implements Demo {
       },
     });
     
-    // Add sliders for each molecule concentration
+    // Add sliders for each molecule mole fraction (percentage)
+    // Format as percentage with appropriate precision
+    const formatPercent = (value: number): string => {
+      const percent = value * 100;
+      if (percent < 0.001) return '0%';
+      if (percent < 0.1) return `${percent.toFixed(3)}%`;
+      if (percent < 1) return `${percent.toFixed(2)}%`;
+      if (percent < 10) return `${percent.toFixed(1)}%`;
+      return `${percent.toFixed(0)}%`;
+    };
+    
     for (const molecule of shape.material.molecules) {
       panel.addSlider(molecule.id, {
         min: 0,
-        max: 1.0,
-        value: shape.properties.concentrations[molecule.id] || 0.01,
+        max: 0.1,  // Up to 10% mole fraction
+        value: shape.properties.moleFractions[molecule.id] || 0.0001,
         logarithmic: true,
         label: molecule.name,
+        formatValue: formatPercent,
         onChange: (value) => {
-          shape.properties.concentrations[molecule.id] = value;
+          shape.properties.moleFractions[molecule.id] = value;
           this.needsRender = true;
         },
       });

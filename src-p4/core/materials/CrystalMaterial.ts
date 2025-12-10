@@ -1,28 +1,37 @@
 /**
  * Crystal Material
  * 
- * Corundum-like crystal with impurity ions.
+ * Corundum (Al2O3) crystal with optional dopant ions.
+ * Uses mole fraction composition where pure corundum fills the remainder.
  */
 
 import { createMaterial, Material, Molecule } from './Material';
+import { PURE_CORUNDUM_ABSORPTION, MATERIAL_CONSTANTS } from './AbsorptionData';
 
-// Molecule definitions
-// For ions in crystals, broadening is from phonon coupling/crystal field effects
-// Temperature can slightly affect these, but the natural widths dominate
-// Pressure broadening is negligible in solid phase (incompressible)
-const ChromiumIon: Molecule = {
+/**
+ * Chromium Ion (Cr³⁺)
+ * 
+ * Creates ruby when doped into corundum.
+ * Absorbs green/yellow, transmitting red.
+ */
+export const ChromiumIon: Molecule = {
   id: 'chromium-ion',
   name: 'Chromium Ion (Cr³⁺)',
   mass: 52.0, // Chromium atomic mass
   pressureBroadening: 0, // Negligible in solid phase
   peaks: [
-    // Ruby-like d-d transition bands (inherently broad)
+    // Ruby-like d-d transition bands
     { wavelength: 550, extinction: 25, naturalWidth: 80 },
     { wavelength: 400, extinction: 18, naturalWidth: 60 },
   ],
 };
 
-const PotassiumPermanganate: Molecule = {
+/**
+ * Potassium Permanganate (KMnO4)
+ * 
+ * Deep purple compound with strong absorption.
+ */
+export const PotassiumPermanganate: Molecule = {
   id: 'potassium-permanganate',
   name: 'Potassium Permanganate',
   mass: 158.0, // KMnO4 molecular mass
@@ -35,18 +44,22 @@ const PotassiumPermanganate: Molecule = {
 };
 
 /**
- * Create Crystal material
+ * Create Crystal material with corundum base
+ * 
+ * Pure corundum (sapphire) is essentially transparent in the visible range.
+ * Color comes from dopant ions:
+ * - Cr³⁺ → Ruby (red)
+ * - Ti⁴⁺/Fe²⁺ → Blue sapphire
+ * - Fe³⁺ → Yellow sapphire
  */
 export function createCrystalMaterial(): Material {
   return createMaterial(
     'crystal',
     'Crystal',
     [ChromiumIon, PotassiumPermanganate],
-    9.0,  // bandGap eV
-    150   // uvCutoff nm
+    9.0,  // bandGap eV (absorbs UV below ~138nm)
+    150,  // uvCutoff nm
+    PURE_CORUNDUM_ABSORPTION,
+    MATERIAL_CONSTANTS.CORUNDUM_MOLAR_CONCENTRATION
   );
 }
-
-export { ChromiumIon, PotassiumPermanganate };
-
-
