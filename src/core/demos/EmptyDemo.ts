@@ -1,29 +1,47 @@
+/**
+ * Empty Demo
+ * 
+ * Minimal placeholder demo for testing scene lifecycle.
+ */
+
 import { Demo } from './Demo';
 import { GameScene } from '../../scenes/GameScene';
 
-/**
- * Empty Demo
- * Just an empty grid with no objects or systems
- */
+// Base design dimensions
+const BASE_WIDTH = 1280;
+
 export class EmptyDemo implements Demo {
   readonly name = 'Empty';
-  readonly description = 'Empty grid with no objects';
-
-  initialize(_scene: GameScene): void {
-    // Nothing to initialize - just an empty grid
+  readonly description = 'Minimal placeholder demo';
+  
+  initialize(scene: GameScene): void {
+    console.log('[EmptyDemo] Initialized');
+    this.render(scene);
   }
-
-  reset(_scene: GameScene): void {
-    // Empty demo has nothing to reset
+  
+  resize(scene: GameScene, width: number, height: number): void {
+    this.render(scene);
   }
-
+  
   cleanup(scene: GameScene): void {
-    // Clean up any objects that might have been added
-    const interactionSystem = scene.getInteractionSystem();
-    const allObjects = interactionSystem.getAllObjects();
-    for (const obj of allObjects) {
-      interactionSystem.unregisterObject(obj.id);
-    }
+    console.log('[EmptyDemo] Cleaned up');
+  }
+  
+  private render(scene: GameScene): void {
+    const ctx = scene.getContext();
+    const { width, height } = scene.getDimensions();
+    const scale = width / BASE_WIDTH;
+    
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, width, height);
+    
+    ctx.fillStyle = '#fff';
+    ctx.font = `${24 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Empty Demo', width / 2, height / 2 - 20 * scale);
+    ctx.font = `${14 * scale}px sans-serif`;
+    ctx.fillText('Press M to open menu', width / 2, height / 2 + 20 * scale);
   }
 }
+
 

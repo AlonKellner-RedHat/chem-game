@@ -1,50 +1,70 @@
+/**
+ * Demo Interface
+ * 
+ * Base interface for all demos in the application.
+ */
+
 import { GameScene } from '../../scenes/GameScene';
-import { RGB } from '../spectral/CIE';
 
 /**
- * Base interface for all demos
- * Each demo defines its own initialization and cleanup logic
+ * Demo interface
  */
 export interface Demo {
-  /**
-   * Display name of the demo
-   */
+  /** Display name of the demo */
   readonly name: string;
-
-  /**
-   * Optional description of the demo
-   */
+  
+  /** Optional description */
   readonly description?: string;
-
+  
   /**
-   * Initialize the demo - set up objects, systems, etc.
-   * @param scene The game scene to initialize in
+   * Initialize the demo
+   * Called when the demo is loaded
    */
   initialize(scene: GameScene): void;
-
+  
   /**
-   * Clean up demo resources when switching away
-   * @param scene The game scene to clean up in
-   */
-  cleanup(scene: GameScene): void;
-
-  /**
-   * Reset the demo to its initial state
-   * @param scene The game scene to reset in
-   */
-  reset?(scene: GameScene): void;
-
-  /**
-   * Optional: Update method called every frame
-   * @param scene The game scene
+   * Update the demo (called each frame)
+   * Optional - only needed for animated demos
    */
   update?(scene: GameScene): void;
-
+  
   /**
-   * Optional: Get grid colors for spectral rendering
-   * Returns normalized RGB colors for grid background and lines
-   * @returns Object with backgroundColor and lineColor, or undefined to use defaults
+   * Reset the demo to initial state
+   * Optional
    */
-  getGridColors?(): { backgroundColor: RGB; lineColor: RGB } | undefined;
+  reset?(scene: GameScene): void;
+  
+  /**
+   * Handle resize events
+   * Optional - called when the scene is resized
+   */
+  resize?(scene: GameScene, width: number, height: number): void;
+  
+  /**
+   * Cleanup resources when demo is unloaded
+   */
+  cleanup(scene: GameScene): void;
 }
+
+/**
+ * Base class with common functionality
+ */
+export abstract class BaseDemo implements Demo {
+  abstract readonly name: string;
+  abstract readonly description?: string;
+  
+  abstract initialize(scene: GameScene): void;
+  abstract cleanup(scene: GameScene): void;
+  
+  update?(scene: GameScene): void;
+  
+  reset?(scene: GameScene): void {
+    // Default: reinitialize
+    this.cleanup(scene);
+    this.initialize(scene);
+  }
+  
+  resize?(scene: GameScene, width: number, height: number): void;
+}
+
 

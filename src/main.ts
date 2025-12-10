@@ -1,23 +1,57 @@
-import Phaser from 'phaser';
-import { gameConfig } from './config/gameConfig';
+/**
+ * Phaser 4 + WebGPU Entry Point
+ * 
+ * This is the main entry point for the Phaser 4 implementation.
+ * It initializes the game with WebGPU rendering support.
+ */
 
-// Check WebGL 2.0 support and log it (for diagnostic purposes)
-const webgl2Supported = (() => {
-  try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2') || canvas.getContext('experimental-webgl2');
-    return gl instanceof WebGL2RenderingContext;
-  } catch (e) {
-    return false;
+import { GameScene } from './scenes/GameScene';
+import { MenuScene } from './scenes/MenuScene';
+import { getAllDemos, getDefaultDemo } from './core/demos';
+
+// Initialize game
+async function init() {
+  console.log('[P4] Initializing...');
+  
+  // Get container
+  const container = document.getElementById('game-container');
+  if (!container) {
+    console.error('[P4] Game container not found');
+    return;
   }
-})();
+  
+  // Create game scene
+  const gameScene = new GameScene(container);
+  await gameScene.initialize();
+  
+  // Initial resize to fit container
+  const resizeGame = () => {
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    gameScene.resize(width, height);
+  };
+  resizeGame();
+  
+  // Listen for window resize
+  window.addEventListener('resize', resizeGame);
+  
+  // Create menu scene
+  const demos = getAllDemos();
+  const menuScene = new MenuScene(container, gameScene, demos);
+  
+  // Load default demo
+  const defaultDemo = getDefaultDemo();
+  gameScene.loadDemo(defaultDemo);
+  
+  // Setup keyboard shortcut for menu
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'm' || e.key === 'M') {
+      menuScene.toggle();
+    }
+  });
+  
+  console.log('[P4] Ready - Press M to open menu');
+}
 
-console.log(`[Main] WebGL 2.0 support: ${webgl2Supported ? 'Yes' : 'No'}`);
-console.log('[Main] Using Phaser\'s native WebGL context (configured via gameConfig.render.context.webgl)');
-
-// Scenes are already registered in gameConfig
-// Create Phaser game instance - Phaser will create WebGL 2.0 context based on config
-new Phaser.Game(gameConfig);
-
-console.log('Chemistry Simulator initialized');
+init().catch(console.error);
 

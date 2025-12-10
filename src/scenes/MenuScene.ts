@@ -1,170 +1,227 @@
-import Phaser from 'phaser';
+/**
+ * Menu Scene
+ * 
+ * Demo selection overlay.
+ */
+
 import { Demo } from '../core/demos/Demo';
-import { InteractivityDemo } from '../core/demos/InteractivityDemo';
-import { EmptyDemo } from '../core/demos/EmptyDemo';
-import { SpectralDemo } from '../core/demos/SpectralDemo';
-import { AdvancedSpectralDemo } from '../core/demos/AdvancedSpectralDemo';
-import { GPUDemo } from '../core/demos/GPUDemo';
 import { GameScene } from './GameScene';
 
+// Base design dimensions
+const BASE_WIDTH = 1280;
+const BASE_HEIGHT = 720;
+
 /**
- * Menu Scene - Overlay for demo selection
+ * Menu item
  */
-export class MenuScene extends Phaser.Scene {
-  private demos: Demo[] = [];
-  private gameScene!: GameScene;
-  private menuContainer!: Phaser.GameObjects.Container;
-  private background!: Phaser.GameObjects.Rectangle;
+interface MenuItem {
+  demo: Demo;
+  element: HTMLElement;
+}
 
-  constructor() {
-    super({ key: 'MenuScene' });
+/**
+ * MenuScene class
+ */
+export class MenuScene {
+  private container: HTMLElement;
+  private overlay: HTMLElement | null = null;
+  private scaleWrapper: HTMLElement | null = null;
+  private items: MenuItem[] = [];
+  private gameScene: GameScene;
+  private demos: Demo[];
+  private onSelect: ((demo: Demo) => void) | null = null;
+  private resizeHandler: (() => void) | null = null;
+  
+  constructor(container: HTMLElement, gameScene: GameScene, demos: Demo[]) {
+    this.container = container;
+    this.gameScene = gameScene;
+    this.demos = demos;
   }
-
-  create(): void {
-    // Get reference to GameScene
-    this.gameScene = this.scene.get('GameScene') as GameScene;
-
-    // Initialize available demos
-    this.demos = [
-      new InteractivityDemo(),
-      new EmptyDemo(),
-      new SpectralDemo(),
-      new AdvancedSpectralDemo(),
-      new GPUDemo(),
-    ];
-
-    // Create semi-transparent background
-    const { width, height } = this.cameras.main;
-    this.background = this.add.rectangle(
-      width / 2,
-      height / 2,
-      width,
-      height,
-      0x000000,
-      0.7
-    );
-    this.background.setInteractive();
-
-    // Create menu container
-    this.menuContainer = this.add.container(width / 2, height / 2);
-
-    // Create menu title
-    const title = this.add.text(0, -200, 'Select Demo', {
-      fontSize: '32px',
-      color: '#ffffff',
-      fontStyle: 'bold',
-    });
-    title.setOrigin(0.5, 0.5);
-    this.menuContainer.add(title);
-
-    // Create demo list
-    const currentDemo = this.gameScene.getCurrentDemo();
-    let yOffset = -100;
-
-    for (let i = 0; i < this.demos.length; i++) {
-      const demo = this.demos[i];
-      const isCurrent = currentDemo?.name === demo.name;
-
-      // Create demo button background
-      const buttonBg = this.add.rectangle(
-        0,
-        yOffset,
-        400,
-        60,
-        isCurrent ? 0x4a90e2 : 0x333333,
-        1
-      );
-      buttonBg.setInteractive({ useHandCursor: true });
-      buttonBg.setStrokeStyle(2, isCurrent ? 0x6bb3ff : 0x555555);
-
-      // Create demo name text
-      const nameText = this.add.text(0, yOffset - 10, demo.name, {
-        fontSize: '24px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      });
-      nameText.setOrigin(0.5, 0.5);
-
-      // Create demo description text (if available)
-      let descText: Phaser.GameObjects.Text | null = null;
-      if (demo.description) {
-        descText = this.add.text(0, yOffset + 15, demo.description, {
-          fontSize: '14px',
-          color: '#cccccc',
-        });
-        descText.setOrigin(0.5, 0.5);
-      }
-
-      // Add hover effects
-      buttonBg.on('pointerover', () => {
-        if (!isCurrent) {
-          buttonBg.setFillStyle(0x444444);
-        }
-      });
-
-      buttonBg.on('pointerout', () => {
-        if (!isCurrent) {
-          buttonBg.setFillStyle(0x333333);
-        }
-      });
-
-      // Add click handler
-      buttonBg.on('pointerdown', () => {
-        this.selectDemo(demo);
-      });
-
-      // Add to container
-      this.menuContainer.add([buttonBg, nameText]);
-      if (descText) {
-        this.menuContainer.add(descText);
-      }
-
-      yOffset += 80;
+  
+  /**
+   * Show the menu
+   */
+  show(onSelect?: (demo: Demo) => void): void {
+    if (this.overlay) {
+      return; // Already visible
     }
-
-    // Create close button
-    const closeButton = this.add.text(0, 200, 'Close (M)', {
-      fontSize: '20px',
-      color: '#ffffff',
-      backgroundColor: '#666666',
-      padding: { x: 15, y: 8 },
-    });
-    closeButton.setOrigin(0.5, 0.5);
-    closeButton.setInteractive({ useHandCursor: true });
-    closeButton.on('pointerdown', () => {
-      this.closeMenu();
-    });
-    closeButton.on('pointerover', () => {
-      closeButton.setBackgroundColor('#888888');
-    });
-    closeButton.on('pointerout', () => {
-      closeButton.setBackgroundColor('#666666');
-    });
-    this.menuContainer.add(closeButton);
-
-    // Close menu when clicking background
-    this.background.on('pointerdown', () => {
-      this.closeMenu();
-    });
-
-    // Keyboard shortcut to close (M key)
-    this.input.keyboard?.on('keydown-M', () => {
-      this.closeMenu();
-    });
-
-    // Prevent input from reaching GameScene
-    this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
-      event.stopPropagation();
-    });
+    
+    this.onSelect = onSelect || null;
+    this.createOverlay();
   }
-
-  private selectDemo(demo: Demo): void {
-    this.gameScene.loadDemo(demo);
-    this.closeMenu();
+  
+  /**
+   * Hide the menu
+   */
+  hide(): void {
+    if (this.overlay) {
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler);
+        this.resizeHandler = null;
+      }
+      this.overlay.remove();
+      this.overlay = null;
+      this.scaleWrapper = null;
+      this.items = [];
+    }
   }
-
-  private closeMenu(): void {
-    this.scene.stop();
+  
+  /**
+   * Toggle visibility
+   */
+  toggle(onSelect?: (demo: Demo) => void): void {
+    if (this.overlay) {
+      this.hide();
+    } else {
+      this.show(onSelect);
+    }
+  }
+  
+  /**
+   * Create the overlay UI
+   */
+  private createOverlay(): void {
+    // Create overlay container
+    this.overlay = document.createElement('div');
+    this.overlay.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      overflow: hidden;
+    `;
+    
+    // Create scaled wrapper for menu content
+    this.scaleWrapper = document.createElement('div');
+    this.scaleWrapper.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transform-origin: center center;
+    `;
+    this.overlay.appendChild(this.scaleWrapper);
+    
+    // Apply initial scale
+    this.updateScale();
+    
+    // Listen for resize
+    this.resizeHandler = () => this.updateScale();
+    window.addEventListener('resize', this.resizeHandler);
+    
+    // Title
+    const title = document.createElement('h1');
+    title.textContent = 'Select Demo';
+    title.style.cssText = `
+      color: white;
+      font-family: sans-serif;
+      margin-bottom: 24px;
+    `;
+    this.scaleWrapper.appendChild(title);
+    
+    // Demo buttons
+    const currentDemo = this.gameScene.getCurrentDemo();
+    
+    for (const demo of this.demos) {
+      const isCurrent = currentDemo?.name === demo.name;
+      const button = this.createButton(demo, isCurrent);
+      this.scaleWrapper.appendChild(button.element);
+      this.items.push(button);
+    }
+    
+    // Close button
+    const closeButton = document.createElement('button');
+    closeButton.textContent = 'Close (M)';
+    closeButton.style.cssText = `
+      margin-top: 24px;
+      padding: 8px 16px;
+      font-size: 16px;
+      background: #666;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    `;
+    closeButton.onclick = () => this.hide();
+    this.scaleWrapper.appendChild(closeButton);
+    
+    // Click outside to close
+    this.overlay.onclick = (e) => {
+      if (e.target === this.overlay) {
+        this.hide();
+      }
+    };
+    
+    this.container.appendChild(this.overlay);
+  }
+  
+  /**
+   * Update scale based on container size
+   */
+  private updateScale(): void {
+    if (!this.scaleWrapper) return;
+    
+    const { width, height } = this.gameScene.getDimensions();
+    const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
+    this.scaleWrapper.style.transform = `scale(${scale})`;
+  }
+  
+  /**
+   * Create a demo button
+   */
+  private createButton(demo: Demo, isCurrent: boolean): MenuItem {
+    const button = document.createElement('button');
+    button.style.cssText = `
+      width: 400px;
+      padding: 16px;
+      margin: 8px;
+      font-size: 18px;
+      background: ${isCurrent ? '#4a90e2' : '#333'};
+      color: white;
+      border: 2px solid ${isCurrent ? '#6bb3ff' : '#555'};
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+    `;
+    
+    const title = document.createElement('div');
+    title.textContent = demo.name;
+    title.style.fontWeight = 'bold';
+    button.appendChild(title);
+    
+    if (demo.description) {
+      const desc = document.createElement('div');
+      desc.textContent = demo.description;
+      desc.style.cssText = 'font-size: 14px; color: #ccc; margin-top: 4px;';
+      button.appendChild(desc);
+    }
+    
+    button.onmouseover = () => {
+      if (!isCurrent) {
+        button.style.background = '#444';
+      }
+    };
+    
+    button.onmouseout = () => {
+      if (!isCurrent) {
+        button.style.background = '#333';
+      }
+    };
+    
+    button.onclick = () => {
+      this.gameScene.loadDemo(demo);
+      this.onSelect?.(demo);
+      this.hide();
+    };
+    
+    return { demo, element: button };
   }
 }
+
 

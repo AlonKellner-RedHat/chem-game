@@ -1,12 +1,27 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Vitest configuration for tests
+ */
 export default defineConfig({
   test: {
-    globals: true,
+    include: ['src/tests/**/*.test.ts'],
     environment: 'jsdom',
-    testTimeout: 5000,
-    hookTimeout: 5000,
-    teardownTimeout: 5000,
+    globals: true,
+    coverage: {
+      provider: 'v8',
+      include: ['src/core/**/*.ts'],
+      exclude: ['src/core/**/*.test.ts'],
+    },
+  },
+  resolve: {
+    alias: {
+      '@': '/src',
+      '@core': '/src/core',
+      '@scenes': '/src/scenes',
+      '@physics': '/src/core/physics',
+      '@rendering': '/src/core/rendering',
+      '@ui': '/src/core/ui',
+    },
   },
 });
-

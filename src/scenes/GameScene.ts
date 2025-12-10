@@ -1,248 +1,217 @@
-import Phaser from 'phaser';
-import { Grid } from '../core/Grid';
-import { GameObject } from '../core/GameObject';
-import { InteractionSystem } from '../core/InteractionSystem';
-import { ConnectionSystem } from '../core/ConnectionSystem';
-import { ObjectRenderer } from '../core/ObjectRenderer';
+/**
+ * Game Scene
+ * 
+ * Main scene that manages demo rendering and interactions.
+ * This is a framework-agnostic implementation that can work
+ * with Canvas2D now and Phaser 4 later.
+ */
+
+import { createRenderer, Renderer } from '../core/rendering/PhaserBridge';
 import { Demo } from '../core/demos/Demo';
-import { AdvancedSpectralDemo } from '../core/demos/AdvancedSpectralDemo';
-// import { SpectralDemo } from '../core/demos/SpectralDemo'; // Available for testing via menu
-// import { GPUDemo } from '../core/demos/GPUDemo'; // Available for testing via menu
 
-export class GameScene extends Phaser.Scene {
-  private grid!: Grid;
-  private interactionSystem!: InteractionSystem;
-  private connectionSystem!: ConnectionSystem;
-  private objectRenderer!: ObjectRenderer;
-  private gridGraphics!: Phaser.GameObjects.Graphics;
-  private objectGraphics!: Phaser.GameObjects.Graphics;
-  private connectionGraphics!: Phaser.GameObjects.Graphics;
-  private resetButton!: Phaser.GameObjects.Text;
-  private menuButton!: Phaser.GameObjects.Text;
-  private currentDemo: Demo | null = null;
+/**
+ * Scene state
+ */
+export interface SceneState {
+  width: number;
+  height: number;
+  isInitialized: boolean;
+  currentDemo: Demo | null;
+}
 
-  constructor() {
-    super({ key: 'GameScene' });
-  }
-
-  create(): void {
-    // Initialize grid
-    this.grid = new Grid(50);
-
-    // Initialize systems
-    this.interactionSystem = new InteractionSystem(this.grid);
-    this.connectionSystem = new ConnectionSystem(this.grid);
-    this.objectRenderer = new ObjectRenderer(this.grid);
-
-    // Create graphics objects
-    this.gridGraphics = this.add.graphics();
-    this.objectGraphics = this.add.graphics();
-    this.connectionGraphics = this.add.graphics();
-
-    // Set camera bounds
-    this.cameras.main.setBounds(-1000, -1000, 2000, 2000);
-
-    // Set up input handlers
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.handlePointerDown(pointer);
-    });
-
-    // Create UI buttons
-    this.createResetButton();
-    this.createMenuButton();
-
-    // Load default demo
-    this.loadDemo(new AdvancedSpectralDemo());
-
-    // Set up keyboard shortcut for menu (M key)
-    this.input.keyboard?.on('keydown-M', () => {
-      this.scene.launch('MenuScene');
-    });
-  }
-
-  /**
-   * Load a demo - cleans up current demo and initializes new one
-   */
-  public loadDemo(demo: Demo): void {
-    // Clean up current demo
-    if (this.currentDemo) {
-      this.currentDemo.cleanup(this);
+/**
+ * GameScene class
+ * 
+ * Manages the game canvas and demo lifecycle.
+ */
+export class GameScene {
+  private wrapper: HTMLDivElement;
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private renderer: Renderer | null = null;
+  private state: SceneState;
+  private animationId: number | null = null;
+  
+  constructor(container: HTMLElement) {
+    // Create wrapper div to hold canvas and UI overlays
+    // This wrapper gets centered by flexbox and UI is positioned relative to it
+    this.wrapper = document.createElement('div');
+    this.wrapper.style.cssText = `
+      position: relative;
+      display: inline-block;
+    `;
+    container.appendChild(this.wrapper);
+    
+    // Create canvas inside wrapper
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 1280;
+    this.canvas.height = 720;
+    this.canvas.style.display = 'block';
+    this.wrapper.appendChild(this.canvas);
+    
+    // Get 2D context for display
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to get 2D context');
     }
-
-    // Set new demo
-    this.currentDemo = demo;
-
+    this.ctx = ctx;
+    
+    // Initialize state
+    this.state = {
+      width: this.canvas.width,
+      height: this.canvas.height,
+      isInitialized: false,
+      currentDemo: null,
+    };
+  }
+  
+  /**
+   * Initialize the scene
+   */
+  async initialize(): Promise<void> {
+    // Create renderer
+    this.renderer = await createRenderer();
+    this.renderer.resize(this.state.width, this.state.height);
+    
+    this.state.isInitialized = true;
+    console.log('[GameScene] Initialized');
+    
+    // Start render loop
+    this.startRenderLoop();
+  }
+  
+  /**
+   * Load a demo
+   */
+  loadDemo(demo: Demo): void {
+    // Cleanup current demo
+    if (this.state.currentDemo) {
+      this.state.currentDemo.cleanup(this);
+    }
+    
     // Initialize new demo
+    this.state.currentDemo = demo;
     demo.initialize(this);
+    
+    console.log(`[GameScene] Loaded demo: ${demo.name}`);
   }
-
+  
   /**
-   * Get the current demo
+   * Get current demo
    */
-  public getCurrentDemo(): Demo | null {
-    return this.currentDemo;
+  getCurrentDemo(): Demo | null {
+    return this.state.currentDemo;
   }
-
+  
   /**
-   * Get interaction system (for demos to use)
+   * Get renderer
    */
-  public getInteractionSystem(): InteractionSystem {
-    return this.interactionSystem;
+  getRenderer(): Renderer | null {
+    return this.renderer;
   }
-
+  
   /**
-   * Get connection system (for demos to use)
+   * Get canvas dimensions
    */
-  public getConnectionSystem(): ConnectionSystem {
-    return this.connectionSystem;
+  getDimensions(): { width: number; height: number } {
+    return { width: this.state.width, height: this.state.height };
   }
-
+  
   /**
-   * Get object renderer (for demos to use)
+   * Get canvas for direct manipulation
    */
-  public getObjectRenderer(): ObjectRenderer {
-    return this.objectRenderer;
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
   }
-
+  
   /**
-   * Get grid (for demos to use)
+   * Get 2D context
    */
-  public getGrid(): Grid {
-    return this.grid;
+  getContext(): CanvasRenderingContext2D {
+    return this.ctx;
   }
-
-  private createResetButton(): void {
-    const buttonX = this.cameras.main.width - 100;
-    const buttonY = 30;
-
-    this.resetButton = this.add
-      .text(buttonX, buttonY, 'Reset', {
-        fontSize: '20px',
-        color: '#ffffff',
-        backgroundColor: '#666666',
-        padding: { x: 10, y: 5 },
-      })
-      .setInteractive({ useHandCursor: true })
-      .setScrollFactor(0) // Fixed to camera
-      .on('pointerdown', () => {
-        this.reset();
-      })
-      .on('pointerover', () => {
-        this.resetButton.setBackgroundColor('#888888');
-      })
-      .on('pointerout', () => {
-        this.resetButton.setBackgroundColor('#666666');
-      });
-  }
-
-  private createMenuButton(): void {
-    const buttonX = 20;
-    const buttonY = 30;
-
-    this.menuButton = this.add
-      .text(buttonX, buttonY, 'Menu', {
-        fontSize: '20px',
-        color: '#ffffff',
-        backgroundColor: '#666666',
-        padding: { x: 10, y: 5 },
-      })
-      .setInteractive({ useHandCursor: true })
-      .setScrollFactor(0) // Fixed to camera
-      .on('pointerdown', () => {
-        this.scene.launch('MenuScene');
-      })
-      .on('pointerover', () => {
-        this.menuButton.setBackgroundColor('#888888');
-      })
-      .on('pointerout', () => {
-        this.menuButton.setBackgroundColor('#666666');
-      });
-  }
-
-  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
-    // Check if clicking reset button
-    if (this.resetButton.getBounds().contains(pointer.x, pointer.y)) {
-      return; // Let button handle it
-    }
-
-    // Check if clicking menu button
-    if (this.menuButton.getBounds().contains(pointer.x, pointer.y)) {
-      return; // Let button handle it
-    }
-
-    const worldX = pointer.worldX;
-    const worldY = pointer.worldY;
-
-    const heldObject = this.interactionSystem.getHeldObject();
-    if (heldObject) {
-      // Try to place the held object
-      // If placement failed (no interaction), object remains in hand
-      this.interactionSystem.placeObject(worldX, worldY);
+  
+  /**
+   * Resize the scene to fit the container
+   */
+  resize(width: number, height: number): void {
+    // Maintain 16:9 aspect ratio
+    const aspectRatio = 16 / 9;
+    let newWidth = width;
+    let newHeight = height;
+    
+    if (width / height > aspectRatio) {
+      // Too wide, constrain by height
+      newWidth = Math.floor(height * aspectRatio);
     } else {
-      // Try to pick up an object
-      this.interactionSystem.pickupObject(worldX, worldY);
+      // Too tall, constrain by width
+      newHeight = Math.floor(width / aspectRatio);
+    }
+    
+    // Update canvas size
+    this.canvas.width = newWidth;
+    this.canvas.height = newHeight;
+    
+    // Update state
+    this.state.width = newWidth;
+    this.state.height = newHeight;
+    
+    // Resize renderer
+    if (this.renderer) {
+      this.renderer.resize(newWidth, newHeight);
+    }
+    
+    // Notify current demo of resize
+    if (this.state.currentDemo?.resize) {
+      this.state.currentDemo.resize(this, newWidth, newHeight);
     }
   }
-
-  private reset(): void {
-    // Call the current demo's reset method if it exists
-    if (this.currentDemo && typeof this.currentDemo.reset === 'function') {
-      this.currentDemo.reset(this);
-    }
+  
+  /**
+   * Start the render loop
+   */
+  private startRenderLoop(): void {
+    const loop = async () => {
+      await this.update();
+      this.animationId = requestAnimationFrame(loop);
+    };
+    
+    this.animationId = requestAnimationFrame(loop);
   }
-
-  update(): void {
-    // Clear graphics
-    this.objectGraphics.clear();
-    this.connectionGraphics.clear();
-
-    // Grid overlay disabled - GPU shader renders its own grid
-    // The simulated grid in the canvas handles the visual grid
-    this.gridGraphics.clear();
-
-    // Only render objects and connections if interaction system is initialized
-    // (Empty demo doesn't have interaction system)
-    if (this.interactionSystem) {
-      // Render all objects (excluding held object)
-      const allObjects = this.interactionSystem.getAllObjects();
-      const heldObject = this.interactionSystem.getHeldObject();
-      for (const obj of allObjects) {
-        // Skip rendering if this object is being held
-        if (heldObject && obj.id === heldObject.id) {
-          continue;
-        }
-        this.objectRenderer.renderObject(this.objectGraphics, obj);
-      }
-
-      // Render held object at mouse position
-      if (heldObject) {
-        const pointer = this.input.activePointer;
-        this.objectRenderer.renderHeldObject(
-          this.objectGraphics,
-          heldObject,
-          pointer.worldX,
-          pointer.worldY
-        );
-      }
-
-      // Render connections
-      const connections = this.interactionSystem.getConnections();
-      if (connections.length > 0) {
-        // Create a map of objects for connection rendering
-        const objectsMap = new Map<string, GameObject>();
-        for (const obj of allObjects) {
-          objectsMap.set(obj.id, obj);
-        }
-        this.connectionSystem.renderConnections(
-          this.connectionGraphics,
-          connections,
-          objectsMap
-        );
-      }
+  
+  /**
+   * Update and render
+   */
+  private async update(): Promise<void> {
+    if (!this.state.isInitialized || !this.renderer) {
+      return;
     }
-
-    // Allow current demo to update itself
-    this.currentDemo?.update?.(this);
+    
+    // Update current demo
+    if (this.state.currentDemo?.update) {
+      this.state.currentDemo.update(this);
+    }
+    
+    // Render via GPU and display
+    const imageData = await this.renderer.render();
+    this.ctx.putImageData(imageData, 0, 0);
+  }
+  
+  /**
+   * Destroy the scene
+   */
+  destroy(): void {
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+    }
+    
+    if (this.state.currentDemo) {
+      this.state.currentDemo.cleanup(this);
+    }
+    
+    this.renderer?.destroy();
+    this.wrapper.remove();
   }
 }
+
 

@@ -1,27 +1,20 @@
 {
   "name": "chem-game",
   "version": "0.1.0",
-  "description": "A 2D chemistry simulation game built with TypeScript and Phaser3",
+  "description": "A 2D chemistry simulation game built with TypeScript and WebGPU",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:p4": "vite --config vite.config.p4.ts",
-    "build": "tsc && vite build",
-    "build:p4": "vite build --config vite.config.p4.ts",
+    "build": "vite build",
     "preview": "vite preview",
-    "preview:p4": "vite preview --config vite.config.p4.ts",
     "test": "vitest --run",
-    "test:p4": "vitest --run --config vitest.config.p4.ts",
     "lint": "eslint src --ext ts",
-    "lint:p4": "eslint src-p4 --ext ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "format:p4": "prettier --write \"src-p4/**/*.ts\"",
     "type-check": "tsc --noEmit",
     "profile": "node scripts/profile-rendering.js"
   },
   "dependencies": {
-    "html2canvas": "^1.4.1",
-    "phaser": "^3.80.1"
+    "html2canvas": "^1.4.1"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
