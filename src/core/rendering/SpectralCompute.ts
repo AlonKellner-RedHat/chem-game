@@ -83,6 +83,7 @@ export interface ComputeParams {
   emissionSpreadFactor?: number; // Fraction of emission that spreads sideways (default: 0.3)
   emissionAuraSigma?: number; // Gaussian sigma for emission aura blur (default: 3.0)
   atmosphericScatterSigma?: number; // Global atmospheric scatter blur sigma in pixels (default: 5.0)
+  skipBlur?: boolean; // Skip blur passes for draft mode (faster but less accurate)
 }
 
 /**
@@ -2258,16 +2259,23 @@ export class SpectralComputePipeline {
     }
 
     // Update settings
-    this.plotResolution =
+    const newPlotResolution =
       params.plotResolution ?? SpectralComputePipeline.MAX_SPECTRAL_RESOLUTION;
     const newBoxSize =
       params.boxSize ?? SpectralComputePipeline.DEFAULT_BOX_SIZE;
 
-    // Resize spectrum box buffer if needed
-    if (newBoxSize !== this.boxSize) {
+    // Resize spectrum box buffer if boxSize or plotResolution changed
+    const needsBufferResize = 
+      newBoxSize !== this.boxSize || 
+      newPlotResolution !== this.plotResolution;
+    
+    if (needsBufferResize) {
       this.boxSize = newBoxSize;
+      this.plotResolution = newPlotResolution;
       this.spectrumBoxBuffer?.destroy();
       this.initSpectrumBoxBuffer();
+      // Also resize high-res buffers for new resolution
+      this.destroyHighResBuffers();
       this.bindGroup0 = null;
     }
 
@@ -2540,37 +2548,44 @@ export class SpectralComputePipeline {
           );
 
           // === Dual-path scattering blur (uses unified pipelines with spectrum params) ===
-          // Always run blur passes - shader handles sigma=0 by copying (sets up buffers for combine)
-          // Path 1 (blur→mask): Blur full transmitted, background bleeds INTO shapes
-          dispatchHighRes(
-            this.blurTransmittedHPipeline!,
-            `High-Res Layer ${layer} BlurTrans H`
-          );
-          dispatchHighRes(
-            this.blurTransmittedVPipeline!,
-            `High-Res Layer ${layer} BlurTrans V`
-          );
+          // Skip blur passes in draft mode for performance (~8ms saved per layer)
+          const skipBlur = params.skipBlur ?? false;
+          
+          if (!skipBlur) {
+            // Path 1 (blur→mask): Blur full transmitted, background bleeds INTO shapes
+            dispatchHighRes(
+              this.blurTransmittedHPipeline!,
+              `High-Res Layer ${layer} BlurTrans H`
+            );
+            dispatchHighRes(
+              this.blurTransmittedVPipeline!,
+              `High-Res Layer ${layer} BlurTrans V`
+            );
 
-          // Path 2 (mask→blur): Blur aura source, shape light bleeds OUT
-          dispatchHighRes(
-            this.blurHorizontalPipeline!,
-            `High-Res Layer ${layer} Blur H`
-          );
-          dispatchHighRes(
-            this.blurVerticalPipeline!,
-            `High-Res Layer ${layer} Blur V`
-          );
+            // Path 2 (mask→blur): Blur aura source, shape light bleeds OUT
+            dispatchHighRes(
+              this.blurHorizontalPipeline!,
+              `High-Res Layer ${layer} Blur H`
+            );
+            dispatchHighRes(
+              this.blurVerticalPipeline!,
+              `High-Res Layer ${layer} Blur V`
+            );
 
-          // Note: Emission aura buffer is now used for blurred transmitted (dual-path scatter).
-          // Emission aura blur is currently disabled in favor of the new scattering model.
-          const emissionAuraSigma = params.emissionAuraSigma ?? 3.0;
-          void emissionAuraSigma; // Suppress unused warning
+            // Note: Emission aura buffer is now used for blurred transmitted (dual-path scatter).
+            // Emission aura blur is currently disabled in favor of the new scattering model.
+            const emissionAuraSigma = params.emissionAuraSigma ?? 3.0;
+            void emissionAuraSigma; // Suppress unused warning
 
-          // Combine scattered with transmitted (uses unified pipeline with spectrum params)
-          dispatchHighRes(
-            this.combineScatteredPipeline!,
-            `High-Res Layer ${layer} Combine`
-          );
+            // Combine scattered with transmitted (uses unified pipeline with spectrum params)
+            dispatchHighRes(
+              this.combineScatteredPipeline!,
+              `High-Res Layer ${layer} Combine`
+            );
+          } else {
+            // Draft mode: Skip blur/combine, absorption output is layer result
+            console.log(`[DEBUG-SPECTRUM] Layer ${layer}: Skipping blur (draft mode)`);
+          }
 
           // DEBUG: Check buffer contents after each layer's combine
           await this.device.queue.onSubmittedWorkDone();

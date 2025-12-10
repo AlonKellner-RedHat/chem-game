@@ -113,12 +113,20 @@ export class WebGPURenderer implements Renderer {
   private cachedEmissionEnabled = true;
   private spectrumCacheValid = false;
   
-  // Spectrum throttling - only compute every N frames or when mouse moves significantly
+  // Spectrum throttling - unconditional N-frame throttle
   private spectrumFrameCounter = 0;
   private spectrumThrottleFrames = 10;  // Compute spectrum every 10th frame (perf optimization)
-  private spectrumMovementThreshold = 3;  // Recompute if mouse moves > 3 pixels
   private lastComputedX = -1;
   private lastComputedY = -1;
+  
+  // Stationary detection - track when mouse stops moving
+  private stationaryFrameCount = 0;
+  private stationaryThreshold = 3;  // Must be stationary for N frames before considered "stopped"
+  
+  // Progressive resolution - draft during movement, full when stationary
+  private static readonly DRAFT_RESOLUTION = 500;   // Fast preview during movement
+  private static readonly FULL_RESOLUTION = 5000;   // High quality when stationary
+  private isDraftSpectrum = true;  // True if current spectrum is draft quality
   
   async init(): Promise<boolean> {
     this.context = await initWebGPU();
@@ -225,32 +233,20 @@ export class WebGPURenderer implements Renderer {
    */
   invalidateSpectrumCache(): void {
     this.spectrumCacheValid = false;
+    this.isDraftSpectrum = true;  // Reset to draft when cache invalidated
   }
   
   /**
    * Check if spectrum should be computed this frame based on throttling
-   * Returns true if:
-   * - Frame counter reached threshold, OR
-   * - Mouse moved significantly from last computed position
+   * Uses unconditional N-frame throttle - no exceptions for movement
    */
   private shouldComputeSpectrum(): boolean {
     // Increment frame counter
     this.spectrumFrameCounter++;
     
-    // Check if frame counter reached threshold
+    // Only compute every N frames - no exceptions
     if (this.spectrumFrameCounter >= this.spectrumThrottleFrames) {
-      return true;
-    }
-    
-    // Check if mouse moved significantly
-    if (this.lastComputedX >= 0 && this.lastComputedY >= 0) {
-      const dx = Math.abs(this.sampleX - this.lastComputedX);
-      const dy = Math.abs(this.sampleY - this.lastComputedY);
-      if (dx > this.spectrumMovementThreshold || dy > this.spectrumMovementThreshold) {
-        return true;
-      }
-    } else if (this.sampleX >= 0 && this.sampleY >= 0) {
-      // First sample point - always compute
+      this.spectrumFrameCounter = 0;
       return true;
     }
     
@@ -258,10 +254,29 @@ export class WebGPURenderer implements Renderer {
   }
   
   /**
+   * Check if mouse has been stationary for several frames
+   * Used to determine when to upgrade from draft to full resolution
+   */
+  private isStationary(): boolean {
+    const dx = Math.abs(this.sampleX - this.lastComputedX);
+    const dy = Math.abs(this.sampleY - this.lastComputedY);
+    
+    // Within 1 pixel = considered same position
+    if (dx <= 1 && dy <= 1) {
+      this.stationaryFrameCount++;
+      return this.stationaryFrameCount > this.stationaryThreshold;
+    }
+    
+    // Mouse moved - reset counter
+    this.stationaryFrameCount = 0;
+    return false;
+  }
+  
+  /**
    * Update tracking after spectrum was computed
    */
   private recordSpectrumComputed(): void {
-    this.spectrumFrameCounter = 0;
+    // Frame counter is reset in shouldComputeSpectrum()
     this.lastComputedX = this.sampleX;
     this.lastComputedY = this.sampleY;
   }
@@ -279,10 +294,35 @@ export class WebGPURenderer implements Renderer {
     // Determine if we should compute spectrum this frame
     // Use both caching (scene unchanged) and throttling (frame skipping)
     const cacheValid = this.isSpectrumCacheValid();
-    const shouldCompute = isSampling && !cacheValid && this.shouldComputeSpectrum();
+    const throttleAllows = this.shouldComputeSpectrum();
+    const stationary = this.isStationary();
+    
+    // Decide what to compute and at what resolution:
+    // - If cache invalid and throttle allows: compute (draft if moving, full if stationary)
+    // - If cache valid but stationary with draft: upgrade to full resolution
+    let shouldCompute = false;
+    let useFullResolution = false;
+    
+    if (isSampling && throttleAllows) {
+      if (!cacheValid) {
+        // Scene/position changed - compute spectrum
+        shouldCompute = true;
+        // Use full resolution only if stationary, otherwise draft for speed
+        useFullResolution = stationary;
+      } else if (stationary && this.isDraftSpectrum) {
+        // Cache valid but we have draft and are stationary - upgrade to full
+        shouldCompute = true;
+        useFullResolution = true;
+      }
+    }
     
     // For profiler, record cache hit only when we truly skip computation
     profiler.recordCacheHit(!shouldCompute && isSampling);
+    
+    // Select resolution based on movement state
+    const plotResolution = useFullResolution 
+      ? WebGPURenderer.FULL_RESOLUTION 
+      : WebGPURenderer.DRAFT_RESOLUTION;
     
     const params: ComputeParams = {
       width: this.width,
@@ -297,11 +337,11 @@ export class WebGPURenderer implements Renderer {
       sampleX: shouldCompute ? this.sampleX : -1,
       sampleY: shouldCompute ? this.sampleY : -1,
       msdfPxRange: this.getMsdfPxRange(),
-      // Use 5000 samples only for spectrum output at sample point
-      plotResolution: 5000,
+      // Progressive resolution: draft during movement, full when stationary
+      plotResolution,
       // Average spectrum over 5-pixel radius circle
       averageRadius: 5,
-      // Compute spectrum for 11x11 box around sample point (reduced from 15 for perf)
+      // Compute spectrum for 11x11 box around sample point
       boxSize: 11,
       // Emission aura parameters
       emissionSpreadFactor: this.emissionSpreadFactor,
@@ -335,6 +375,7 @@ export class WebGPURenderer implements Renderer {
       this.lastSpectrum = await this.pipeline.readSpectrumOutput();
       this.updateSpectrumCache();
       this.recordSpectrumComputed();
+      this.isDraftSpectrum = !useFullResolution;
     }
     const readbackEnd = performance.now();
     profiler.recordReadbackTime(readbackEnd - readbackStart);
