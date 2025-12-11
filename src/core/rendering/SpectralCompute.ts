@@ -412,10 +412,16 @@ export class SpectralComputePipeline {
     plotResolution: number;
   } | null = null;
 
-  // Textures
+  // Textures - High-res for spectral plot (4500 samples)
   private materialPaletteTexture: GPUTexture | null = null;
   private fluorExcitationTexture: GPUTexture | null = null;
   private fluorEmissionTexture: GPUTexture | null = null;
+  
+  // Textures - Low-res for rendering (32 samples, bin-integrated)
+  private renderMaterialTexture: GPUTexture | null = null;
+  private renderExcitationTexture: GPUTexture | null = null;
+  private renderEmissionTexture: GPUTexture | null = null;
+  
   private numMaterials: number = 0;
   private msdfTextures: GPUTexture[] = [];
   private cieTextures: { x: GPUTexture; y: GPUTexture; z: GPUTexture } | null =
@@ -770,10 +776,12 @@ export class SpectralComputePipeline {
       ],
     });
 
-    // Bind group 1: material palette texture (r32float)
+    // Bind group 1: material palette textures (r32float)
+    // High-res (4500 samples) for spectrum plot + Low-res (32 samples) for rendering
     this.bindGroupLayout1 = this.device.createBindGroupLayout({
       label: "Bind Group Layout 1 (Material + Fluorescence Palettes)",
       entries: [
+        // High-res textures (for spectrum plot)
         {
           binding: 0,
           visibility: GPUShaderStage.COMPUTE,
@@ -791,6 +799,22 @@ export class SpectralComputePipeline {
         },
         {
           binding: 3,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: floatSampleType as GPUTextureSampleType },
+        },
+        // Low-res textures (for rendering - 32 samples, bin-integrated)
+        {
+          binding: 4,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: floatSampleType as GPUTextureSampleType },
+        },
+        {
+          binding: 5,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: floatSampleType as GPUTextureSampleType },
+        },
+        {
+          binding: 6,
           visibility: GPUShaderStage.COMPUTE,
           texture: { sampleType: floatSampleType as GPUTextureSampleType },
         },
@@ -866,13 +890,20 @@ export class SpectralComputePipeline {
    * Initialize default material palette (single material with full transmission)
    */
   private initDefaultMaterialPalette(): void {
-    // Create a 1x1 palette with full transmission
+    // High-res default (for spectrum plot)
     const defaultSpectrum = new Float32Array(100).fill(1.0);
     this.createMaterialPalette([defaultSpectrum]);
     
     // Create default empty fluorescence textures (no fluorescence)
     const defaultFluorescence = new Float32Array(100).fill(0.0);
     this.createFluorescencePalettes([defaultFluorescence], [defaultFluorescence]);
+    
+    // Low-res default (for rendering - 32 samples)
+    const renderSpectrum = new Float32Array(32).fill(1.0);
+    this.createRenderingMaterialPalette([renderSpectrum]);
+    
+    const renderFluorescence = new Float32Array(32).fill(0.0);
+    this.createRenderingFluorescencePalettes([renderFluorescence], [renderFluorescence]);
   }
 
   /**
@@ -1019,6 +1050,122 @@ export class SpectralComputePipeline {
 
     // Invalidate bind group
     this.bindGroup1 = null;
+  }
+
+  /**
+   * Set low-res material transmission spectra for rendering (bin-integrated)
+   * These textures have 32 samples matching the rendering pipeline's sample count
+   */
+  setRenderingMaterials(materials: TransmissionSpectrum[]): void {
+    if (materials.length === 0) {
+      const defaultSpectrum = new Float32Array(32).fill(1.0);
+      this.createRenderingMaterialPalette([defaultSpectrum]);
+    } else {
+      this.createRenderingMaterialPalette(materials);
+    }
+    this.bindGroup1 = null;
+  }
+
+  /**
+   * Set low-res fluorescence spectra for rendering (bin-integrated)
+   * These textures have 32 samples matching the rendering pipeline's sample count
+   */
+  setRenderingFluorescenceData(
+    excitationSpectra: Float32Array[],
+    emissionSpectra: Float32Array[]
+  ): void {
+    if (excitationSpectra.length === 0 || emissionSpectra.length === 0) {
+      const defaultSpectrum = new Float32Array(32).fill(0.0);
+      this.createRenderingFluorescencePalettes([defaultSpectrum], [defaultSpectrum]);
+    } else {
+      this.createRenderingFluorescencePalettes(excitationSpectra, emissionSpectra);
+    }
+    this.bindGroup1 = null;
+  }
+
+  /**
+   * Create low-res rendering material palette texture (32 samples)
+   */
+  private createRenderingMaterialPalette(materials: TransmissionSpectrum[]): void {
+    if (materials.length === 0) return;
+
+    const spectrumWidth = materials[0].length;
+    const numMaterials = materials.length;
+    const textureData = new Float32Array(spectrumWidth * numMaterials);
+
+    for (let materialIdx = 0; materialIdx < numMaterials; materialIdx++) {
+      const spectrum = materials[materialIdx];
+      const rowOffset = materialIdx * spectrumWidth;
+      for (let i = 0; i < spectrumWidth; i++) {
+        textureData[rowOffset + i] = spectrum[i] ?? 1.0;
+      }
+    }
+
+    this.renderMaterialTexture = this.device.createTexture({
+      label: `Render Material Palette (${numMaterials}x${spectrumWidth})`,
+      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      format: "r32float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+
+    this.device.queue.writeTexture(
+      { texture: this.renderMaterialTexture },
+      textureData,
+      { bytesPerRow: spectrumWidth * 4, rowsPerImage: numMaterials },
+      { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 }
+    );
+  }
+
+  /**
+   * Create low-res rendering fluorescence palette textures (32 samples)
+   */
+  private createRenderingFluorescencePalettes(
+    excitationSpectra: Float32Array[],
+    emissionSpectra: Float32Array[]
+  ): void {
+    if (excitationSpectra.length === 0) return;
+
+    const spectrumWidth = excitationSpectra[0].length;
+    const numMaterials = excitationSpectra.length;
+
+    const excitationData = new Float32Array(spectrumWidth * numMaterials);
+    const emissionData = new Float32Array(spectrumWidth * numMaterials);
+
+    for (let materialIdx = 0; materialIdx < numMaterials; materialIdx++) {
+      const rowOffset = materialIdx * spectrumWidth;
+      for (let i = 0; i < spectrumWidth; i++) {
+        excitationData[rowOffset + i] = excitationSpectra[materialIdx][i] ?? 0.0;
+        emissionData[rowOffset + i] = emissionSpectra[materialIdx][i] ?? 0.0;
+      }
+    }
+
+    this.renderExcitationTexture = this.device.createTexture({
+      label: `Render Excitation Palette (${numMaterials}x${spectrumWidth})`,
+      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      format: "r32float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+
+    this.renderEmissionTexture = this.device.createTexture({
+      label: `Render Emission Palette (${numMaterials}x${spectrumWidth})`,
+      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      format: "r32float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+
+    this.device.queue.writeTexture(
+      { texture: this.renderExcitationTexture },
+      excitationData,
+      { bytesPerRow: spectrumWidth * 4, rowsPerImage: numMaterials },
+      { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 }
+    );
+
+    this.device.queue.writeTexture(
+      { texture: this.renderEmissionTexture },
+      emissionData,
+      { bytesPerRow: spectrumWidth * 4, rowsPerImage: numMaterials },
+      { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 }
+    );
   }
 
   /**
@@ -3256,6 +3403,9 @@ export class SpectralComputePipeline {
         !this.materialPaletteTexture ||
         !this.fluorExcitationTexture ||
         !this.fluorEmissionTexture ||
+        !this.renderMaterialTexture ||
+        !this.renderExcitationTexture ||
+        !this.renderEmissionTexture ||
         !this.bindGroupLayout1
       ) {
         console.warn("[SpectralCompute] Cannot create bindGroup1 - missing:", {
@@ -3263,6 +3413,9 @@ export class SpectralComputePipeline {
           materialPaletteTexture: !!this.materialPaletteTexture,
           fluorExcitationTexture: !!this.fluorExcitationTexture,
           fluorEmissionTexture: !!this.fluorEmissionTexture,
+          renderMaterialTexture: !!this.renderMaterialTexture,
+          renderExcitationTexture: !!this.renderExcitationTexture,
+          renderEmissionTexture: !!this.renderEmissionTexture,
           bindGroupLayout1: !!this.bindGroupLayout1,
         });
         return false;
@@ -3272,10 +3425,15 @@ export class SpectralComputePipeline {
         label: "Bind Group 1 (Material + Fluorescence Palettes)",
         layout: this.bindGroupLayout1,
         entries: [
+          // High-res textures (for spectrum plot)
           { binding: 0, resource: this.materialPaletteTexture.createView() },
           { binding: 1, resource: this.textureSampler },
           { binding: 2, resource: this.fluorExcitationTexture.createView() },
           { binding: 3, resource: this.fluorEmissionTexture.createView() },
+          // Low-res textures (for rendering - 32 samples)
+          { binding: 4, resource: this.renderMaterialTexture.createView() },
+          { binding: 5, resource: this.renderExcitationTexture.createView() },
+          { binding: 6, resource: this.renderEmissionTexture.createView() },
         ],
       });
     }

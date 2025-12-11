@@ -111,6 +111,7 @@ struct Shape {
 @group(0) @binding(5) var<storage, read_write> spectrumBox: array<f16>;
 
 // Material palette texture (2D atlas: X=wavelength, Y=material index)
+// High-resolution textures (4500 samples, 0.2nm bins) - for spectral plot
 @group(1) @binding(0) var materialPalette: texture_2d<f32>;
 @group(1) @binding(1) var materialSampler: sampler;
 
@@ -119,6 +120,12 @@ struct Shape {
 // Emission: spectral distribution of fluorescence emission
 @group(1) @binding(2) var fluorExcitationPalette: texture_2d<f32>;
 @group(1) @binding(3) var fluorEmissionPalette: texture_2d<f32>;
+
+// Low-resolution textures (32 samples, 29nm bins) - for rendering
+// These are bin-integrated to capture narrow spectral peaks
+@group(1) @binding(4) var renderMaterialPalette: texture_2d<f32>;
+@group(1) @binding(5) var renderExcitationPalette: texture_2d<f32>;
+@group(1) @binding(6) var renderEmissionPalette: texture_2d<f32>;
 
 // CIE color matching function textures (2D with height=1)
 @group(2) @binding(0) var cieXTexture: texture_2d<f32>;
@@ -357,7 +364,12 @@ fn getMaterialTransmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
   // V coordinate: center of the row for this material
   let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
   
-  return textureSampleLevel(materialPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  // Use high-res texture for spectrum mode (sampleCount > 32), low-res for rendering
+  if (params.sampleCount > 32u) {
+    return textureSampleLevel(materialPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  } else {
+    return textureSampleLevel(renderMaterialPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  }
 }
 
 /**
@@ -376,7 +388,12 @@ fn getFluorescenceExcitation(materialIndex: u32, wavelengthNm: f32) -> f32 {
   // V coordinate: center of the row for this material
   let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
   
-  return textureSampleLevel(fluorExcitationPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  // Use high-res texture for spectrum mode (sampleCount > 32), low-res for rendering
+  if (params.sampleCount > 32u) {
+    return textureSampleLevel(fluorExcitationPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  } else {
+    return textureSampleLevel(renderExcitationPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  }
 }
 
 /**
@@ -395,7 +412,12 @@ fn getFluorescenceEmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
   // V coordinate: center of the row for this material
   let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
   
-  return textureSampleLevel(fluorEmissionPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  // Use high-res texture for spectrum mode (sampleCount > 32), low-res for rendering
+  if (params.sampleCount > 32u) {
+    return textureSampleLevel(fluorEmissionPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  } else {
+    return textureSampleLevel(renderEmissionPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+  }
 }
 
 /**
@@ -659,18 +681,14 @@ fn computePixelIntensity(px: f32, py: f32, wavelength: f32, numShapes: u32) -> f
       );
       scatteringMultiplier *= scatterTrans;
       
-      // Thermal emission (Kirchhoff's law) + Fluorescence
+      // Thermal emission (Kirchhoff's law)
+      // NOTE: Fluorescence is handled by the two-pass applyLayerAbsorption pipeline.
+      // This simple per-wavelength path doesn't support inter-wavelength fluorescence
+      // (UV excitation → visible emission) because excitation and emission are at
+      // different wavelengths. Only Kirchhoff emission is computed here.
       if (params.enableEmission == 1u) {
         let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-        
-        // Fluorescence emission
-        let absorbedLight = intensity * (1.0 - materialTrans) * mask;
-        let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
-        let excitationAmount = absorbedLight * excitationEff;
-        let emissionShape = getFluorescenceEmission(shape.materialIndex, wavelength);
-        let fluorEmission = excitationAmount * emissionShape * shape.fluorescenceQuantumYield;
-        
-        emission += (em + fluorEmission) * mask;
+        emission += em * mask;
       }
     }
   }
@@ -1120,7 +1138,7 @@ fn isValidScreenPos(screenPos: vec2<i32>) -> bool {
 fn getWavelength(wIdx: u32) -> f32 {
   // Use full range (100-1000nm) for all rendering to capture UV excitation for fluorescence
   // This allows UV absorption → visible emission (e.g., sodium D-lines at 589nm)
-  return params.wavelengthMin + (params.wavelengthMax - params.wavelengthMin) * f32(wIdx) / f32(params.sampleCount - 1u);
+    return params.wavelengthMin + (params.wavelengthMax - params.wavelengthMin) * f32(wIdx) / f32(params.sampleCount - 1u);
 }
 
 // ============================================================

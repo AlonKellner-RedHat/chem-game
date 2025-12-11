@@ -22,6 +22,8 @@ export interface SpectralGraphOptions {
   title?: string;
   /** Enable zoom/pan slider */
   enableZoom?: boolean;
+  /** Enable magnitude (Y-axis scale) slider */
+  enableMagnitude?: boolean;
 }
 
 /**
@@ -82,6 +84,8 @@ export class SpectralGraph {
   private ctx: CanvasRenderingContext2D;
   private options: Required<SpectralGraphOptions>;
   private rangeSlider: RangeSlider | null = null;
+  private magnitudeSlider: HTMLInputElement | null = null;
+  private magnitudeDisplay: HTMLSpanElement | null = null;
   
   private spectrum: Float32Array | null = null;
   private isLocked = false;
@@ -95,6 +99,9 @@ export class SpectralGraph {
   // Global max for normalization (from renderer)
   private globalMax: number | null = null;
   
+  // Magnitude multiplier for Y-axis scaling (logarithmic: 0.1x to 100x)
+  private magnitudeMultiplier: number = 1.0;
+  
   constructor(parent: HTMLElement, options: SpectralGraphOptions) {
     this.options = {
       width: options.width,
@@ -104,6 +111,7 @@ export class SpectralGraph {
       showRainbow: options.showRainbow ?? true,
       title: options.title ?? 'Spectrum',
       enableZoom: options.enableZoom ?? true,
+      enableMagnitude: options.enableMagnitude ?? true,
     };
     
     // Initialize view range to full data range
@@ -129,6 +137,57 @@ export class SpectralGraph {
     `;
     this.container.appendChild(title);
     
+    // Create canvas row (magnitude slider + canvas)
+    const canvasRow = document.createElement('div');
+    canvasRow.style.cssText = 'display: flex; align-items: stretch;';
+    
+    // Add vertical magnitude slider on the left if enabled
+    if (this.options.enableMagnitude) {
+      const magContainer = document.createElement('div');
+      magContainer.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding-right: 4px;
+        width: 24px;
+      `;
+      
+      // Magnitude display at top
+      this.magnitudeDisplay = document.createElement('span');
+      this.magnitudeDisplay.textContent = '1×';
+      this.magnitudeDisplay.style.cssText = 'color: #fff; font-size: 9px; margin-bottom: 2px;';
+      magContainer.appendChild(this.magnitudeDisplay);
+      
+      // Vertical slider (rotated)
+      // Logarithmic slider: -2 to 4 maps to 0.01x to 10,000x
+      this.magnitudeSlider = document.createElement('input');
+      this.magnitudeSlider.type = 'range';
+      this.magnitudeSlider.min = '-2';
+      this.magnitudeSlider.max = '4';
+      this.magnitudeSlider.step = '0.1';
+      this.magnitudeSlider.value = '0'; // 10^0 = 1x
+      this.magnitudeSlider.style.cssText = `
+        writing-mode: vertical-lr;
+        direction: rtl;
+        height: ${this.options.height - 20}px;
+        width: 16px;
+        cursor: pointer;
+        accent-color: #4a90e2;
+        margin: 0;
+      `;
+      
+      this.magnitudeSlider.addEventListener('input', () => {
+        const logValue = parseFloat(this.magnitudeSlider!.value);
+        this.magnitudeMultiplier = Math.pow(10, logValue);
+        this.updateMagnitudeDisplay();
+        this.render();
+      });
+      
+      magContainer.appendChild(this.magnitudeSlider);
+      canvasRow.appendChild(magContainer);
+    }
+    
     // Create canvas
     this.canvas = document.createElement('canvas');
     this.canvas.width = this.options.width;
@@ -141,7 +200,8 @@ export class SpectralGraph {
     }
     this.ctx = ctx;
     
-    this.container.appendChild(this.canvas);
+    canvasRow.appendChild(this.canvas);
+    this.container.appendChild(canvasRow);
     
     // Add range slider for zoom/pan if enabled
     if (this.options.enableZoom) {
@@ -165,6 +225,57 @@ export class SpectralGraph {
         },
       });
     }
+    
+    // Add control buttons
+    const buttonRow = document.createElement('div');
+    buttonRow.style.cssText = `
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    `;
+    
+    const buttonStyle = `
+      padding: 4px 10px;
+      font-size: 11px;
+      background: #333;
+      color: #ccc;
+      border: 1px solid #555;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    `;
+    
+    // "Zoom Visible" button - sets wavelength range to visible spectrum
+    const zoomVisibleBtn = document.createElement('button');
+    zoomVisibleBtn.textContent = 'Zoom Visible';
+    zoomVisibleBtn.style.cssText = buttonStyle;
+    zoomVisibleBtn.addEventListener('mouseenter', () => {
+      zoomVisibleBtn.style.background = '#444';
+    });
+    zoomVisibleBtn.addEventListener('mouseleave', () => {
+      zoomVisibleBtn.style.background = '#333';
+    });
+    zoomVisibleBtn.addEventListener('click', () => {
+      this.zoomToVisible();
+    });
+    buttonRow.appendChild(zoomVisibleBtn);
+    
+    // "Normalize" button - adjusts magnitude to fit max value in view
+    const normalizeBtn = document.createElement('button');
+    normalizeBtn.textContent = 'Normalize';
+    normalizeBtn.style.cssText = buttonStyle;
+    normalizeBtn.addEventListener('mouseenter', () => {
+      normalizeBtn.style.background = '#444';
+    });
+    normalizeBtn.addEventListener('mouseleave', () => {
+      normalizeBtn.style.background = '#333';
+    });
+    normalizeBtn.addEventListener('click', () => {
+      this.normalizeToView();
+    });
+    buttonRow.appendChild(normalizeBtn);
+    
+    this.container.appendChild(buttonRow);
     
     parent.appendChild(this.container);
     
@@ -225,6 +336,61 @@ export class SpectralGraph {
   }
   
   /**
+   * Zoom to visible spectrum range (380-700nm)
+   */
+  zoomToVisible(): void {
+    const visMin = Math.max(380, this.options.wavelengthMin);
+    const visMax = Math.min(700, this.options.wavelengthMax);
+    
+    this.viewMin = visMin;
+    this.viewMax = visMax;
+    
+    if (this.rangeSlider) {
+      this.rangeSlider.setRange(visMin, visMax, true);
+    }
+    
+    this.render();
+  }
+  
+  /**
+   * Normalize magnitude so the max value in current view fills the plot
+   */
+  normalizeToView(): void {
+    if (!this.spectrum || this.spectrum.length === 0) {
+      return;
+    }
+    
+    const { wavelengthMin, wavelengthMax } = this.options;
+    const dataStep = (wavelengthMax - wavelengthMin) / (this.spectrum.length - 1);
+    
+    // Find max value in current view range
+    let maxVal = 0;
+    for (let i = 0; i < this.spectrum.length; i++) {
+      const wavelength = wavelengthMin + i * dataStep;
+      if (wavelength >= this.viewMin && wavelength <= this.viewMax) {
+        maxVal = Math.max(maxVal, this.spectrum[i]);
+      }
+    }
+    
+    if (maxVal <= 0) {
+      return; // No data to normalize
+    }
+    
+    // Calculate the normalization factor
+    // If using globalMax, we need to account for that
+    const normFactor = this.globalMax !== null && this.globalMax > 0 
+      ? this.globalMax 
+      : maxVal;
+    
+    // Calculate multiplier needed to make maxVal reach the top (with small margin)
+    const targetHeight = 0.95; // 95% of graph height
+    const newMultiplier = (targetHeight / (maxVal / normFactor));
+    
+    // Clamp to valid range and set
+    this.setMagnitude(newMultiplier);
+  }
+  
+  /**
    * Set locked position indicator
    */
   setLockedPosition(x: number | null, y: number | null): void {
@@ -242,6 +408,52 @@ export class SpectralGraph {
   setGlobalMax(max: number | null): void {
     this.globalMax = max;
     this.render();
+  }
+  
+  /**
+   * Set magnitude multiplier programmatically
+   */
+  setMagnitude(multiplier: number): void {
+    this.magnitudeMultiplier = Math.max(0.01, Math.min(10000, multiplier));
+    if (this.magnitudeSlider) {
+      this.magnitudeSlider.value = Math.log10(this.magnitudeMultiplier).toString();
+    }
+    this.updateMagnitudeDisplay();
+    this.render();
+  }
+  
+  /**
+   * Update the magnitude display text
+   */
+  private updateMagnitudeDisplay(): void {
+    if (this.magnitudeDisplay) {
+      if (this.magnitudeMultiplier >= 1000) {
+        this.magnitudeDisplay.textContent = `${(this.magnitudeMultiplier / 1000).toFixed(0)}k×`;
+      } else if (this.magnitudeMultiplier >= 10) {
+        this.magnitudeDisplay.textContent = `${Math.round(this.magnitudeMultiplier)}×`;
+      } else if (this.magnitudeMultiplier >= 1) {
+        this.magnitudeDisplay.textContent = `${this.magnitudeMultiplier.toFixed(1)}×`;
+      } else if (this.magnitudeMultiplier >= 0.1) {
+        this.magnitudeDisplay.textContent = `${this.magnitudeMultiplier.toFixed(1)}×`;
+      } else {
+        this.magnitudeDisplay.textContent = `${this.magnitudeMultiplier.toFixed(2)}×`;
+      }
+    }
+  }
+  
+  /**
+   * Format Y-axis label based on value
+   */
+  private formatYLabel(value: number): string {
+    if (value >= 1) {
+      return value.toFixed(1);
+    } else if (value >= 0.01) {
+      return value.toFixed(2);
+    } else if (value >= 0.001) {
+      return value.toFixed(3);
+    } else {
+      return value.toExponential(1);
+    }
   }
   
   /**
@@ -312,10 +524,12 @@ export class SpectralGraph {
       ctx.fillText(`${Math.round(wavelength)}`, x, height - 5);
     }
     
-    // Y axis labels
+    // Y axis labels (adjusted for magnitude)
     ctx.textAlign = 'right';
-    ctx.fillText('1.0', 25, 30);
-    ctx.fillText('0.5', 25, (25 + graphBottom) / 2);
+    const yMax = 1.0 / this.magnitudeMultiplier;
+    const yMid = 0.5 / this.magnitudeMultiplier;
+    ctx.fillText(this.formatYLabel(yMax), 25, 30);
+    ctx.fillText(this.formatYLabel(yMid), 25, (25 + graphBottom) / 2);
     ctx.fillText('0', 25, graphBottom);
     
     // Draw spectrum
@@ -363,8 +577,11 @@ export class SpectralGraph {
           // Map wavelength to x position
           const xNorm = (wavelength - displayMin) / (displayMax - displayMin);
           const x = graphLeft + xNorm * graphWidth;
-          // Normalize value and apply height scale (for 10% margin when using global max)
-          const y = graphBottom - (this.spectrum[i] / normFactor) * graphHeight * heightScale;
+          // Normalize value, apply height scale and magnitude multiplier
+          // Clamp to graph bounds to prevent drawing outside
+          const scaledValue = (this.spectrum[i] / normFactor) * heightScale * this.magnitudeMultiplier;
+          const clampedValue = Math.min(1.0, scaledValue); // Clip at top of graph
+          const y = graphBottom - clampedValue * graphHeight;
           
           if (!started) {
             ctx.moveTo(x, y);

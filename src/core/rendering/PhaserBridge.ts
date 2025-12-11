@@ -30,11 +30,17 @@ export interface Renderer {
   /** Get the compute pipeline (for profiling integration) */
   getComputePipeline(): SpectralComputePipeline | null;
   
-  /** Set material transmission spectra */
+  /** Set material transmission spectra (high-res for spectral plot) */
   setMaterials(materials: Float32Array[]): void;
   
-  /** Set fluorescence excitation and emission spectra */
+  /** Set rendering material spectra (low-res for rendering, bin-integrated) */
+  setRenderingMaterials?(materials: Float32Array[]): void;
+  
+  /** Set fluorescence excitation and emission spectra (high-res for spectral plot) */
   setFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void;
+  
+  /** Set rendering fluorescence spectra (low-res for rendering, bin-integrated) */
+  setRenderingFluorescenceData?(excitation: Float32Array[], emission: Float32Array[]): void;
   
   /** Set shapes to render */
   setShapes(shapes: GPUShape[]): void;
@@ -163,11 +169,27 @@ export class WebGPURenderer implements Renderer {
     this.invalidateSpectrumCache();
   }
   
+  setRenderingMaterials(materials: Float32Array[]): void {
+    if (this.pipeline) {
+      this.pipeline.setRenderingMaterials(materials);
+    }
+    // Invalidate cache since rendering will change
+    this.invalidateSpectrumCache();
+  }
+  
   setFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void {
     if (this.pipeline) {
       this.pipeline.setFluorescenceData(excitation, emission);
     }
     // Invalidate spectrum cache when fluorescence changes
+    this.invalidateSpectrumCache();
+  }
+  
+  setRenderingFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void {
+    if (this.pipeline) {
+      this.pipeline.setRenderingFluorescenceData(excitation, emission);
+    }
+    // Invalidate cache since rendering will change
     this.invalidateSpectrumCache();
   }
   
@@ -352,8 +374,8 @@ export class WebGPURenderer implements Renderer {
       plotResolution,
       // Average spectrum over 5-pixel radius circle
       averageRadius: 5,
-      // Compute spectrum for 11x11 box around sample point
-      boxSize: 11,
+      // Compute spectrum for 30x30 box around sample point
+      boxSize: 30,
       // Emission aura parameters
       emissionSpreadFactor: this.emissionSpreadFactor,
       emissionAuraSigma: this.emissionAuraSigma,

@@ -799,21 +799,49 @@ export class SpectralDemo implements Demo {
       this.masksLoaded = true;
     }
     
-    // Generate transmission spectra for materials
-    const spectra: Float32Array[] = [];
+    // ============================================================
+    // DUAL-TEXTURE BIN INTEGRATION
+    // ============================================================
+    // Generate two sets of textures at different resolutions:
+    // - High-res (4500 samples, 0.2nm bins): For spectral plot
+    // - Low-res (32 samples, 29nm bins): For rendering
+    // Both are bin-integrated for energy conservation.
+    
+    const PLOT_SAMPLES = 4500;   // High-res for spectral plot
+    const RENDER_SAMPLES = 32;  // Low-res for rendering (matches shader sample count)
+    
+    // High-res textures for spectral plot
+    const highResSpectra: Float32Array[] = [];
     for (const shape of this.shapes) {
       const spectrum = shape.material.generateTransmissionSpectrum(
-        100, 1000, 4500,  // 100-1000nm range at 0.2nm resolution (900/4500)
-        shape.properties
+        100, 1000, PLOT_SAMPLES, shape.properties
       );
-      spectra.push(spectrum);
+      highResSpectra.push(spectrum);
     }
     
-    renderer.setMaterials(spectra);
+    // Low-res textures for rendering
+    const lowResSpectra: Float32Array[] = [];
+    for (const shape of this.shapes) {
+      const spectrum = shape.material.generateTransmissionSpectrum(
+        100, 1000, RENDER_SAMPLES, shape.properties
+      );
+      lowResSpectra.push(spectrum);
+    }
     
-    // Upload fluorescence textures for UV-excited emission
-    const { excitationSpectra, emissionSpectra } = this.generateFluorescenceTextures();
-    renderer.setFluorescenceData(excitationSpectra, emissionSpectra);
+    // Upload both texture sets
+    renderer.setMaterials(highResSpectra);  // High-res for spectrum plot
+    if (renderer.setRenderingMaterials) {
+      renderer.setRenderingMaterials(lowResSpectra);  // Low-res for rendering
+    }
+    
+    // Upload fluorescence textures (both resolutions)
+    const highResFluor = this.generateFluorescenceTextures(PLOT_SAMPLES);
+    const lowResFluor = this.generateFluorescenceTextures(RENDER_SAMPLES);
+    
+    renderer.setFluorescenceData(highResFluor.excitationSpectra, highResFluor.emissionSpectra);
+    if (renderer.setRenderingFluorescenceData) {
+      renderer.setRenderingFluorescenceData(lowResFluor.excitationSpectra, lowResFluor.emissionSpectra);
+    }
     
     // Convert shapes to GPU format
     const gpuShapes: GPUShape[] = this.shapes.map((shape, index) => {
@@ -991,8 +1019,10 @@ export class SpectralDemo implements Demo {
   
   /**
    * Generate fluorescence textures for all materials
+   * 
+   * @param resolution - Number of wavelength samples (default 32 for rendering)
    */
-  private generateFluorescenceTextures(): {
+  private generateFluorescenceTextures(resolution: number = 32): {
     excitationSpectra: Float32Array[];
     emissionSpectra: Float32Array[];
   } {
@@ -1001,7 +1031,7 @@ export class SpectralDemo implements Demo {
     
     for (const shape of this.shapes) {
       const data = shape.material.generateFluorescenceTextures(
-        100, 1000, 900, shape.properties  // Match material palette resolution
+        100, 1000, resolution, shape.properties
       );
       excitationSpectra.push(data.excitation);
       emissionSpectra.push(data.emission);

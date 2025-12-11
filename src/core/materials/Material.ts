@@ -10,6 +10,7 @@
 import { getBandGapTransmission } from '../physics/bandgap';
 import { voigtProfile, voigtFWHM } from '../physics/voigt';
 import { getExcitationEfficiency, getEmissionLineShape } from '../physics/fluorescence';
+import { integrateVoigtOverBin, integrateGaussianOverBin } from '../physics/integration';
 import { AbsorptionModel, BaseMaterialAbsorption, MoleculeAbsorption } from './AbsorptionModel';
 import { AbsorptionDataPoint } from './AbsorptionData';
 
@@ -295,6 +296,7 @@ function beerLambert(
 
 /**
  * Calculate extinction coefficient at wavelength using Voigt profile peaks
+ * (Point sampling - used for high-resolution textures)
  */
 function calculateMoleculeExtinction(
   wavelength: number,
@@ -322,6 +324,62 @@ function calculateMoleculeExtinction(
   }
   
   return total;
+}
+
+/**
+ * Calculate bin-integrated extinction coefficient over a wavelength range
+ * 
+ * This integrates the Voigt profile over the bin range to ensure narrow peaks
+ * are captured even when the bin center misses the peak.
+ * 
+ * For energy conservation: the sum of bin extinctions × binWidth should equal
+ * the total analytical integral of the extinction spectrum.
+ * 
+ * @param binStart - Start wavelength of bin (nm)
+ * @param binEnd - End wavelength of bin (nm)
+ * @param molecule - Molecule with absorption peaks
+ * @param temperatureK - Temperature in Kelvin (affects Doppler width)
+ * @param pressureAtm - Pressure in atm (affects pressure broadening)
+ * @returns Average extinction coefficient over the bin
+ */
+function calculateMoleculeExtinctionBinIntegrated(
+  binStart: number,
+  binEnd: number,
+  molecule: Molecule,
+  temperatureK: number,
+  pressureAtm: number
+): number {
+  const binWidth = binEnd - binStart;
+  if (binWidth <= 0) return 0;
+  
+  let totalIntegratedExtinction = 0;
+  
+  for (const peak of molecule.peaks) {
+    const { gaussian, lorentzian } = calculateLinewidthComponents(
+      peak,
+      temperatureK,
+      molecule.mass,
+      pressureAtm,
+      molecule.pressureBroadening
+    );
+    
+    // Integrate the Voigt profile over the bin
+    // This returns the fraction of the total profile area in this bin
+    const fractionInBin = integrateVoigtOverBin(
+      peak.wavelength,
+      binStart,
+      binEnd,
+      gaussian,
+      lorentzian
+    );
+    
+    // The extinction contribution is the peak extinction × fraction in bin
+    // Divided by bin width to get average extinction over the bin
+    // (This ensures Beer-Lambert law works correctly with the integrated value)
+    totalIntegratedExtinction += peak.extinction * fractionInBin / binWidth;
+  }
+  
+  return totalIntegratedExtinction;
 }
 
 /**
@@ -411,14 +469,20 @@ export function createMaterial(
         }
         
         // Additive molecule absorption (mole fraction weighted)
+        // Use bin-integrated extinction for proper energy conservation
+        const binStart = wavelength - step / 2;
+        const binEnd = wavelength + step / 2;
+        
         for (const molecule of molecules) {
           // Support both mole fractions and legacy concentrations
           const moleFraction = fractions[molecule.id] || 0;
           const legacyConc = concentrations[molecule.id] || 0;
           
           if (moleFraction > 0 || legacyConc > 0) {
-            const extinction = calculateMoleculeExtinction(
-              wavelength,
+            // Use bin-integrated extinction to capture narrow peaks
+            const extinction = calculateMoleculeExtinctionBinIntegrated(
+              binStart,
+              binEnd,
               molecule,
               properties.temperature,
               properties.pressure
@@ -489,9 +553,12 @@ export function createMaterial(
         totalQuantumYield /= bandCount;
       }
       
-      // Generate textures
+      // Generate textures with bin integration for narrow emission lines
       for (let i = 0; i < resolution; i++) {
         const wavelength = wavelengthMin + i * step;
+        const binStart = wavelength - step / 2;
+        const binEnd = wavelength + step / 2;
+        
         let excitationTotal = 0;
         let emissionTotal = 0;
         
@@ -503,18 +570,33 @@ export function createMaterial(
           
           for (const band of molecule.fluorescence) {
             // Excitation efficiency (weighted by mole fraction)
-            const excitEff = getExcitationEfficiency(wavelength, band);
+            // Excitation bands are broad (~70nm), so point sampling is OK
+            // But use bin integration for consistency
+            const excitEff = integrateGaussianOverBin(
+              band.excitationPeak,
+              binStart,
+              binEnd,
+              band.excitationMax - band.excitationMin // Approximate FWHM
+            );
             excitationTotal += excitEff * moleFraction;
             
             // Emission line shape (weighted by mole fraction and quantum yield)
-            const emissionShape = getEmissionLineShape(
-              wavelength,
-              band,
-              properties.temperature
+            // Emission lines are VERY narrow (~0.1nm), so bin integration is critical
+            // For a normalized Voigt profile, integrateVoigtOverBin returns the
+            // fraction of total energy in this bin. This is what we want.
+            const gaussianWidth = 0.001; // Approximate Doppler width at room temp
+            const lorentzianWidth = band.emissionWidth;
+            
+            const emissionInBin = integrateVoigtOverBin(
+              band.emissionWavelength,
+              binStart,
+              binEnd,
+              gaussianWidth,
+              lorentzianWidth
             );
-            const peakValue = emissionPeakValues.get(band) || 1;
-            const normalizedEmission = peakValue > 0 ? emissionShape / peakValue : 0;
-            emissionTotal += normalizedEmission * band.quantumYield * moleFraction;
+            
+            // Scale by quantum yield and mole fraction
+            emissionTotal += emissionInBin * band.quantumYield * moleFraction;
           }
         }
         

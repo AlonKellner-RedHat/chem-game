@@ -86,7 +86,7 @@ describe('FluorescenceBand Interface', () => {
       
       expect(validateFluorescenceBand(band).valid).toBe(true);
     });
-
+    
     it('accepts unity quantum yield (100% efficient)', () => {
       const band: FluorescenceBand = {
         excitationMin: 280,
@@ -99,7 +99,7 @@ describe('FluorescenceBand Interface', () => {
       
       expect(validateFluorescenceBand(band).valid).toBe(true);
     });
-
+    
     it('rejects quantum yield greater than 1', () => {
       const band: FluorescenceBand = {
         excitationMin: 280,
@@ -114,7 +114,7 @@ describe('FluorescenceBand Interface', () => {
       expect(result.valid).toBe(false);
       expect(result.error).toContain('quantum yield');
     });
-
+    
     it('rejects negative quantum yield', () => {
       const band: FluorescenceBand = {
         excitationMin: 280,
@@ -159,7 +159,7 @@ describe('FluorescenceBand Interface', () => {
       expect(result.valid).toBe(false);
       expect(result.error).toContain('excitation peak');
     });
-
+    
     it('rejects inverted excitation range (min > max)', () => {
       const band: FluorescenceBand = {
         excitationMin: 350,
@@ -204,7 +204,7 @@ describe('FluorescenceBand Interface', () => {
       expect(result.valid).toBe(false);
       expect(result.error).toContain('emission width');
     });
-
+    
     it('rejects negative emission width', () => {
       const band: FluorescenceBand = {
         excitationMin: 280,
@@ -234,8 +234,8 @@ describe('Molecule with Fluorescence', () => {
     };
     
     expect(molecule.fluorescence).toBeUndefined();
-  });
-
+    });
+    
   it('molecule can have multiple fluorescence bands', () => {
     const molecule: Molecule = {
       id: 'sodium',
@@ -269,8 +269,8 @@ describe('Molecule with Fluorescence', () => {
     expect(molecule.fluorescence).toHaveLength(2);
     expect(molecule.fluorescence![0].emissionWavelength).toBe(589.0);
     expect(molecule.fluorescence![1].emissionWavelength).toBe(589.6);
-  });
-
+    });
+    
   it('fluorescence emission wavelengths should match absorption peaks for atomic species', () => {
     // For atomic fluorescence, the emission lines are typically the same as absorption lines
     const molecule: Molecule = {
@@ -299,6 +299,6 @@ describe('Molecule with Fluorescence', () => {
     
     for (const emission of emissionWavelengths) {
       expect(absorptionWavelengths).toContain(emission);
-    }
+          }
   });
 });

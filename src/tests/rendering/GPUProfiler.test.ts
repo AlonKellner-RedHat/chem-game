@@ -147,8 +147,20 @@ describe('GPUProfiler', () => {
       profiler.endSession();
       
       const dispatch = profiler.getLatestSession()!.dispatches[0];
-      // Bandwidth should be defined if duration > 0
-      expect(dispatch.estimatedBandwidthGBs).toBeDefined();
+      // Bandwidth is calculated only if duration > 0.001ms
+      // In a fast test environment, duration may be too short, so we check either:
+      // - bandwidth is defined (duration was long enough), or
+      // - duration is very short (< 0.001ms) which explains why no bandwidth
+      if (dispatch.durationMs > 0.001) {
+        expect(dispatch.estimatedBandwidthGBs).toBeDefined();
+        expect(dispatch.estimatedBandwidthGBs).toBeGreaterThan(0);
+      } else {
+        // Duration too short to calculate meaningful bandwidth
+        expect(dispatch.estimatedBandwidthGBs).toBeUndefined();
+      }
+      // Always verify the byte estimates were recorded
+      expect(dispatch.estimatedBytesRead).toBe(1000000);
+      expect(dispatch.estimatedBytesWritten).toBe(1000000);
     });
   });
   

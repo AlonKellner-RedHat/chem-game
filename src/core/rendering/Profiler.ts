@@ -100,7 +100,7 @@ export class Profiler {
   
   // Configuration snapshot
   private config: ProfilerConfig = {
-    boxSize: 15,
+    boxSize: 30,
     plotResolution: 4500,
     averageRadius: 5,
     colorResolution: 16,
