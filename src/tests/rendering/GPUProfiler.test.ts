@@ -152,7 +152,7 @@ describe('GPUProfiler', () => {
       // - bandwidth is defined (duration was long enough), or
       // - duration is very short (< 0.001ms) which explains why no bandwidth
       if (dispatch.durationMs > 0.001) {
-        expect(dispatch.estimatedBandwidthGBs).toBeDefined();
+      expect(dispatch.estimatedBandwidthGBs).toBeDefined();
         expect(dispatch.estimatedBandwidthGBs).toBeGreaterThan(0);
       } else {
         // Duration too short to calculate meaningful bandwidth

@@ -364,23 +364,25 @@ export class SpectralComputePipeline {
   private frameCount: number = 0; // Track frames for first-frame handling
 
   // Spectral buffers for per-layer scattering blur (ping-pong)
-  // Each buffer stores 16 wavelength intensities per pixel
+  // Each buffer stores 32 wavelength intensities per pixel
   private spectralBufferA: GPUBuffer | null = null;
   private spectralBufferB: GPUBuffer | null = null;
-  private scatteringSigmaBuffer: GPUBuffer | null = null; // Per-pixel blur sigma
-  private scatterSourceBuffer: GPUBuffer | null = null; // Scattered light to be blurred
-  private emissionAuraBuffer: GPUBuffer | null = null; // Emission aura to be blurred
+  // Note: scatteringSigmaBuffer removed - per-pixel sigma replaced by global atmospheric sigma
+  private scatterSourceBuffer: GPUBuffer | null = null; // Scattered light to be blurred (Voigt)
+  private emissionAuraBuffer: GPUBuffer | null = null; // Emission aura to be blurred (Gaussian)
+  private blurredTransmittedBuffer: GPUBuffer | null = null; // Blurred transmitted for in-shape scatter
   // 32 samples across 100-1000nm to capture UV excitation for fluorescence
   private static readonly SPECTRAL_SAMPLES = 32;
 
-  // High-resolution spectral buffers for spectrum plot (30×30×5000)
+  // High-resolution spectral buffers for spectrum plot (30×30×4500)
   // These use the same physics as rendering but at higher spectral resolution
   // SHARED ARCHITECTURE: Both pipelines use identical physics, just different resolutions
   private spectrumHighResA: GPUBuffer | null = null; // Ping-pong buffer A
   private spectrumHighResB: GPUBuffer | null = null; // Ping-pong buffer B
   private spectrumHighResScatter: GPUBuffer | null = null; // Scatter source for blur
   private spectrumHighResEmissionAura: GPUBuffer | null = null; // Emission aura for blur
-  private spectrumHighResSigma: GPUBuffer | null = null; // Per-pixel sigma for high-res
+  private spectrumHighResBlurredTransmitted: GPUBuffer | null = null; // Blurred transmitted for in-shape scatter
+  // Note: spectrumHighResSigma removed - per-pixel sigma replaced by global atmospheric sigma
   private spectrumHighResSwapped: boolean = false; // Track ping-pong state
   private useHighResBuffers: boolean = false; // Whether bind group should use high-res buffers
   private static readonly SPECTRUM_BOX_SIZE = 30; // Size of spectrum sampling box
@@ -758,21 +760,22 @@ export class SpectralComputePipeline {
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "storage" },
         }, // Spectral output
+        // Note: binding 8 was scatteringSigma - removed (unused)
         {
           binding: 8,
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "storage" },
-        }, // Scattering sigma
+        }, // Scatter source
         {
           binding: 9,
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "storage" },
-        }, // Scatter source
+        }, // Emission aura
         {
           binding: 10,
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "storage" },
-        }, // Emission aura
+        }, // Blurred transmitted (for in-shape scatter)
       ],
     });
 
@@ -1348,10 +1351,9 @@ export class SpectralComputePipeline {
     );
 
     // Spectral buffers for per-layer scattering blur (ping-pong)
-    // Each stores 16 wavelength intensities per pixel using f16 for memory efficiency
+    // Each stores 32 wavelength intensities per pixel using f16 for memory efficiency
     this.spectralBufferA?.destroy();
     this.spectralBufferB?.destroy();
-    this.scatteringSigmaBuffer?.destroy();
 
     const spectralBufferSize =
       pixelCount * SpectralComputePipeline.SPECTRAL_SAMPLES * 2; // f16 = 2 bytes
@@ -1380,18 +1382,7 @@ export class SpectralComputePipeline {
       "f16"
     );
 
-    // Per-pixel scattering sigma buffer (one f32 per pixel, maximum sigma across wavelengths)
-    this.scatteringSigmaBuffer = this.device.createBuffer({
-      label: "Scattering Sigma Buffer",
-      size: pixelCount * 4, // f32 per pixel
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-    this.profiler.trackBuffer(
-      this.scatteringSigmaBuffer,
-      "Scattering Sigma",
-      "storage",
-      "f32"
-    );
+    // Note: scatteringSigmaBuffer removed - per-pixel sigma replaced by global atmospheric sigma
 
     // Scatter source buffer (light to be blurred)
     this.scatterSourceBuffer?.destroy();
@@ -1417,6 +1408,20 @@ export class SpectralComputePipeline {
     this.profiler.trackBuffer(
       this.emissionAuraBuffer,
       "Emission Aura",
+      "storage",
+      "f16"
+    );
+
+    // Blurred transmitted buffer (for in-shape scattering)
+    this.blurredTransmittedBuffer?.destroy();
+    this.blurredTransmittedBuffer = this.device.createBuffer({
+      label: "Blurred Transmitted Buffer",
+      size: spectralBufferSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    this.profiler.trackBuffer(
+      this.blurredTransmittedBuffer,
+      "Blurred Transmitted",
       "storage",
       "f16"
     );
@@ -1523,12 +1528,14 @@ export class SpectralComputePipeline {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
-    // Per-pixel sigma buffer (one f32 per pixel)
-    this.spectrumHighResSigma = this.device.createBuffer({
-      label: "Spectrum High-Res Sigma",
-      size: boxPixels * 4, // f32 per pixel
+    // Blurred transmitted buffer for in-shape scattering
+    this.spectrumHighResBlurredTransmitted = this.device.createBuffer({
+      label: "Spectrum High-Res Blurred Transmitted",
+      size: bufferSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+
+    // Note: spectrumHighResSigma removed - per-pixel sigma replaced by global atmospheric sigma
 
     this.spectrumHighResSwapped = false;
   }
@@ -1773,13 +1780,11 @@ export class SpectralComputePipeline {
     this.spectrumHighResB?.destroy();
     this.spectrumHighResScatter?.destroy();
     this.spectrumHighResEmissionAura?.destroy();
-    this.spectrumHighResSigma?.destroy();
 
     this.spectrumHighResA = null;
     this.spectrumHighResB = null;
     this.spectrumHighResScatter = null;
     this.spectrumHighResEmissionAura = null;
-    this.spectrumHighResSigma = null;
 
     console.log("[SpectralCompute] High-res spectrum buffers destroyed");
   }
@@ -2258,13 +2263,73 @@ export class SpectralComputePipeline {
         this.profiler.endPass();
       }
 
-      // Note: Emission aura buffer is now used for blurred transmitted (dual-path scatter).
-      // Emission aura blur is currently disabled in favor of the new scattering model.
-      // TODO: Re-enable emission aura as a separate effect if needed.
+      // Emission aura blur (Gaussian blur for glow from hot/fluorescent objects)
+      // emissionAura buffer contains emission data from layerAbsorption
+      // We blur it in place using scatterSource as temp storage
       const emissionAuraSigma = params.emissionAuraSigma ?? 3.0;
-      void emissionAuraSigma; // Suppress unused warning
+      
+      if (emissionAuraSigma > 0) {
+        // Horizontal blur: emissionAura → scatterSource (temp)
+        // Note: This overwrites scatterSource, so we do it AFTER the scatter blur is done
+        // Actually, we need a different temp. Let's use spectralInput as temp since 
+        // it will be overwritten by combine anyway.
+        
+        // blurEmissionAuraH: emissionAura → spectralInput (temp)
+        if (this.profilingEnabled) {
+          this.profiler.beginPass("blurEmissionAuraH");
+          this.profiler.beginDispatch("blurEmissionAuraH", "blurEmissionAuraH", {
+            layer: layerIndex,
+          });
+        }
+        const auraHEncoder = this.device.createCommandEncoder();
+        const auraHPass = auraHEncoder.beginComputePass();
+        auraHPass.setPipeline(this.blurEmissionAuraHPipeline!);
+        auraHPass.setBindGroup(0, this.bindGroup0!);
+        auraHPass.setBindGroup(1, this.bindGroup1!);
+        auraHPass.setBindGroup(2, this.bindGroup2!);
+        auraHPass.setBindGroup(3, this.bindGroup3!);
+        auraHPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        auraHPass.end();
+        this.device.queue.submit([auraHEncoder.finish()]);
+        if (this.profilingEnabled) {
+          this.profiler.endDispatch(
+            [workgroupsX, workgroupsY, 1],
+            [8, 8, 1],
+            spectralBufferBytes,
+            spectralBufferBytes
+          );
+          this.profiler.endPass();
+        }
 
-      // Combine: spectralOutput + scatterSource + emissionAura → spectralInput (for next layer)
+        // blurEmissionAuraV: spectralInput (H-blurred) → emissionAura (fully blurred)
+        if (this.profilingEnabled) {
+          this.profiler.beginPass("blurEmissionAuraV");
+          this.profiler.beginDispatch("blurEmissionAuraV", "blurEmissionAuraV", {
+            layer: layerIndex,
+          });
+        }
+        const auraVEncoder = this.device.createCommandEncoder();
+        const auraVPass = auraVEncoder.beginComputePass();
+        auraVPass.setPipeline(this.blurEmissionAuraVPipeline!);
+        auraVPass.setBindGroup(0, this.bindGroup0!);
+        auraVPass.setBindGroup(1, this.bindGroup1!);
+        auraVPass.setBindGroup(2, this.bindGroup2!);
+        auraVPass.setBindGroup(3, this.bindGroup3!);
+        auraVPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        auraVPass.end();
+        this.device.queue.submit([auraVEncoder.finish()]);
+        if (this.profilingEnabled) {
+          this.profiler.endDispatch(
+            [workgroupsX, workgroupsY, 1],
+            [8, 8, 1],
+            spectralBufferBytes,
+            spectralBufferBytes
+          );
+          this.profiler.endPass();
+        }
+      }
+
+      // Combine: spectralOutput + blurredTransmitted + scatterSource + emissionAura → spectralInput
       if (this.profilingEnabled) {
         this.profiler.beginPass("combineScattered");
         this.profiler.beginDispatch("combineScattered", "combineScattered", {
@@ -2617,7 +2682,7 @@ export class SpectralComputePipeline {
         B: !!this.spectrumHighResB,
         scatter: !!this.spectrumHighResScatter,
         emission: !!this.spectrumHighResEmissionAura,
-        sigma: !!this.spectrumHighResSigma,
+        blurredTransmitted: !!this.spectrumHighResBlurredTransmitted,
       });
 
       // Switch to high-res buffer mode for spectrum computation
@@ -3328,9 +3393,9 @@ export class SpectralComputePipeline {
       // Determine which buffers to use based on whether we're computing high-res spectrum
       let inputBuffer: GPUBuffer;
       let outputBuffer: GPUBuffer;
-      let sigmaBuffer: GPUBuffer;
       let scatterSrcBuffer: GPUBuffer;
       let emissionAuraBuffer: GPUBuffer;
+      let blurredTransmittedBuffer: GPUBuffer;
 
       if (this.useHighResBuffers && this.spectrumHighResA) {
         // High-res spectrum mode: use dedicated high-res buffers
@@ -3341,11 +3406,12 @@ export class SpectralComputePipeline {
         outputBuffer = highResSwap
           ? this.spectrumHighResA!
           : this.spectrumHighResB!;
-        sigmaBuffer = this.spectrumHighResSigma || this.maxPerPixelBuffer!;
         scatterSrcBuffer =
           this.spectrumHighResScatter || this.maxPerPixelBuffer!;
         emissionAuraBuffer =
           this.spectrumHighResEmissionAura || this.maxPerPixelBuffer!;
+        blurredTransmittedBuffer =
+          this.spectrumHighResBlurredTransmitted || this.maxPerPixelBuffer!;
         console.log(
           "[DEBUG-SPECTRUM] Creating bind group with HIGH-RES buffers:",
           {
@@ -3366,9 +3432,9 @@ export class SpectralComputePipeline {
           : this.spectralBufferB;
         inputBuffer = spectralInputBuffer || this.maxPerPixelBuffer!;
         outputBuffer = spectralOutputBuffer || this.maxPerPixelBuffer!;
-        sigmaBuffer = this.scatteringSigmaBuffer || this.maxPerPixelBuffer!;
         scatterSrcBuffer = this.scatterSourceBuffer || this.maxPerPixelBuffer!;
         emissionAuraBuffer = this.emissionAuraBuffer || this.maxPerPixelBuffer!;
+        blurredTransmittedBuffer = this.blurredTransmittedBuffer || this.maxPerPixelBuffer!;
       }
 
       this.bindGroup0 = this.device.createBindGroup({
@@ -3385,9 +3451,10 @@ export class SpectralComputePipeline {
           // NOTE: High-res spectrum swaps actual buffer references via useHighResBuffers flag
           { binding: 6, resource: { buffer: inputBuffer } },
           { binding: 7, resource: { buffer: outputBuffer } },
-          { binding: 8, resource: { buffer: sigmaBuffer } },
-          { binding: 9, resource: { buffer: scatterSrcBuffer } },
-          { binding: 10, resource: { buffer: emissionAuraBuffer } },
+          // Note: binding 8 was scatteringSigma - removed (unused)
+          { binding: 8, resource: { buffer: scatterSrcBuffer } },
+          { binding: 9, resource: { buffer: emissionAuraBuffer } },
+          { binding: 10, resource: { buffer: blurredTransmittedBuffer } },
         ],
       });
     }
@@ -3610,7 +3677,6 @@ export class SpectralComputePipeline {
     // Destroy spectral buffers for scattering blur
     this.spectralBufferA?.destroy();
     this.spectralBufferB?.destroy();
-    this.scatteringSigmaBuffer?.destroy();
     this.scatterSourceBuffer?.destroy();
     this.emissionAuraBuffer?.destroy();
 
