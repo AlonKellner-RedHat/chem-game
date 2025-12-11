@@ -382,7 +382,7 @@ export class SpectralComputePipeline {
   private spectrumHighResSwapped: boolean = false; // Track ping-pong state
   private useHighResBuffers: boolean = false; // Whether bind group should use high-res buffers
   private static readonly SPECTRUM_BOX_SIZE = 30; // Size of spectrum sampling box
-  private static readonly SPECTRUM_RESOLUTION = 5000; // Wavelength samples for spectrum
+  private static readonly SPECTRUM_RESOLUTION = 4500; // Wavelength samples for spectrum (900nm / 4500 = 0.2nm per sample)
 
   // Global max intensity from last render (for plot normalization)
   private lastGlobalMaxIntensity: number = 1.0; // Max Y (luminance) for screen
@@ -430,7 +430,7 @@ export class SpectralComputePipeline {
   private spectralBufferSwapped: boolean = false; // Track which buffer is input vs output
 
   // Maximum spectral resolution (buffer is always allocated at this size)
-  private static readonly MAX_SPECTRAL_RESOLUTION = 5000;
+  private static readonly MAX_SPECTRAL_RESOLUTION = 4500;
   private static readonly DEFAULT_BOX_SIZE = 30;
 
   // Current dimensions and settings
@@ -2930,7 +2930,7 @@ export class SpectralComputePipeline {
     const spectrumBoxSize = SpectralComputePipeline.SPECTRUM_BOX_SIZE;
     const bufferWidth = isSpectrum ? spectrumBoxSize : params.width;
     const bufferHeight = isSpectrum ? spectrumBoxSize : params.height;
-    const sampleCount = isSpectrum ? (params.plotResolution ?? 5000) : 16;
+    const sampleCount = isSpectrum ? (params.plotResolution ?? 4500) : 16;
     const coordOffsetX = isSpectrum
       ? (params.sampleX ?? 0) - Math.floor(spectrumBoxSize / 2)
       : 0;
@@ -2954,7 +2954,7 @@ export class SpectralComputePipeline {
     view.setFloat32(40, globalMaxIntensity, true);
     view.setFloat32(44, params.msdfPxRange ?? 4.0, true);
     view.setUint32(48, this.numMaterials, true);
-    view.setUint32(52, params.plotResolution ?? 5000, true);
+    view.setUint32(52, params.plotResolution ?? 4500, true);
     view.setUint32(56, params.averageRadius ?? 5, true);
     view.setUint32(60, this.boxSize, true);
     view.setFloat32(64, globalMaxScatterSigma, true);
@@ -2974,7 +2974,7 @@ export class SpectralComputePipeline {
         height: params.height,
         sampleX: params.sampleX,
         sampleY: params.sampleY,
-        plotResolution: params.plotResolution ?? 5000,
+        plotResolution: params.plotResolution ?? 4500,
         boxSize: this.boxSize,
         averageRadius: params.averageRadius ?? 5,
         enableEmission: params.enableEmission,

@@ -61,7 +61,7 @@ describe('ScatteringLUT', () => {
 
   describe('generate', () => {
     const defaultConfig: ScatteringLUTConfig = {
-      wavelengthMin: 200,
+      wavelengthMin: 100,
       wavelengthMax: 1000,
       samples: 256,
     };
@@ -74,17 +74,15 @@ describe('ScatteringLUT', () => {
 
     it('generates Rayleigh LUT with correct values at key wavelengths', () => {
       const lut = ScatteringLUT.generate({
-        wavelengthMin: 200,
+        wavelengthMin: 100,
         wavelengthMax: 1000,
-        samples: 801, // 1nm resolution for easy testing
+        samples: 901, // 1nm resolution for easy testing (100-1000 = 900 range + 1)
       });
       
-      // Index 180 = 380nm (200 + 180)
-      const blue380Index = 180;
-      // Index 350 = 550nm
-      const green550Index = 350;
-      // Index 500 = 700nm
-      const red700Index = 500;
+      // Index for wavelength = (wavelength - 100) with 1nm resolution
+      const blue380Index = 280;   // 380 - 100 = 280
+      const green550Index = 450;  // 550 - 100 = 450
+      const red700Index = 600;    // 700 - 100 = 600
       
       // Check Rayleigh factors at these indices
       expect(lut[green550Index]).toBeCloseTo(1.0, 1);
@@ -96,11 +94,12 @@ describe('ScatteringLUT', () => {
       const lut = ScatteringLUT.generate(defaultConfig);
       
       // Check that adjacent values don't have large jumps
+      // With extended range to 100nm, Rayleigh (1/λ⁴) varies more at short wavelengths
       for (let i = 1; i < lut.length; i++) {
         const ratio = lut[i] / lut[i - 1];
-        // Adjacent samples shouldn't differ by more than 10%
-        expect(ratio).toBeGreaterThan(0.9);
-        expect(ratio).toBeLessThan(1.1);
+        // Allow up to 15% change for short wavelengths (Rayleigh varies rapidly there)
+        expect(ratio).toBeGreaterThan(0.85);
+        expect(ratio).toBeLessThan(1.15);
       }
     });
 
@@ -122,13 +121,13 @@ describe('ScatteringLUT', () => {
       })).toThrow();
 
       expect(() => ScatteringLUT.generate({
-        wavelengthMin: 200,
+        wavelengthMin: 100,
         wavelengthMax: 1000,
         samples: 0, // invalid samples
       })).toThrow();
 
       expect(() => ScatteringLUT.generate({
-        wavelengthMin: 200,
+        wavelengthMin: 100,
         wavelengthMax: 1000,
         samples: -10, // negative samples
       })).toThrow();

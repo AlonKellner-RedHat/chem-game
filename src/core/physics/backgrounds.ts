@@ -3,7 +3,8 @@
  *
  * Implements the three background modes:
  * - Normal: D65 white light, uniform in visible, fades in UV/IR
- * - UV: UV illumination, peak at 250-350nm
+ * - UV: Pure UV illumination (200-380nm), ZERO visible light
+ *       Background appears BLACK but emits UV for fluorescence excitation
  * - Dark: No illumination (emission only)
  */
 
@@ -61,15 +62,18 @@ export function getNormalBackgroundIntensity(wavelengthNm: number): number {
 /**
  * Get UV background intensity at a wavelength
  *
- * - Peak at 250-350nm (1.0)
- * - Short fade: rises from 0 at 200nm to 1.0 at 250nm
- * - Long fade: falls from 1.0 at 350nm to 0 at 450nm
+ * Pure UV illumination for fluorescence excitation and band gap testing:
+ * - Peak at 150-350nm (1.0) - covers deep UV to UV-A
+ * - Short fade: rises from 0 at 100nm to 1.0 at 150nm
+ * - Long fade: falls from 1.0 at 350nm to 0 at 380nm (VISIBLE_MIN)
+ * - ZERO in visible range: background appears BLACK
+ * - Extended to 100nm to trigger band gap absorption in materials
  *
  * @param wavelengthNm - Wavelength in nanometers
  * @returns Intensity (0-1)
  */
 export function getUVBackgroundIntensity(wavelengthNm: number): number {
-  // Below minimum: no light
+  // Below minimum: no light (vacuum UV)
   if (wavelengthNm < UV_SHORT_FADE_START) {
     return 0;
   }
@@ -79,25 +83,25 @@ export function getUVBackgroundIntensity(wavelengthNm: number): number {
     const t =
       (wavelengthNm - UV_SHORT_FADE_START) /
       (UV_SHORT_FADE_END - UV_SHORT_FADE_START);
-    // Fast rise: 1 - (1-t)²
+    // Reverse quadratic: 1 - (1-t)² (fast start, slow finish - matches normal mode)
     return 1 - (1 - t) * (1 - t);
   }
 
-  // Peak UV range (250-350nm)
+  // Peak UV range (250-350nm) - full intensity
   if (wavelengthNm <= UV_LONG_FADE_START) {
     return 1.0;
   }
 
-  // Long wavelength fade-out (350-450nm)
+  // Sharp cutoff before visible (350-380nm)
   if (wavelengthNm < UV_LONG_FADE_END) {
     const t =
       (wavelengthNm - UV_LONG_FADE_START) /
       (UV_LONG_FADE_END - UV_LONG_FADE_START);
-    // Quadratic decay: 1 - t²
+    // Quadratic decay to zero at visible boundary
     return 1 - t * t;
   }
 
-  // Beyond fade end: no UV light
+  // ZERO visible light - background appears BLACK but UV is there
   return 0;
 }
 

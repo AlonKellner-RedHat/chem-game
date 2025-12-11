@@ -19,15 +19,24 @@
 /**
  * Rayleigh scattering reference coefficient
  * 
- * This normalizes scattering so that typical visualization conditions
- * produce visible effects. The coefficient is chosen so that:
- * - At 1e12 particles/cm³ with 50nm particles
- * - Over 1cm path length
- * - Blue light (450nm) shows ~10-50% scattering
+ * Based on the physical Rayleigh cross-section formula:
+ * σ = ((2π)^5 / 48) × (d^6 / λ^4) × n_m^4 × ((n_p² - n_m²)/(n_p² + 2n_m²))²
  * 
- * Physical basis: σ_R ∝ (d/λ)⁴ × d² × (n²-1)²/(n²+2)²
+ * For 50nm silica nanoparticles (n_p=1.5) in water (n_m=1.33):
+ * - Prefactor ((2π)^5 / 48) ≈ 204
+ * - RI factor: n_m^4 × ((n_p² - n_m²)/(n_p² + 2n_m²))² ≈ 0.022
+ * - Unit conversion (nm^6/nm^4 to cm²): 1e-14
+ * - Combined: ~4.5e-14
+ * 
+ * This produces physically accurate scattering:
+ * - At 1e12 particles/cm³ with 50nm particles, 1cm path: ~2-3% scattering
+ * - At 1e13 particles/cm³: ~20-30% scattering  
+ * - At 1e14 particles/cm³: ~85-95% scattering (strong effect)
+ * 
+ * The coefficient includes the ((2π)^5/48) prefactor, unit conversion,
+ * and a typical refractive index contrast factor for condensed media.
  */
-export const RAYLEIGH_REFERENCE_COEFFICIENT = 5e-24;
+export const RAYLEIGH_REFERENCE_COEFFICIENT = 5e-14;
 
 /**
  * Mie scattering reference coefficient

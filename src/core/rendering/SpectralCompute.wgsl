@@ -296,18 +296,26 @@ fn getBackgroundIntensity(wavelengthNm: f32) -> f32 {
     return 0.0;
   }
   
-  // UV mode
+  // UV mode: Pure UV illumination (invisible to eye, but excites fluorescent molecules)
+  // Emits only in UV range (100-380nm), zero in visible range
+  // Background appears BLACK but is actually emitting UV light
+  // Extended to 100nm to trigger band gap absorption in materials
   if (params.backgroundMode == 1u) {
-    if (wavelengthNm < 200.0) { return 0.0; }
-    if (wavelengthNm < 250.0) {
-      let t = (wavelengthNm - 200.0) / 50.0;
-      return 1.0 - (1.0 - t) * (1.0 - t);
+    // No emission below 100nm (extreme vacuum UV)
+    if (wavelengthNm < 100.0) { return 0.0; }
+    // Ramp up from 100-150nm (reverse quadratic - fast start, slow finish)
+    if (wavelengthNm < 150.0) {
+      let t = (wavelengthNm - 100.0) / 50.0;
+      return 1.0 - (1.0 - t) * (1.0 - t);  // Matches normal mode fade-in
     }
+    // Full intensity deep UV to UV-A range (150-350nm)
     if (wavelengthNm <= 350.0) { return 1.0; }
-    if (wavelengthNm < 450.0) {
-      let t = (wavelengthNm - 350.0) / 100.0;
-      return 1.0 - t * t;
+    // Sharp cutoff before visible range (350-380nm)
+    if (wavelengthNm < VISIBLE_MIN) {
+      let t = (wavelengthNm - 350.0) / (VISIBLE_MIN - 350.0);
+      return 1.0 - t * t;  // Fade to zero at 380nm
     }
+    // ZERO visible light - background appears black
     return 0.0;
   }
   
@@ -387,7 +395,9 @@ fn gammaCorrect(linear: f32) -> f32 {
 // ============================================================
 
 // Scattering reference coefficients (matched to CPU implementation)
-const RAYLEIGH_COEFF: f32 = 5e-24;
+// Based on physical Rayleigh cross-section: σ = ((2π)^5/48) × (d^6/λ^4) × n_m^4 × RI_factor²
+// For 50nm nanoparticles in water/crystal media, this gives ~4.5e-14
+const RAYLEIGH_COEFF: f32 = 5e-14;
 const MIE_COEFF: f32 = 5e-16;
 
 // Default particle sizes
@@ -1226,8 +1236,9 @@ fn computeLayerPhysicsOptimized(
       let absorption = mix(1.0, materialTrans, mask);
       let absorbedInput = result.transmitted * absorption;
       
-      // Scattering creates a blur effect but doesn't dim the shape itself.
-      let directTrans = absorbedInput;
+      // Apply scattering attenuation - light that scatters is removed from direct path
+      // This creates the Rayleigh spectral effect: blue scatters more, transmitted light reddens
+      let directTrans = absorbedInput * scatterTrans;
       
       // Compute scattered light for the aura effect
       let scatteredFrac = absorbedInput * scatterProb;

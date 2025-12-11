@@ -31,16 +31,20 @@ export const D65_TEMPERATURE = 6500;
 export const WIEN_CONSTANT = 2897771.955;
 
 // Wavelength ranges (nm)
-export const WAVELENGTH_MIN = 200;
+// Extended to 100nm to capture band gap absorption edges
+export const WAVELENGTH_MIN = 100;
 export const WAVELENGTH_MAX = 1000;
 export const VISIBLE_MIN = 380;
 export const VISIBLE_MAX = 700;
 
 // UV mode boundaries (nm)
-export const UV_SHORT_FADE_START = 200;
-export const UV_SHORT_FADE_END = 250;
+// Pure UV illumination: emits only below visible range (380nm)
+// Background appears BLACK but actually emits UV light for fluorescence
+// Extended down to 100nm to excite materials with deeper UV absorption
+export const UV_SHORT_FADE_START = 100;
+export const UV_SHORT_FADE_END = 150;
 export const UV_LONG_FADE_START = 350;
-export const UV_LONG_FADE_END = 450;
+export const UV_LONG_FADE_END = 380;  // Fades to zero at visible boundary (380nm)
 
 // Normal mode fade boundaries (nm)
 export const NORMAL_UV_FADE_START = 250;

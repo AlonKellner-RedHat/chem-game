@@ -52,42 +52,44 @@ describe('Background Illumination', () => {
   });
   
   describe('getUVBackgroundIntensity', () => {
-    it('returns 0 below 200nm', () => {
-      expect(getUVBackgroundIntensity(150)).toBe(0);
-      expect(getUVBackgroundIntensity(199)).toBe(0);
+    it('returns 0 below 100nm', () => {
+      expect(getUVBackgroundIntensity(50)).toBe(0);
+      expect(getUVBackgroundIntensity(99)).toBe(0);
     });
     
-    it('returns 1.0 in peak UV range (250-350nm)', () => {
+    it('returns 1.0 in peak UV range (150-350nm)', () => {
+      expect(getUVBackgroundIntensity(150)).toBe(1.0);
       expect(getUVBackgroundIntensity(250)).toBe(1.0);
       expect(getUVBackgroundIntensity(300)).toBe(1.0);
       expect(getUVBackgroundIntensity(350)).toBe(1.0);
     });
     
-    it('returns 0 at 450nm and above', () => {
+    it('returns 0 in visible range (380nm and above) - appears BLACK', () => {
+      expect(getUVBackgroundIntensity(380)).toBe(0);
       expect(getUVBackgroundIntensity(450)).toBe(0);
       expect(getUVBackgroundIntensity(500)).toBe(0);
     });
     
-    it('fades in from 200-250nm', () => {
-      const at200 = getUVBackgroundIntensity(200);
-      const at225 = getUVBackgroundIntensity(225);
-      const at250 = getUVBackgroundIntensity(250);
+    it('fades in from 100-150nm', () => {
+      const at100 = getUVBackgroundIntensity(100);
+      const at125 = getUVBackgroundIntensity(125);
+      const at150 = getUVBackgroundIntensity(150);
       
-      expect(at200).toBe(0);
-      expect(at225).toBeGreaterThan(0);
-      expect(at225).toBeLessThan(1);
-      expect(at250).toBe(1);
+      expect(at100).toBe(0);
+      expect(at125).toBeGreaterThan(0);
+      expect(at125).toBeLessThan(1);
+      expect(at150).toBe(1);
     });
     
-    it('fades out from 350-450nm', () => {
+    it('fades out from 350-380nm (before visible boundary)', () => {
       const at350 = getUVBackgroundIntensity(350);
-      const at400 = getUVBackgroundIntensity(400);
-      const at450 = getUVBackgroundIntensity(450);
+      const at365 = getUVBackgroundIntensity(365);
+      const at380 = getUVBackgroundIntensity(380);
       
       expect(at350).toBe(1);
-      expect(at400).toBeGreaterThan(0);
-      expect(at400).toBeLessThan(1);
-      expect(at450).toBe(0);
+      expect(at365).toBeGreaterThan(0);
+      expect(at365).toBeLessThan(1);
+      expect(at380).toBe(0);  // Zero at visible boundary
     });
   });
   
@@ -113,17 +115,17 @@ describe('Background Illumination', () => {
   
   describe('generateBackgroundSpectrum', () => {
     it('returns array of correct length', () => {
-      const spectrum = generateBackgroundSpectrum('normal', 200, 1000, 100);
+      const spectrum = generateBackgroundSpectrum('normal', 100, 1000, 100);
       expect(spectrum.length).toBe(100);
     });
     
     it('matches getBackgroundIntensity at sample points', () => {
-      const spectrum = generateBackgroundSpectrum('normal', 200, 1000, 9);
-      // 9 samples: 200, 300, 400, 500, 600, 700, 800, 900, 1000
+      const spectrum = generateBackgroundSpectrum('normal', 100, 1000, 10);
+      // 10 samples with step = 900/9 = 100: 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
       
-      expect(spectrum[0]).toBe(getBackgroundIntensity(200, 'normal'));
-      expect(spectrum[4]).toBe(getBackgroundIntensity(600, 'normal'));
-      expect(spectrum[8]).toBe(getBackgroundIntensity(1000, 'normal'));
+      expect(spectrum[0]).toBe(getBackgroundIntensity(100, 'normal'));
+      expect(spectrum[5]).toBe(getBackgroundIntensity(600, 'normal'));
+      expect(spectrum[9]).toBe(getBackgroundIntensity(1000, 'normal'));
     });
     
     it('works with different modes', () => {

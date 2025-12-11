@@ -19,7 +19,7 @@ describe('SpectralPhysicsEngine', () => {
     it('creates engine with default config', () => {
       const config = engine.getConfig();
       
-      expect(config.shared.wavelengthMin).toBe(200);
+      expect(config.shared.wavelengthMin).toBe(100);
       expect(config.shared.wavelengthMax).toBe(1000);
       expect(config.shared.backgroundMode).toBe('normal');
       expect(config.render.spectralResolution).toBe(16);
@@ -36,7 +36,7 @@ describe('SpectralPhysicsEngine', () => {
       expect(config.shared.backgroundMode).toBe('uv');
       expect(config.render.spectralResolution).toBe(32);
       // Non-overridden values should be defaults
-      expect(config.shared.wavelengthMin).toBe(200);
+      expect(config.shared.wavelengthMin).toBe(100);
     });
     
     it('updates shared config', () => {

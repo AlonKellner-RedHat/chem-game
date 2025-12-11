@@ -283,12 +283,12 @@ describe('GPUProfiler', () => {
         profiler.endSession();
       }
       
-      const report = profiler.generateReport([800, 600], 16, 5000);
+      const report = profiler.generateReport([800, 600], 16, 4500);
       
       // Check metadata
       expect(report.metadata.resolution).toEqual([800, 600]);
       expect(report.metadata.spectralSamples).toBe(16);
-      expect(report.metadata.plotResolution).toBe(5000);
+      expect(report.metadata.plotResolution).toBe(4500);
       expect(report.metadata.framesProfiled).toBe(3);
       
       // Check summary
@@ -308,7 +308,7 @@ describe('GPUProfiler', () => {
     });
     
     it('should throw when no sessions recorded', () => {
-      expect(() => profiler.generateReport([800, 600], 16, 5000))
+      expect(() => profiler.generateReport([800, 600], 16, 4500))
         .toThrow('No profiling sessions recorded');
     });
     
@@ -318,7 +318,7 @@ describe('GPUProfiler', () => {
       profiler.startSession(0);
       profiler.endSession();
       
-      const report = profiler.generateReport([800, 600], 16, 5000);
+      const report = profiler.generateReport([800, 600], 16, 4500);
       expect(report.rawSessions).toBeDefined();
       expect(report.rawSessions!.length).toBe(1);
     });
@@ -402,7 +402,7 @@ describe('ProfilingReport structure', () => {
         features: ['timestamp-query'],
         resolution: [800, 600],
         spectralSamples: 16,
-        plotResolution: 5000,
+        plotResolution: 4500,
         framesProfiled: 10,
       },
       summary: {

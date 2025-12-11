@@ -577,7 +577,7 @@ export class SpectralDemo implements Demo {
     this.spectralGraph = new SpectralGraph(graphContainer, {
       width: 400,
       height: 200,
-      wavelengthMin: 200,
+      wavelengthMin: 100,  // Extended to show band gap absorption
       wavelengthMax: 1000,
       title: 'Spectral Distribution (hover over canvas)',
     });
@@ -795,7 +795,7 @@ export class SpectralDemo implements Demo {
     const spectra: Float32Array[] = [];
     for (const shape of this.shapes) {
       const spectrum = shape.material.generateTransmissionSpectrum(
-        200, 1000, 5000,  // High resolution to capture narrow features like Na D-lines
+        100, 1000, 4500,  // 100-1000nm range at 0.2nm resolution (900/4500)
         shape.properties
       );
       spectra.push(spectrum);

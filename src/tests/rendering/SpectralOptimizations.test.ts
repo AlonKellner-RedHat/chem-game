@@ -17,7 +17,7 @@ describe('SpectralOptimizations Integration', () => {
       
       // LUT should be generated for the configured size
       const lutConfig: ScatteringLUTConfig = {
-        wavelengthMin: 200,
+        wavelengthMin: 100,
         wavelengthMax: 1000,
         samples: config.getScatteringLUTSize(),
       };
@@ -102,7 +102,7 @@ describe('SpectralOptimizations Integration', () => {
   describe('ScatteringLUT Accuracy', () => {
     it('LUT interpolation matches direct calculation within tolerance', () => {
       const lutConfig: ScatteringLUTConfig = {
-        wavelengthMin: 200,
+        wavelengthMin: 100,
         wavelengthMax: 1000,
         samples: 256,
       };
@@ -114,7 +114,8 @@ describe('SpectralOptimizations Integration', () => {
       
       for (const wavelength of testWavelengths) {
         const direct = ScatteringLUT.getRayleighFactor(wavelength);
-        const t = (wavelength - 200) / 800;
+        // t is normalized position in 100-1000nm range
+        const t = (wavelength - 100) / 900;
         const interpolated = ScatteringLUT.interpolate(lut, t);
         
         // Should match within 5% (acceptable for downsampled approximation)
@@ -125,7 +126,7 @@ describe('SpectralOptimizations Integration', () => {
 
     it('LUT handles edge wavelengths correctly', () => {
       const lutConfig: ScatteringLUTConfig = {
-        wavelengthMin: 200,
+        wavelengthMin: 100,
         wavelengthMax: 1000,
         samples: 64,
       };
@@ -133,7 +134,8 @@ describe('SpectralOptimizations Integration', () => {
       const lut = ScatteringLUT.generate(lutConfig);
       
       // Edge values should match exactly (no interpolation needed)
-      const firstDirect = ScatteringLUT.getRayleighFactor(200);
+      // Index 0 corresponds to wavelengthMin (100nm), index 1 to wavelengthMax (1000nm)
+      const firstDirect = ScatteringLUT.getRayleighFactor(100);
       const lastDirect = ScatteringLUT.getRayleighFactor(1000);
       
       expect(ScatteringLUT.interpolate(lut, 0)).toBeCloseTo(firstDirect, 2);

@@ -124,8 +124,8 @@ export class WebGPURenderer implements Renderer {
   private stationaryThreshold = 3;  // Must be stationary for N frames before considered "stopped"
   
   // Progressive resolution - draft during movement, full when stationary
-  private static readonly DRAFT_RESOLUTION = 500;   // Fast preview during movement
-  private static readonly FULL_RESOLUTION = 5000;   // High quality when stationary
+  private static readonly DRAFT_RESOLUTION = 450;   // Fast preview during movement (10% of full)
+  private static readonly FULL_RESOLUTION = 4500;   // High quality when stationary (900nm / 4500 = 0.2nm)
   private isDraftSpectrum = true;  // True if current spectrum is draft quality
   
   async init(): Promise<boolean> {
@@ -327,7 +327,7 @@ export class WebGPURenderer implements Renderer {
     const params: ComputeParams = {
       width: this.width,
       height: this.height,
-      wavelengthMin: 200,
+      wavelengthMin: 100,  // Extended to show band gap absorption
       wavelengthMax: 1000,
       // Always use 16 samples for color integration (fast)
       spectralResolution: 16,

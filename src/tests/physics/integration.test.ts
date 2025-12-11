@@ -101,7 +101,7 @@ describe('Spectrum Integration', () => {
   
   describe('generateD65Spectrum', () => {
     it('returns array of correct length', () => {
-      const spectrum = generateD65Spectrum(200, 1000, 100);
+      const spectrum = generateD65Spectrum(100, 1000, 100);
       expect(spectrum.length).toBe(100);
     });
     

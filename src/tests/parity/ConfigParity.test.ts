@@ -11,7 +11,7 @@ describe('Configuration Parity', () => {
     it('uses correct wavelength range', () => {
       const config = createDefaultConfig();
       
-      expect(config.shared.wavelengthMin).toBe(200);
+      expect(config.shared.wavelengthMin).toBe(100);
       expect(config.shared.wavelengthMax).toBe(1000);
     });
     
@@ -129,7 +129,7 @@ describe('Configuration Parity', () => {
       expect(config.render.spectralResolution).toBe(64);
       
       // Non-overridden values should be defaults
-      expect(config.shared.wavelengthMin).toBe(200);
+      expect(config.shared.wavelengthMin).toBe(100);
     });
   });
 });
