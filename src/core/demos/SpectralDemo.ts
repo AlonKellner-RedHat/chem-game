@@ -100,6 +100,14 @@ export class SpectralDemo implements Demo {
         // Flat 66% transmission across all wavelengths
         return new Float32Array(resolution).fill(0.66);
       },
+      generateFluorescenceTextures: (_minWl: number, _maxWl: number, resolution: number) => {
+        // No fluorescence for background tint
+        return {
+          excitation: new Float32Array(resolution).fill(0),
+          emission: new Float32Array(resolution).fill(0),
+          totalQuantumYield: 0,
+        };
+      },
     };
     
     // Create shapes (background layer first, then foreground)
@@ -803,6 +811,10 @@ export class SpectralDemo implements Demo {
     
     renderer.setMaterials(spectra);
     
+    // Upload fluorescence textures for UV-excited emission
+    const { excitationSpectra, emissionSpectra } = this.generateFluorescenceTextures();
+    renderer.setFluorescenceData(excitationSpectra, emissionSpectra);
+    
     // Convert shapes to GPU format
     const gpuShapes: GPUShape[] = this.shapes.map((shape, index) => {
       const maskIndex = renderer.getMaskIndex(shape.maskName);
@@ -822,6 +834,8 @@ export class SpectralDemo implements Demo {
         // Scattering particle densities
         smallParticleDensity: shape.smallParticleDensity,
         largeParticleDensity: shape.largeParticleDensity,
+        // Fluorescence quantum yield for UV-excited emission
+        fluorescenceQuantumYield: this.calculateTotalQuantumYield(shape),
       };
     });
     
@@ -963,6 +977,37 @@ export class SpectralDemo implements Demo {
     
     console.log(`[DEBUG-REPORT] Report saved: ${filename}`);
     console.log('[DEBUG-REPORT] Reports generated:', debugCollector.getAllReports().length);
+  }
+  
+  /**
+   * Calculate total quantum yield for a shape based on its material and mole fractions
+   */
+  private calculateTotalQuantumYield(shape: ShapeConfig): number {
+    const fluorData = shape.material.generateFluorescenceTextures(
+      100, 1000, 100, shape.properties
+    );
+    return fluorData.totalQuantumYield;
+  }
+  
+  /**
+   * Generate fluorescence textures for all materials
+   */
+  private generateFluorescenceTextures(): {
+    excitationSpectra: Float32Array[];
+    emissionSpectra: Float32Array[];
+  } {
+    const excitationSpectra: Float32Array[] = [];
+    const emissionSpectra: Float32Array[] = [];
+    
+    for (const shape of this.shapes) {
+      const data = shape.material.generateFluorescenceTextures(
+        100, 1000, 900, shape.properties  // Match material palette resolution
+      );
+      excitationSpectra.push(data.excitation);
+      emissionSpectra.push(data.emission);
+    }
+    
+    return { excitationSpectra, emissionSpectra };
   }
 }
 

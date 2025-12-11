@@ -7,10 +7,13 @@
 export {
   createMaterial,
   createDefaultProperties,
+  validateFluorescenceBand,
   type Material,
   type MaterialProperties,
   type Molecule,
   type AbsorptionPeak,
+  type FluorescenceBand,
+  type FluorescenceValidationResult,
 } from './Material';
 
 export {

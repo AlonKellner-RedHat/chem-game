@@ -97,6 +97,8 @@ struct Shape {
   texHeight: f32,     // MSDF texture height
   smallParticleDensity: f32,  // Rayleigh scattering particle density (particles/cm³)
   largeParticleDensity: f32,  // Mie scattering particle density (particles/cm³)
+  fluorescenceQuantumYield: f32, // Total quantum yield for fluorescence (0-1)
+  _padding: f32,      // Padding for 16-byte alignment
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -111,6 +113,12 @@ struct Shape {
 // Material palette texture (2D atlas: X=wavelength, Y=material index)
 @group(1) @binding(0) var materialPalette: texture_2d<f32>;
 @group(1) @binding(1) var materialSampler: sampler;
+
+// Fluorescence textures (2D atlas: X=wavelength, Y=material index)
+// Excitation: efficiency of UV absorption leading to fluorescence
+// Emission: spectral distribution of fluorescence emission
+@group(1) @binding(2) var fluorExcitationPalette: texture_2d<f32>;
+@group(1) @binding(3) var fluorEmissionPalette: texture_2d<f32>;
 
 // CIE color matching function textures (2D with height=1)
 @group(2) @binding(0) var cieXTexture: texture_2d<f32>;
@@ -146,7 +154,8 @@ struct Shape {
 // to the high-res buffers when computing the spectrum plot.
 
 // Number of spectral samples (must match TypeScript)
-const SPECTRAL_SAMPLES: u32 = 16u;
+// 32 samples across 100-1000nm to capture UV excitation for fluorescence
+const SPECTRAL_SAMPLES: u32 = 32u;
 
 // Blur constants
 const MAX_BLUR_RADIUS: i32 = 16;           // Maximum blur radius in pixels (optimized for performance)
@@ -349,6 +358,44 @@ fn getMaterialTransmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
   let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
   
   return textureSampleLevel(materialPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+}
+
+/**
+ * Sample fluorescence excitation efficiency at wavelength from palette
+ * Returns how efficiently light at this wavelength excites fluorescence (0-1)
+ */
+fn getFluorescenceExcitation(materialIndex: u32, wavelengthNm: f32) -> f32 {
+  // Handle case when no materials are loaded
+  if (params.numMaterials == 0u) {
+    return 0.0;
+  }
+  
+  // U coordinate: wavelength position
+  let u = (wavelengthNm - params.wavelengthMin) / (params.wavelengthMax - params.wavelengthMin);
+  
+  // V coordinate: center of the row for this material
+  let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
+  
+  return textureSampleLevel(fluorExcitationPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
+}
+
+/**
+ * Sample fluorescence emission spectrum at wavelength from palette
+ * Returns the emission line shape (normalized so peak = 1)
+ */
+fn getFluorescenceEmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
+  // Handle case when no materials are loaded
+  if (params.numMaterials == 0u) {
+    return 0.0;
+  }
+  
+  // U coordinate: wavelength position
+  let u = (wavelengthNm - params.wavelengthMin) / (params.wavelengthMax - params.wavelengthMin);
+  
+  // V coordinate: center of the row for this material
+  let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
+  
+  return textureSampleLevel(fluorEmissionPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
 }
 
 /**
@@ -612,10 +659,18 @@ fn computePixelIntensity(px: f32, py: f32, wavelength: f32, numShapes: u32) -> f
       );
       scatteringMultiplier *= scatterTrans;
       
-      // Thermal emission (Kirchhoff's law)
+      // Thermal emission (Kirchhoff's law) + Fluorescence
       if (params.enableEmission == 1u) {
         let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-        emission += em * mask;
+        
+        // Fluorescence emission
+        let absorbedLight = intensity * (1.0 - materialTrans) * mask;
+        let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
+        let excitationAmount = absorbedLight * excitationEff;
+        let emissionShape = getFluorescenceEmission(shape.materialIndex, wavelength);
+        let fluorEmission = excitationAmount * emissionShape * shape.fluorescenceQuantumYield;
+        
+        emission += (em + fluorEmission) * mask;
       }
     }
   }
@@ -672,13 +727,17 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // Pass 0: Integrate spectral buffer to XYZ and find max intensity
   // Read from spectralInput which contains the per-layer composited result
   // This ensures proper layer order (back-to-front) for absorption and emission
+  //
+  // Buffer spans 100-1000nm (for UV fluorescence), but CIE only covers 380-700nm.
+  // getCIE() returns 0 outside visible range, so we iterate over ALL samples
+  // and only visible wavelengths contribute to color.
   
-  let dLambda = (VISIBLE_MAX - VISIBLE_MIN) / f32(params.spectralResolution);
+  let dLambda = (params.wavelengthMax - params.wavelengthMin) / f32(SPECTRAL_SAMPLES - 1u);
   var xyz = vec3<f32>(0.0, 0.0, 0.0);
   var maxIntensity: f32 = 0.0;
   
-  for (var i: u32 = 0u; i < params.spectralResolution; i++) {
-    let wavelength = VISIBLE_MIN + (f32(i) + 0.5) * dLambda;
+  for (var i: u32 = 0u; i < SPECTRAL_SAMPLES; i++) {
+    let wavelength = getWavelengthForIndex(i);
     
     // Read from spectral buffer (result of per-layer processing)
     let intensity = interpolateSpectralBuffer(x, y, wavelength);
@@ -686,7 +745,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Track maximum intensity for this pixel
     maxIntensity = max(maxIntensity, intensity);
     
-    // Accumulate XYZ
+    // Accumulate XYZ (getCIE returns 0 for UV/IR, so only visible contributes)
     let cie = getCIE(wavelength);
     xyz += intensity * cie * dLambda;
   }
@@ -704,13 +763,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 // ============================================================
 
 /**
- * Interpolate from the 16-sample spectral buffer to get intensity at any wavelength.
+ * Interpolate from the spectral buffer to get intensity at any wavelength.
  * Uses linear interpolation between the two nearest samples.
+ * Buffer covers full range (100-1000nm) for UV fluorescence support.
  */
 fn interpolateSpectralBuffer(x: u32, y: u32, wavelength: f32) -> f32 {
-  // Map wavelength to fractional index in our 16-sample buffer
-  let dLambda = (VISIBLE_MAX - VISIBLE_MIN) / f32(SPECTRAL_SAMPLES);
-  let fractionalIdx = (wavelength - VISIBLE_MIN) / dLambda - 0.5;
+  // Map wavelength to fractional index in our spectral buffer
+  // Buffer uses full range (params.wavelengthMin to params.wavelengthMax)
+  let range = params.wavelengthMax - params.wavelengthMin;
+  let fractionalIdx = (wavelength - params.wavelengthMin) / range * f32(SPECTRAL_SAMPLES - 1u);
   
   // Handle edge cases
   if (fractionalIdx <= 0.0) {
@@ -959,10 +1020,11 @@ fn voigtBlurWeight(dist: f32, sigma: f32) -> f32 {
 
 /**
  * Get wavelength for a given spectral sample index
+ * Uses full range (100-1000nm) from params to match getWavelength()
  */
 fn getWavelengthForIndex(idx: u32) -> f32 {
-  let dLambda = (VISIBLE_MAX - VISIBLE_MIN) / f32(SPECTRAL_SAMPLES);
-  return VISIBLE_MIN + (f32(idx) + 0.5) * dLambda;
+  // Same formula as getWavelength() - use full range for UV fluorescence
+  return params.wavelengthMin + (params.wavelengthMax - params.wavelengthMin) * f32(idx) / f32(SPECTRAL_SAMPLES - 1u);
 }
 
 /**
@@ -1056,15 +1118,9 @@ fn isValidScreenPos(screenPos: vec2<i32>) -> bool {
  * - For spectrum (5000 samples): full range 200-1000nm from params (for spectral plot)
  */
 fn getWavelength(wIdx: u32) -> f32 {
-  // Use visible range for rendering (16 samples), full range for spectrum (high sample count)
-  // The cutoff of 32 ensures rendering mode stays in visible range for accurate color
-  if (params.sampleCount <= 32u) {
-    // Rendering mode: use visible range for accurate CIE color integration
-    return VISIBLE_MIN + (VISIBLE_MAX - VISIBLE_MIN) * f32(wIdx) / f32(params.sampleCount - 1u);
-  } else {
-    // Spectrum mode: use full range from params for spectral plot
-    return params.wavelengthMin + (params.wavelengthMax - params.wavelengthMin) * f32(wIdx) / f32(params.sampleCount - 1u);
-  }
+  // Use full range (100-1000nm) for all rendering to capture UV excitation for fluorescence
+  // This allows UV absorption → visible emission (e.g., sodium D-lines at 589nm)
+  return params.wavelengthMin + (params.wavelengthMax - params.wavelengthMin) * f32(wIdx) / f32(params.sampleCount - 1u);
 }
 
 // ============================================================
@@ -1153,8 +1209,19 @@ fn computeLayerPhysics(
       
       // Handle emission with spread factor
       if (params.enableEmission == 1u) {
+        // === Kirchhoff Thermal Emission ===
         let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-        let maskedEmission = em * mask;
+        
+        // === Fluorescence Emission ===
+        let absorbedLight = inputIntensity * (1.0 - materialTrans) * mask;
+        let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
+        let excitationAmount = absorbedLight * excitationEff;
+        let emissionShape = getFluorescenceEmission(shape.materialIndex, wavelength);
+        let fluorEmission = excitationAmount * emissionShape * shape.fluorescenceQuantumYield;
+        
+        // Total emission = Kirchhoff + fluorescence
+        let totalEmission = em + fluorEmission;
+        let maskedEmission = totalEmission * mask;
         
         // Split emission using spread factor
         let spreadFactor = params.emissionSpreadFactor;
@@ -1249,8 +1316,135 @@ fn computeLayerPhysicsOptimized(
       
       // Handle emission with spread factor
       if (params.enableEmission == 1u) {
+        // === Kirchhoff Thermal Emission ===
         let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
-        let maskedEmission = em * mask;
+        
+        // === Fluorescence Emission ===
+        // Fluorescence: UV light absorbed → visible light emitted
+        // 1. Calculate absorbed light (what was removed from transmission)
+        // 2. Multiply by excitation efficiency at this wavelength
+        // 3. Emit at emission wavelengths using emission spectrum
+        //
+        // For fluorescence to work, we need absorbed UV light.
+        // absorbedLight = inputIntensity × (1 - materialTrans) × mask
+        let absorbedLight = inputIntensity * (1.0 - materialTrans) * mask;
+        
+        // Get excitation efficiency (how well this wavelength excites fluorescence)
+        let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
+        
+        // Calculate excitation amount (energy available for re-emission)
+        let excitationAmount = absorbedLight * excitationEff;
+        
+        // Get emission line shape at this wavelength (normalized 0-1)
+        let emissionShape = getFluorescenceEmission(shape.materialIndex, wavelength);
+        
+        // Fluorescence emission = excitation × emissionShape × quantumYield
+        // The quantum yield accounts for non-radiative losses
+        let fluorEmission = excitationAmount * emissionShape * shape.fluorescenceQuantumYield;
+        
+        // Total emission = Kirchhoff + fluorescence
+        let totalEmission = em + fluorEmission;
+        let maskedEmission = totalEmission * mask;
+        
+        let spreadFactor = params.emissionSpreadFactor;
+        let directFraction = 1.0 - spreadFactor;
+        let spreadAmount = maskedEmission * spreadFactor;
+        
+        result.directEmission += maskedEmission * directFraction;
+        result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
+        result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
+      }
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * SHARED: Compute layer physics with pre-accumulated fluorescence excitation.
+ * This is the TWO-PASS version that correctly handles inter-wavelength fluorescence.
+ * 
+ * The key difference from computeLayerPhysicsOptimized:
+ * - Uses pre-accumulated excitation values (from Pass 1) for fluorescence emission
+ * - Emission at wavelength λ depends on total absorbed UV, not just absorbed at λ
+ * 
+ * @param inputIntensity: Current intensity at this wavelength
+ * @param wavelength: Wavelength in nm
+ * @param numShapes: Number of shapes to process
+ * @param shapeData: Pre-computed masks and path lengths
+ * @param shapeExcitation: Pre-accumulated excitation per shape (from Pass 1)
+ */
+fn computeLayerPhysicsWithFluorescence(
+  inputIntensity: f32,
+  wavelength: f32,
+  numShapes: u32,
+  shapeData: ptr<function, array<PrecomputedShapeData, 16>>,
+  shapeExcitation: ptr<function, array<f32, 16>>
+) -> LayerPhysicsResult {
+  var result: LayerPhysicsResult;
+  result.transmitted = inputIntensity;
+  result.scatterSrc = 0.0;
+  result.directEmission = 0.0;
+  result.emissionAuraSrc = 0.0;
+  
+  // Apply all shapes in this layer using pre-computed masks
+  for (var i: u32 = 0u; i < numShapes; i++) {
+    let data = (*shapeData)[i];
+    let mask = data.mask;
+    
+    if (mask > 0.0) {
+      let shape = shapes[i];
+      let pathLength = data.pathLength;
+      let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+      
+      // Get scattering transmission (how much light passes without scattering)
+      let scatterTrans = applyScattering(
+        1.0,
+        wavelength,
+        shape.smallParticleDensity,
+        shape.largeParticleDensity,
+        pathLength * mask
+      );
+      
+      // Scatter probability = 1 - scatterTrans (fraction that scatters)
+      let scatterProb = 1.0 - scatterTrans;
+      
+      // Apply material absorption first
+      let absorption = mix(1.0, materialTrans, mask);
+      let absorbedInput = result.transmitted * absorption;
+      
+      // Apply scattering attenuation - light that scatters is removed from direct path
+      // This creates the Rayleigh spectral effect: blue scatters more, transmitted light reddens
+      let directTrans = absorbedInput * scatterTrans;
+      
+      // Compute scattered light for the aura effect
+      let scatteredFrac = absorbedInput * scatterProb;
+      result.scatterSrc += scatteredFrac * AURA_SCATTER_FRACTION;
+      
+      // Update transmitted for next shape in layer
+      result.transmitted = directTrans;
+      
+      // Handle emission with spread factor
+      if (params.enableEmission == 1u) {
+        // === Kirchhoff Thermal Emission ===
+        let em = getKirchhoffEmission(materialTrans, wavelength, shape.temperature);
+        
+        // === Fluorescence Emission (Two-Pass) ===
+        // Use pre-accumulated excitation from Pass 1.
+        // This is the total absorbed×excitationEff across ALL wavelengths.
+        let totalExcitation = (*shapeExcitation)[i];
+        
+        // Get emission line shape at this wavelength (normalized 0-1)
+        // This is non-zero at the emission wavelength (e.g., 589nm for sodium)
+        let emissionShape = getFluorescenceEmission(shape.materialIndex, wavelength);
+        
+        // Fluorescence emission = totalExcitation × emissionShape × quantumYield
+        // The quantum yield accounts for non-radiative losses
+        let fluorEmission = totalExcitation * emissionShape * shape.fluorescenceQuantumYield;
+        
+        // Total emission = Kirchhoff + fluorescence
+        let totalEmission = em + fluorEmission;
+        let maskedEmission = totalEmission * mask;
         
         let spreadFactor = params.emissionSpreadFactor;
         let directFraction = 1.0 - spreadFactor;
@@ -1372,7 +1566,60 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
   
-  // Process each wavelength using pre-computed shape data
+  // ============================================================
+  // TWO-PASS FLUORESCENCE: Accumulate excitation, then emit
+  // ============================================================
+  // 
+  // Fluorescence requires inter-wavelength coupling:
+  // - UV photons (e.g., 300nm) are absorbed and excite molecules
+  // - Molecules re-emit at longer wavelengths (e.g., 589nm for sodium)
+  // 
+  // Pass 1: Accumulate total excitation per shape (sum over all wavelengths)
+  // Pass 2: Apply emission at each wavelength using accumulated excitation
+  //
+  // This is physically accurate: excitation doesn't depend on where emission happens
+  // ============================================================
+  
+  // Accumulate total fluorescence excitation per shape
+  var shapeExcitation: array<f32, 16>;
+  for (var i: u32 = 0u; i < 16u; i++) {
+    shapeExcitation[i] = 0.0;
+  }
+  
+  // === PASS 1: Accumulate excitation from all wavelengths ===
+  if (params.enableEmission == 1u) {
+    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
+      let wavelength = getWavelength(wIdx);
+      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+      let inputIntensity = f32(spectralInput[spectralIdx]);
+      
+      // For each shape, accumulate excitation
+      var transmitted = inputIntensity;
+      for (var i: u32 = 0u; i < shapesToProcess; i++) {
+        let data = shapeData[i];
+        let mask = data.mask;
+        
+        if (mask > 0.0) {
+          let shape = shapes[i];
+          
+          // Fluorescent molecules absorb photons directly at excitation wavelengths
+          // excitationEff encodes the absorption cross-section (already weighted by mole fraction)
+          // This is physically correct: fluorophores absorb independently of carrier material
+          let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
+          
+          // Accumulate excitation for this shape
+          shapeExcitation[i] += transmitted * excitationEff * mask;
+          
+          // Update transmitted for next shape (material absorption still applies for general light)
+          let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+          let absorption = mix(1.0, materialTrans, mask);
+          transmitted *= absorption;
+        }
+      }
+    }
+  }
+  
+  // === PASS 2: Process wavelengths with accumulated excitation ===
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
@@ -1380,8 +1627,10 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
     // Read current intensity from input buffer (f16 -> f32 for physics calc)
     let inputIntensity = f32(spectralInput[spectralIdx]);
     
-    // Use optimized physics with pre-computed masks
-    let result = computeLayerPhysicsOptimized(inputIntensity, wavelength, shapesToProcess, &shapeData);
+    // Use optimized physics with pre-computed masks and accumulated excitation
+    let result = computeLayerPhysicsWithFluorescence(
+      inputIntensity, wavelength, shapesToProcess, &shapeData, &shapeExcitation
+    );
     
     // Write outputs (convert f32 to f16)
     spectralOutput[spectralIdx] = f16(result.transmitted + result.directEmission);
@@ -1896,7 +2145,8 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   
   // Pass 0: Integrate spectrum from buffer to XYZ
-  let dLambda = (VISIBLE_MAX - VISIBLE_MIN) / f32(SPECTRAL_SAMPLES);
+  // Buffer spans 100-1000nm, CIE only covers 380-700nm (getCIE returns 0 outside)
+  let dLambda = (params.wavelengthMax - params.wavelengthMin) / f32(SPECTRAL_SAMPLES - 1u);
   var xyz = vec3<f32>(0.0, 0.0, 0.0);
   var maxIntensity: f32 = 0.0;
   
@@ -1907,6 +2157,7 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
     
     maxIntensity = max(maxIntensity, intensity);
     
+    // getCIE returns 0 for UV/IR, so only visible wavelengths contribute
     let cie = getCIE(wavelength);
     xyz += intensity * cie * dLambda;
   }

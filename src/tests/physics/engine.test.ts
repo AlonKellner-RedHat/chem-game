@@ -22,7 +22,7 @@ describe('SpectralPhysicsEngine', () => {
       expect(config.shared.wavelengthMin).toBe(100);
       expect(config.shared.wavelengthMax).toBe(1000);
       expect(config.shared.backgroundMode).toBe('normal');
-      expect(config.render.spectralResolution).toBe(16);
+      expect(config.render.spectralResolution).toBe(32);
       expect(config.plot.spectralResolution).toBe(320);
     });
     

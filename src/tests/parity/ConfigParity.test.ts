@@ -32,7 +32,7 @@ describe('Configuration Parity', () => {
     it('render path uses low resolution', () => {
       const config = createDefaultConfig();
       
-      expect(config.render.spectralResolution).toBe(16);
+      expect(config.render.spectralResolution).toBe(32);
       expect(config.render.outputMode).toBe('rgb');
     });
     

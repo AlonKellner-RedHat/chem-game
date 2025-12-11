@@ -33,6 +33,9 @@ export interface Renderer {
   /** Set material transmission spectra */
   setMaterials(materials: Float32Array[]): void;
   
+  /** Set fluorescence excitation and emission spectra */
+  setFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void;
+  
   /** Set shapes to render */
   setShapes(shapes: GPUShape[]): void;
   
@@ -157,6 +160,14 @@ export class WebGPURenderer implements Renderer {
       this.pipeline.setMaterials(materials);
     }
     // Invalidate spectrum cache when materials change
+    this.invalidateSpectrumCache();
+  }
+  
+  setFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void {
+    if (this.pipeline) {
+      this.pipeline.setFluorescenceData(excitation, emission);
+    }
+    // Invalidate spectrum cache when fluorescence changes
     this.invalidateSpectrumCache();
   }
   
@@ -520,6 +531,10 @@ export class CPURenderer implements Renderer {
   
   setMaterials(materials: Float32Array[]): void {
     this.materials = materials;
+  }
+  
+  setFluorescenceData(_excitation: Float32Array[], _emission: Float32Array[]): void {
+    // No-op for CPU fallback (fluorescence not implemented in CPU renderer)
   }
   
   setShapes(shapes: GPUShape[]): void {

@@ -162,41 +162,42 @@ describe('Scattering Blur Physics', () => {
     it('spectral index formula is correct', () => {
       // spectralIndex = (y * width + x) * SPECTRAL_SAMPLES + wavelengthIdx
       const width = 1280;
-      const SPECTRAL_SAMPLES = 16;
+      const SPECTRAL_SAMPLES = 32;
       
       // Test a few cases
       const idx00_w0 = (0 * width + 0) * SPECTRAL_SAMPLES + 0;
       expect(idx00_w0).toBe(0);
       
-      const idx00_w15 = (0 * width + 0) * SPECTRAL_SAMPLES + 15;
-      expect(idx00_w15).toBe(15);
+      const idx00_w31 = (0 * width + 0) * SPECTRAL_SAMPLES + 31;
+      expect(idx00_w31).toBe(31);
       
       const idx10_w0 = (0 * width + 1) * SPECTRAL_SAMPLES + 0;
-      expect(idx10_w0).toBe(16);
+      expect(idx10_w0).toBe(32);
       
       const idx01_w0 = (1 * width + 0) * SPECTRAL_SAMPLES + 0;
       expect(idx01_w0).toBe(width * SPECTRAL_SAMPLES);
     });
 
     it('wavelength calculation from index is correct', () => {
-      const VISIBLE_MIN = 380;
-      const VISIBLE_MAX = 700;
-      const SPECTRAL_SAMPLES = 16;
+      // Now uses full range 100-1000nm for UV fluorescence
+      const WAVELENGTH_MIN = 100;
+      const WAVELENGTH_MAX = 1000;
+      const SPECTRAL_SAMPLES = 32;
       
       const getWavelength = (idx: number) => {
-        const dLambda = (VISIBLE_MAX - VISIBLE_MIN) / SPECTRAL_SAMPLES;
-        return VISIBLE_MIN + (idx + 0.5) * dLambda;
+        // New formula: wavelengthMin + (wavelengthMax - wavelengthMin) * idx / (sampleCount - 1)
+        return WAVELENGTH_MIN + (WAVELENGTH_MAX - WAVELENGTH_MIN) * idx / (SPECTRAL_SAMPLES - 1);
       };
       
-      // First sample should be near 390nm (380 + 10)
-      expect(getWavelength(0)).toBeCloseTo(390, 0);
+      // First sample should be at 100nm
+      expect(getWavelength(0)).toBeCloseTo(100, 0);
       
-      // Last sample should be near 690nm (700 - 10)
-      expect(getWavelength(15)).toBeCloseTo(690, 0);
+      // Last sample should be at 1000nm
+      expect(getWavelength(31)).toBeCloseTo(1000, 0);
       
-      // Middle sample (index 8) should be around 550nm
-      // (380 + (8 + 0.5) * 20 = 380 + 170 = 550)
-      expect(getWavelength(8)).toBeCloseTo(550, 0);
+      // Middle sample (index 15.5) should be around 550nm
+      // (100 + 900 * 15 / 31 ≈ 535nm)
+      expect(getWavelength(15)).toBeCloseTo(535, 0);
     });
   });
 });

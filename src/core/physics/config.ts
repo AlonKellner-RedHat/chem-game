@@ -121,7 +121,7 @@ export function createDefaultSharedConfig(): SharedPhysicsConfig {
  */
 export function createDefaultRenderConfig(): RenderPathConfig {
   return {
-    spectralResolution: 16,
+    spectralResolution: 32,  // 32 samples across 100-1000nm for UV fluorescence
     outputMode: 'rgb',
   };
 }

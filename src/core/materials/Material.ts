@@ -9,6 +9,7 @@
 
 import { getBandGapTransmission } from '../physics/bandgap';
 import { voigtProfile, voigtFWHM } from '../physics/voigt';
+import { getExcitationEfficiency, getEmissionLineShape } from '../physics/fluorescence';
 import { AbsorptionModel, BaseMaterialAbsorption, MoleculeAbsorption } from './AbsorptionModel';
 import { AbsorptionDataPoint } from './AbsorptionData';
 
@@ -25,6 +26,70 @@ export interface AbsorptionPeak {
 }
 
 /**
+ * Fluorescence band definition (OCP extension)
+ * 
+ * Describes UV excitation → visible emission for a molecule.
+ * Must satisfy Stokes shift: emission wavelength > excitation wavelength
+ */
+export interface FluorescenceBand {
+  /** Minimum excitation wavelength (nm) - start of excitation range */
+  excitationMin: number;
+  /** Maximum excitation wavelength (nm) - end of excitation range */
+  excitationMax: number;
+  /** Peak excitation wavelength (nm) - center of Gaussian excitation profile */
+  excitationPeak: number;
+  /** Emission line center wavelength (nm) - must be > excitationPeak (Stokes shift) */
+  emissionWavelength: number;
+  /** Emission line natural width (nm) - FWHM for Voigt profile */
+  emissionWidth: number;
+  /** Quantum yield (0-1) - fraction of absorbed photons that result in emission */
+  quantumYield: number;
+}
+
+/**
+ * Result of fluorescence band validation
+ */
+export interface FluorescenceValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * Validate a fluorescence band for physical correctness
+ * 
+ * @param band - The fluorescence band to validate
+ * @returns Validation result with error message if invalid
+ */
+export function validateFluorescenceBand(band: FluorescenceBand): FluorescenceValidationResult {
+  // Quantum yield must be in [0, 1]
+  if (band.quantumYield < 0 || band.quantumYield > 1) {
+    return { valid: false, error: 'Invalid quantum yield: must be in range [0, 1]' };
+  }
+  
+  // Excitation range must be valid (min <= max)
+  if (band.excitationMin > band.excitationMax) {
+    return { valid: false, error: 'Invalid excitation range: min must be <= max' };
+  }
+  
+  // Excitation peak must be within excitation range
+  if (band.excitationPeak < band.excitationMin || band.excitationPeak > band.excitationMax) {
+    return { valid: false, error: 'Invalid excitation peak: must be within excitation range' };
+  }
+  
+  // Stokes shift: emission must be at longer wavelength than excitation (or equal for resonance)
+  if (band.emissionWavelength < band.excitationPeak) {
+    return { valid: false, error: 'Stokes shift violation: emission wavelength must be >= excitation peak' };
+  }
+  
+  // Emission width must be positive
+  if (band.emissionWidth <= 0) {
+    return { valid: false, error: 'Invalid emission width: must be positive' };
+  }
+  
+  return { valid: true };
+}
+
+/**
  * Molecule definition
  */
 export interface Molecule {
@@ -38,6 +103,8 @@ export interface Molecule {
   mass: number;
   /** Pressure broadening coefficient (nm/atm) for collisional broadening */
   pressureBroadening: number;
+  /** Optional fluorescence bands (UV excitation → visible emission) */
+  fluorescence?: FluorescenceBand[];
 }
 
 // Physical constants for Doppler broadening
@@ -166,6 +233,29 @@ export interface Material {
     resolution: number,
     properties: MaterialProperties
   ): Float32Array;
+  
+  /**
+   * Generate fluorescence textures for GPU rendering
+   * 
+   * Returns excitation efficiency and emission spectrum textures that
+   * can be uploaded to the GPU for real-time fluorescence simulation.
+   * 
+   * @param wavelengthMin - Minimum wavelength (nm)
+   * @param wavelengthMax - Maximum wavelength (nm)
+   * @param resolution - Number of samples
+   * @param properties - Material properties with mole fractions
+   * @returns Object with excitation/emission textures and total quantum yield
+   */
+  generateFluorescenceTextures(
+    wavelengthMin: number,
+    wavelengthMax: number,
+    resolution: number,
+    properties: MaterialProperties
+  ): {
+    excitation: Float32Array;
+    emission: Float32Array;
+    totalQuantumYield: number;
+  };
 }
 
 /**
@@ -350,6 +440,93 @@ export function createMaterial(
       }
       
       return spectrum;
+    },
+    
+    generateFluorescenceTextures(
+      wavelengthMin: number,
+      wavelengthMax: number,
+      resolution: number,
+      properties: MaterialProperties
+    ): {
+      excitation: Float32Array;
+      emission: Float32Array;
+      totalQuantumYield: number;
+    } {
+      const excitation = new Float32Array(resolution);
+      const emission = new Float32Array(resolution);
+      const step = (wavelengthMax - wavelengthMin) / (resolution - 1);
+      
+      // Get mole fractions
+      const fractions = properties.moleFractions || {};
+      
+      // Collect all fluorescence bands with their weights
+      let totalQuantumYield = 0;
+      let bandCount = 0;
+      
+      // Pre-calculate emission peak values for normalization
+      const emissionPeakValues: Map<FluorescenceBand, number> = new Map();
+      
+      for (const molecule of molecules) {
+        const moleFraction = fractions[molecule.id] || 0;
+        if (moleFraction <= 0 || !molecule.fluorescence) {
+          continue;
+        }
+        
+        for (const band of molecule.fluorescence) {
+          const peakEmission = getEmissionLineShape(
+            band.emissionWavelength,
+            band,
+            properties.temperature
+          );
+          emissionPeakValues.set(band, peakEmission);
+          totalQuantumYield += band.quantumYield;
+          bandCount++;
+        }
+      }
+      
+      // Average quantum yield
+      if (bandCount > 0) {
+        totalQuantumYield /= bandCount;
+      }
+      
+      // Generate textures
+      for (let i = 0; i < resolution; i++) {
+        const wavelength = wavelengthMin + i * step;
+        let excitationTotal = 0;
+        let emissionTotal = 0;
+        
+        for (const molecule of molecules) {
+          const moleFraction = fractions[molecule.id] || 0;
+          if (moleFraction <= 0 || !molecule.fluorescence) {
+            continue;
+          }
+          
+          for (const band of molecule.fluorescence) {
+            // Excitation efficiency (weighted by mole fraction)
+            const excitEff = getExcitationEfficiency(wavelength, band);
+            excitationTotal += excitEff * moleFraction;
+            
+            // Emission line shape (weighted by mole fraction and quantum yield)
+            const emissionShape = getEmissionLineShape(
+              wavelength,
+              band,
+              properties.temperature
+            );
+            const peakValue = emissionPeakValues.get(band) || 1;
+            const normalizedEmission = peakValue > 0 ? emissionShape / peakValue : 0;
+            emissionTotal += normalizedEmission * band.quantumYield * moleFraction;
+          }
+        }
+        
+        excitation[i] = Math.max(0, excitationTotal);
+        emission[i] = Math.max(0, emissionTotal);
+      }
+      
+      return {
+        excitation,
+        emission,
+        totalQuantumYield,
+      };
     },
   };
 }
