@@ -103,7 +103,7 @@ export class WebGPURenderer implements Renderer {
   private backgroundMode: BackgroundMode = 'normal';
   private emissionEnabled = true;
   private emissionSpreadFactor = 0.3;  // Fraction of emission that spreads sideways (aura)
-  private emissionAuraSigma = 3.0;     // Gaussian sigma for emission aura blur
+  // Note: emissionAuraSigma removed - now uses unified sigma with scatter
   
   // Spectrum sampling state
   private sampleX = -1;
@@ -218,12 +218,7 @@ export class WebGPURenderer implements Renderer {
     this.emissionSpreadFactor = Math.max(0, Math.min(1, factor));
   }
   
-  /**
-   * Set emission aura blur sigma (in pixels)
-   */
-  setEmissionAuraSigma(sigma: number): void {
-    this.emissionAuraSigma = Math.max(0, sigma);
-  }
+  // Note: setEmissionAuraSigma removed - now uses unified sigma with scatter
   
   /**
    * Compute a hash of shapes configuration for cache invalidation
@@ -378,7 +373,7 @@ export class WebGPURenderer implements Renderer {
       boxSize: 30,
       // Emission aura parameters
       emissionSpreadFactor: this.emissionSpreadFactor,
-      emissionAuraSigma: this.emissionAuraSigma,
+      // Note: emissionAuraSigma removed - uses unified sigma
     };
     
     // Update profiler config

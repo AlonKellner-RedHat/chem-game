@@ -162,17 +162,17 @@ describe('Scattering Blur Physics', () => {
     it('spectral index formula is correct', () => {
       // spectralIndex = (y * width + x) * SPECTRAL_SAMPLES + wavelengthIdx
       const width = 1280;
-      const SPECTRAL_SAMPLES = 32;
+      const SPECTRAL_SAMPLES = 16;
       
       // Test a few cases
       const idx00_w0 = (0 * width + 0) * SPECTRAL_SAMPLES + 0;
       expect(idx00_w0).toBe(0);
       
-      const idx00_w31 = (0 * width + 0) * SPECTRAL_SAMPLES + 31;
-      expect(idx00_w31).toBe(31);
+      const idx00_w15 = (0 * width + 0) * SPECTRAL_SAMPLES + 15;
+      expect(idx00_w15).toBe(15);
       
       const idx10_w0 = (0 * width + 1) * SPECTRAL_SAMPLES + 0;
-      expect(idx10_w0).toBe(32);
+      expect(idx10_w0).toBe(16);
       
       const idx01_w0 = (1 * width + 0) * SPECTRAL_SAMPLES + 0;
       expect(idx01_w0).toBe(width * SPECTRAL_SAMPLES);
@@ -182,7 +182,7 @@ describe('Scattering Blur Physics', () => {
       // Now uses full range 100-1000nm for UV fluorescence
       const WAVELENGTH_MIN = 100;
       const WAVELENGTH_MAX = 1000;
-      const SPECTRAL_SAMPLES = 32;
+      const SPECTRAL_SAMPLES = 16;
       
       const getWavelength = (idx: number) => {
         // New formula: wavelengthMin + (wavelengthMax - wavelengthMin) * idx / (sampleCount - 1)
@@ -193,11 +193,11 @@ describe('Scattering Blur Physics', () => {
       expect(getWavelength(0)).toBeCloseTo(100, 0);
       
       // Last sample should be at 1000nm
-      expect(getWavelength(31)).toBeCloseTo(1000, 0);
+      expect(getWavelength(15)).toBeCloseTo(1000, 0);
       
-      // Middle sample (index 15.5) should be around 550nm
-      // (100 + 900 * 15 / 31 ≈ 535nm)
-      expect(getWavelength(15)).toBeCloseTo(535, 0);
+      // Middle sample (index 7.5) should be around 550nm
+      // (100 + 900 * 7 / 15 ≈ 520nm)
+      expect(getWavelength(7)).toBeCloseTo(520, 0);
     });
   });
 });

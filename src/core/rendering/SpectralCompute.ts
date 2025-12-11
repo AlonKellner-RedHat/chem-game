@@ -82,8 +82,8 @@ export interface ComputeParams {
   averageRadius?: number; // Radius in pixels to average spectrum over (default: 5)
   boxSize?: number; // Size of spectrum computation box (default: 30)
   emissionSpreadFactor?: number; // Fraction of emission that spreads sideways (default: 0.3)
-  emissionAuraSigma?: number; // Gaussian sigma for emission aura blur (default: 3.0)
-  atmosphericScatterSigma?: number; // Global atmospheric scatter blur sigma in pixels (default: 5.0)
+  // Note: emissionAuraSigma removed - now uses atmosphericScatterSigma for unified blur
+  atmosphericScatterSigma?: number; // Global sigma for unified aura blur (default: 5.0)
   skipBlur?: boolean; // Skip blur passes for draft mode (faster but less accurate)
 }
 
@@ -332,8 +332,7 @@ export class SpectralComputePipeline {
   private blurTransmittedVPipeline: GPUComputePipeline | null = null; // Dual-path: blur->mask
   private integrateSpectrumPipeline: GPUComputePipeline | null = null;
   private combineScatteredPipeline: GPUComputePipeline | null = null;
-  private blurEmissionAuraHPipeline: GPUComputePipeline | null = null;
-  private blurEmissionAuraVPipeline: GPUComputePipeline | null = null;
+  // Note: blurEmissionAuraH/V removed - emission now unified with scatter aura
 
   // High-res spectrum now uses unified pipelines with mode='spectrum' params
   // All _HighRes pipelines have been removed - use same pipelines with different params
@@ -367,20 +366,19 @@ export class SpectralComputePipeline {
   // Each buffer stores 32 wavelength intensities per pixel
   private spectralBufferA: GPUBuffer | null = null;
   private spectralBufferB: GPUBuffer | null = null;
-  // Note: scatteringSigmaBuffer removed - per-pixel sigma replaced by global atmospheric sigma
-  private scatterSourceBuffer: GPUBuffer | null = null; // Scattered light to be blurred (Voigt)
-  private emissionAuraBuffer: GPUBuffer | null = null; // Emission aura to be blurred (Gaussian)
+  // Note: emissionAuraBuffer removed - now unified with scatterSource
+  private scatterSourceBuffer: GPUBuffer | null = null; // Unified aura (scatter + emission)
   private blurredTransmittedBuffer: GPUBuffer | null = null; // Blurred transmitted for in-shape scatter
-  // 32 samples across 100-1000nm to capture UV excitation for fluorescence
-  private static readonly SPECTRAL_SAMPLES = 32;
+  // 16 samples across 100-1000nm for efficient rendering
+  private static readonly SPECTRAL_SAMPLES = 16;
 
   // High-resolution spectral buffers for spectrum plot (30×30×4500)
   // These use the same physics as rendering but at higher spectral resolution
   // SHARED ARCHITECTURE: Both pipelines use identical physics, just different resolutions
   private spectrumHighResA: GPUBuffer | null = null; // Ping-pong buffer A
   private spectrumHighResB: GPUBuffer | null = null; // Ping-pong buffer B
-  private spectrumHighResScatter: GPUBuffer | null = null; // Scatter source for blur
-  private spectrumHighResEmissionAura: GPUBuffer | null = null; // Emission aura for blur
+  private spectrumHighResScatter: GPUBuffer | null = null; // Unified aura for blur
+  // Note: spectrumHighResEmissionAura removed - unified with scatterSource
   private spectrumHighResBlurredTransmitted: GPUBuffer | null = null; // Blurred transmitted for in-shape scatter
   // Note: spectrumHighResSigma removed - per-pixel sigma replaced by global atmospheric sigma
   private spectrumHighResSwapped: boolean = false; // Track ping-pong state
@@ -604,23 +602,7 @@ export class SpectralComputePipeline {
       },
     });
 
-    this.blurEmissionAuraHPipeline = this.device.createComputePipeline({
-      label: "Blur Emission Aura H Pipeline",
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: "blurEmissionAuraH",
-      },
-    });
-
-    this.blurEmissionAuraVPipeline = this.device.createComputePipeline({
-      label: "Blur Emission Aura V Pipeline",
-      layout: this.blurPipelineLayout,
-      compute: {
-        module: shaderModule,
-        entryPoint: "blurEmissionAuraV",
-      },
-    });
+    // Note: blurEmissionAuraH/V pipelines removed - emission unified with scatter
 
     // High-res spectrum now uses unified pipelines with mode='spectrum' params
     // Only finalCombine needs a separate pipeline (writes to spectrumBox)
@@ -765,14 +747,10 @@ export class SpectralComputePipeline {
           binding: 8,
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "storage" },
-        }, // Scatter source
+        }, // Scatter source (unified aura)
+        // Note: binding 9 was emissionAura - removed (now unified with scatterSource)
         {
           binding: 9,
-          visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: "storage" },
-        }, // Emission aura
-        {
-          binding: 10,
           visibility: GPUShaderStage.COMPUTE,
           buffer: { type: "storage" },
         }, // Blurred transmitted (for in-shape scatter)
@@ -1398,19 +1376,7 @@ export class SpectralComputePipeline {
       "f16"
     );
 
-    // Emission aura buffer (isotropic emission blur)
-    this.emissionAuraBuffer?.destroy();
-    this.emissionAuraBuffer = this.device.createBuffer({
-      label: "Emission Aura Buffer",
-      size: spectralBufferSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-    this.profiler.trackBuffer(
-      this.emissionAuraBuffer,
-      "Emission Aura",
-      "storage",
-      "f16"
-    );
+    // Note: emissionAuraBuffer removed - now unified with scatterSource
 
     // Blurred transmitted buffer (for in-shape scattering)
     this.blurredTransmittedBuffer?.destroy();
@@ -1521,12 +1487,7 @@ export class SpectralComputePipeline {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
-    // Emission aura buffer for Gaussian blur
-    this.spectrumHighResEmissionAura = this.device.createBuffer({
-      label: "Spectrum High-Res Emission Aura",
-      size: bufferSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
+    // Note: spectrumHighResEmissionAura removed - unified with scatter
 
     // Blurred transmitted buffer for in-shape scattering
     this.spectrumHighResBlurredTransmitted = this.device.createBuffer({
@@ -1779,12 +1740,11 @@ export class SpectralComputePipeline {
     this.spectrumHighResA?.destroy();
     this.spectrumHighResB?.destroy();
     this.spectrumHighResScatter?.destroy();
-    this.spectrumHighResEmissionAura?.destroy();
+    // Note: spectrumHighResEmissionAura removed - unified with scatter
 
     this.spectrumHighResA = null;
     this.spectrumHighResB = null;
     this.spectrumHighResScatter = null;
-    this.spectrumHighResEmissionAura = null;
 
     console.log("[SpectralCompute] High-res spectrum buffers destroyed");
   }
@@ -1890,6 +1850,13 @@ export class SpectralComputePipeline {
     if (params.atmosphericScatterSigma !== undefined) {
       this.atmosphericScatterSigma = params.atmosphericScatterSigma;
     }
+
+    // Blur workgroup calculations for shared memory kernels
+    const BLUR_TILE_SIZE = 64;
+    const blurHWorkgroupsX = Math.ceil(params.width / BLUR_TILE_SIZE);
+    const blurHWorkgroupsY = params.height;
+    const blurVWorkgroupsX = params.width;
+    const blurVWorkgroupsY = Math.ceil(params.height / BLUR_TILE_SIZE);
 
     // Sort shapes by layer
     const layerGroups = this.sortShapesByLayer(shapes);
@@ -2083,45 +2050,25 @@ export class SpectralComputePipeline {
       // - spectralOutput: transmitted + direct emission
       // - scatterSource: scattered light (to be blurred)
 
-      // Profile: applyLayerAbsorption
-      if (this.profilingEnabled) {
-        this.profiler.beginPass("applyLayerAbsorption");
-        this.profiler.beginDispatch(
-          "applyLayerAbsorption",
-          "applyLayerAbsorption",
-          { layer: layerIndex }
-        );
-      }
+      const pixelCount = params.width * params.height;
+      const spectralBufferBytes =
+        pixelCount * SpectralComputePipeline.SPECTRAL_SAMPLES * 2;
 
-      const absEncoder = this.device.createCommandEncoder();
-      const absPass = absEncoder.beginComputePass();
-      absPass.setPipeline(this.layerAbsorptionPipeline!);
-      absPass.setBindGroup(0, this.bindGroup0!);
-      absPass.setBindGroup(1, this.bindGroup1!);
-      absPass.setBindGroup(2, this.bindGroup2!);
-      absPass.setBindGroup(3, this.bindGroup3!);
-      absPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      absPass.end();
-      this.device.queue.submit([absEncoder.finish()]);
-
-      // Profile: end applyLayerAbsorption
-      if (this.profilingEnabled) {
-        const pixelCount = params.width * params.height;
-        const bytesRead =
-          pixelCount * SpectralComputePipeline.SPECTRAL_SAMPLES * 2; // f16 input
-        const bytesWritten =
-          pixelCount * SpectralComputePipeline.SPECTRAL_SAMPLES * 2 * 3; // output, scatter, emission
-        this.profiler.endDispatch(
-          [workgroupsX, workgroupsY, 1],
-          [8, 8, 1],
-          bytesRead,
-          bytesWritten
-        );
-        this.profiler.endPass();
-      }
-
-      // DEBUG: Capture spectralOutput AFTER absorption (transmitted + emission)
+      // Debug mode: use separate submits for buffer inspection
+      // Production mode: batch all 6 passes into single command encoder
       if (debugEnabled) {
+        // === DEBUG MODE: Separate submits for buffer inspection ===
+        const absEncoder = this.device.createCommandEncoder();
+        const absPass = absEncoder.beginComputePass();
+        absPass.setPipeline(this.layerAbsorptionPipeline!);
+        absPass.setBindGroup(0, this.bindGroup0!);
+        absPass.setBindGroup(1, this.bindGroup1!);
+        absPass.setBindGroup(2, this.bindGroup2!);
+        absPass.setBindGroup(3, this.bindGroup3!);
+        absPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        absPass.end();
+        this.device.queue.submit([absEncoder.finish()]);
+
         await this.device.queue.onSubmittedWorkDone();
         const outputBuffer = this.spectralBufferSwapped
           ? this.spectralBufferA!
@@ -2142,222 +2089,63 @@ export class SpectralComputePipeline {
           `[DEBUG-LAYERS] Layer ${layerIndex} after absorption (first 4):`,
           outputValues.slice(0, 4).map((v) => v.toExponential(3))
         );
-      }
 
-      // === Dual-path scattering blur ===
-      // Path 1 (blur→mask): Blur full transmitted image, background bleeds INTO shapes
-      // Path 2 (mask→blur): Blur aura source, shape light bleeds OUT
-      // Always run blur passes - shader handles sigma=0 by copying (sets up buffers for combine)
+        // Blur passes (separate submits for debug)
+        const blurTransHEncoder = this.device.createCommandEncoder();
+        const blurTransHPass = blurTransHEncoder.beginComputePass();
+        blurTransHPass.setPipeline(this.blurTransmittedHPipeline!);
+        blurTransHPass.setBindGroup(0, this.bindGroup0!);
+        blurTransHPass.setBindGroup(1, this.bindGroup1!);
+        blurTransHPass.setBindGroup(2, this.bindGroup2!);
+        blurTransHPass.setBindGroup(3, this.bindGroup3!);
+        blurTransHPass.dispatchWorkgroups(blurHWorkgroupsX, blurHWorkgroupsY);
+        blurTransHPass.end();
+        this.device.queue.submit([blurTransHEncoder.finish()]);
 
-      const pixelCount = params.width * params.height;
-      const spectralBufferBytes =
-        pixelCount * SpectralComputePipeline.SPECTRAL_SAMPLES * 2;
+        const blurTransVEncoder = this.device.createCommandEncoder();
+        const blurTransVPass = blurTransVEncoder.beginComputePass();
+        blurTransVPass.setPipeline(this.blurTransmittedVPipeline!);
+        blurTransVPass.setBindGroup(0, this.bindGroup0!);
+        blurTransVPass.setBindGroup(1, this.bindGroup1!);
+        blurTransVPass.setBindGroup(2, this.bindGroup2!);
+        blurTransVPass.setBindGroup(3, this.bindGroup3!);
+        blurTransVPass.dispatchWorkgroups(blurVWorkgroupsX, blurVWorkgroupsY);
+        blurTransVPass.end();
+        this.device.queue.submit([blurTransVEncoder.finish()]);
 
-      // Path 1: Blur full transmitted image
-      // blurTransmittedH: spectralOutput → spectralInput (H-blurred)
-      if (this.profilingEnabled) {
-        this.profiler.beginPass("blurTransmittedH");
-        this.profiler.beginDispatch("blurTransmittedH", "blurTransmittedH", {
-          layer: layerIndex,
-        });
-      }
-      const blurTransHEncoder = this.device.createCommandEncoder();
-      const blurTransHPass = blurTransHEncoder.beginComputePass();
-      blurTransHPass.setPipeline(this.blurTransmittedHPipeline!);
-      blurTransHPass.setBindGroup(0, this.bindGroup0!);
-      blurTransHPass.setBindGroup(1, this.bindGroup1!);
-      blurTransHPass.setBindGroup(2, this.bindGroup2!);
-      blurTransHPass.setBindGroup(3, this.bindGroup3!);
-      blurTransHPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      blurTransHPass.end();
-      this.device.queue.submit([blurTransHEncoder.finish()]);
-      if (this.profilingEnabled) {
-        this.profiler.endDispatch(
-          [workgroupsX, workgroupsY, 1],
-          [8, 8, 1],
-          spectralBufferBytes,
-          spectralBufferBytes
-        );
-        this.profiler.endPass();
-      }
+        const hBlurEncoder = this.device.createCommandEncoder();
+        const hBlurPass = hBlurEncoder.beginComputePass();
+        hBlurPass.setPipeline(this.blurHorizontalPipeline!);
+        hBlurPass.setBindGroup(0, this.bindGroup0!);
+        hBlurPass.setBindGroup(1, this.bindGroup1!);
+        hBlurPass.setBindGroup(2, this.bindGroup2!);
+        hBlurPass.setBindGroup(3, this.bindGroup3!);
+        hBlurPass.dispatchWorkgroups(blurHWorkgroupsX, blurHWorkgroupsY);
+        hBlurPass.end();
+        this.device.queue.submit([hBlurEncoder.finish()]);
 
-      // blurTransmittedV: spectralInput → emissionAura (blurred full, temp storage)
-      if (this.profilingEnabled) {
-        this.profiler.beginPass("blurTransmittedV");
-        this.profiler.beginDispatch("blurTransmittedV", "blurTransmittedV", {
-          layer: layerIndex,
-        });
-      }
-      const blurTransVEncoder = this.device.createCommandEncoder();
-      const blurTransVPass = blurTransVEncoder.beginComputePass();
-      blurTransVPass.setPipeline(this.blurTransmittedVPipeline!);
-      blurTransVPass.setBindGroup(0, this.bindGroup0!);
-      blurTransVPass.setBindGroup(1, this.bindGroup1!);
-      blurTransVPass.setBindGroup(2, this.bindGroup2!);
-      blurTransVPass.setBindGroup(3, this.bindGroup3!);
-      blurTransVPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      blurTransVPass.end();
-      this.device.queue.submit([blurTransVEncoder.finish()]);
-      if (this.profilingEnabled) {
-        this.profiler.endDispatch(
-          [workgroupsX, workgroupsY, 1],
-          [8, 8, 1],
-          spectralBufferBytes,
-          spectralBufferBytes
-        );
-        this.profiler.endPass();
-      }
+        const vBlurEncoder = this.device.createCommandEncoder();
+        const vBlurPass = vBlurEncoder.beginComputePass();
+        vBlurPass.setPipeline(this.blurVerticalPipeline!);
+        vBlurPass.setBindGroup(0, this.bindGroup0!);
+        vBlurPass.setBindGroup(1, this.bindGroup1!);
+        vBlurPass.setBindGroup(2, this.bindGroup2!);
+        vBlurPass.setBindGroup(3, this.bindGroup3!);
+        vBlurPass.dispatchWorkgroups(blurVWorkgroupsX, blurVWorkgroupsY);
+        vBlurPass.end();
+        this.device.queue.submit([vBlurEncoder.finish()]);
 
-      // Path 2: Blur aura source (already computed in absorption pass)
-      // blurHorizontal: scatterSource → spectralInput (H-blurred aura)
-      if (this.profilingEnabled) {
-        this.profiler.beginPass("blurHorizontal");
-        this.profiler.beginDispatch("blurHorizontal", "blurHorizontal", {
-          layer: layerIndex,
-        });
-      }
-      const hBlurEncoder = this.device.createCommandEncoder();
-      const hBlurPass = hBlurEncoder.beginComputePass();
-      hBlurPass.setPipeline(this.blurHorizontalPipeline!);
-      hBlurPass.setBindGroup(0, this.bindGroup0!);
-      hBlurPass.setBindGroup(1, this.bindGroup1!);
-      hBlurPass.setBindGroup(2, this.bindGroup2!);
-      hBlurPass.setBindGroup(3, this.bindGroup3!);
-      hBlurPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      hBlurPass.end();
-      this.device.queue.submit([hBlurEncoder.finish()]);
-      if (this.profilingEnabled) {
-        this.profiler.endDispatch(
-          [workgroupsX, workgroupsY, 1],
-          [8, 8, 1],
-          spectralBufferBytes,
-          spectralBufferBytes
-        );
-        this.profiler.endPass();
-      }
+        const combineEncoder = this.device.createCommandEncoder();
+        const combinePass = combineEncoder.beginComputePass();
+        combinePass.setPipeline(this.combineScatteredPipeline!);
+        combinePass.setBindGroup(0, this.bindGroup0!);
+        combinePass.setBindGroup(1, this.bindGroup1!);
+        combinePass.setBindGroup(2, this.bindGroup2!);
+        combinePass.setBindGroup(3, this.bindGroup3!);
+        combinePass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        combinePass.end();
+        this.device.queue.submit([combineEncoder.finish()]);
 
-      // blurVertical: spectralInput → scatterSource (blurred aura)
-      if (this.profilingEnabled) {
-        this.profiler.beginPass("blurVertical");
-        this.profiler.beginDispatch("blurVertical", "blurVertical", {
-          layer: layerIndex,
-        });
-      }
-      const vBlurEncoder = this.device.createCommandEncoder();
-      const vBlurPass = vBlurEncoder.beginComputePass();
-      vBlurPass.setPipeline(this.blurVerticalPipeline!);
-      vBlurPass.setBindGroup(0, this.bindGroup0!);
-      vBlurPass.setBindGroup(1, this.bindGroup1!);
-      vBlurPass.setBindGroup(2, this.bindGroup2!);
-      vBlurPass.setBindGroup(3, this.bindGroup3!);
-      vBlurPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      vBlurPass.end();
-      this.device.queue.submit([vBlurEncoder.finish()]);
-      if (this.profilingEnabled) {
-        this.profiler.endDispatch(
-          [workgroupsX, workgroupsY, 1],
-          [8, 8, 1],
-          spectralBufferBytes,
-          spectralBufferBytes
-        );
-        this.profiler.endPass();
-      }
-
-      // Emission aura blur (Gaussian blur for glow from hot/fluorescent objects)
-      // emissionAura buffer contains emission data from layerAbsorption
-      // We blur it in place using scatterSource as temp storage
-      const emissionAuraSigma = params.emissionAuraSigma ?? 3.0;
-      
-      if (emissionAuraSigma > 0) {
-        // Horizontal blur: emissionAura → scatterSource (temp)
-        // Note: This overwrites scatterSource, so we do it AFTER the scatter blur is done
-        // Actually, we need a different temp. Let's use spectralInput as temp since 
-        // it will be overwritten by combine anyway.
-        
-        // blurEmissionAuraH: emissionAura → spectralInput (temp)
-        if (this.profilingEnabled) {
-          this.profiler.beginPass("blurEmissionAuraH");
-          this.profiler.beginDispatch("blurEmissionAuraH", "blurEmissionAuraH", {
-            layer: layerIndex,
-          });
-        }
-        const auraHEncoder = this.device.createCommandEncoder();
-        const auraHPass = auraHEncoder.beginComputePass();
-        auraHPass.setPipeline(this.blurEmissionAuraHPipeline!);
-        auraHPass.setBindGroup(0, this.bindGroup0!);
-        auraHPass.setBindGroup(1, this.bindGroup1!);
-        auraHPass.setBindGroup(2, this.bindGroup2!);
-        auraHPass.setBindGroup(3, this.bindGroup3!);
-        auraHPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-        auraHPass.end();
-        this.device.queue.submit([auraHEncoder.finish()]);
-        if (this.profilingEnabled) {
-          this.profiler.endDispatch(
-            [workgroupsX, workgroupsY, 1],
-            [8, 8, 1],
-            spectralBufferBytes,
-            spectralBufferBytes
-          );
-          this.profiler.endPass();
-        }
-
-        // blurEmissionAuraV: spectralInput (H-blurred) → emissionAura (fully blurred)
-        if (this.profilingEnabled) {
-          this.profiler.beginPass("blurEmissionAuraV");
-          this.profiler.beginDispatch("blurEmissionAuraV", "blurEmissionAuraV", {
-            layer: layerIndex,
-          });
-        }
-        const auraVEncoder = this.device.createCommandEncoder();
-        const auraVPass = auraVEncoder.beginComputePass();
-        auraVPass.setPipeline(this.blurEmissionAuraVPipeline!);
-        auraVPass.setBindGroup(0, this.bindGroup0!);
-        auraVPass.setBindGroup(1, this.bindGroup1!);
-        auraVPass.setBindGroup(2, this.bindGroup2!);
-        auraVPass.setBindGroup(3, this.bindGroup3!);
-        auraVPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-        auraVPass.end();
-        this.device.queue.submit([auraVEncoder.finish()]);
-        if (this.profilingEnabled) {
-          this.profiler.endDispatch(
-            [workgroupsX, workgroupsY, 1],
-            [8, 8, 1],
-            spectralBufferBytes,
-            spectralBufferBytes
-          );
-          this.profiler.endPass();
-        }
-      }
-
-      // Combine: spectralOutput + blurredTransmitted + scatterSource + emissionAura → spectralInput
-      if (this.profilingEnabled) {
-        this.profiler.beginPass("combineScattered");
-        this.profiler.beginDispatch("combineScattered", "combineScattered", {
-          layer: layerIndex,
-        });
-      }
-      const combineEncoder = this.device.createCommandEncoder();
-      const combinePass = combineEncoder.beginComputePass();
-      combinePass.setPipeline(this.combineScatteredPipeline!);
-      combinePass.setBindGroup(0, this.bindGroup0!);
-      combinePass.setBindGroup(1, this.bindGroup1!);
-      combinePass.setBindGroup(2, this.bindGroup2!);
-      combinePass.setBindGroup(3, this.bindGroup3!);
-      combinePass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      combinePass.end();
-      this.device.queue.submit([combineEncoder.finish()]);
-      if (this.profilingEnabled) {
-        this.profiler.endDispatch(
-          [workgroupsX, workgroupsY, 1],
-          [8, 8, 1],
-          spectralBufferBytes * 3,
-          spectralBufferBytes
-        );
-        this.profiler.endPass();
-      }
-
-      // DEBUG: Capture spectralInput AFTER combine (final result for this layer)
-      if (debugEnabled) {
         await this.device.queue.onSubmittedWorkDone();
         const combineBuffer = this.spectralBufferSwapped
           ? this.spectralBufferB!
@@ -2378,6 +2166,94 @@ export class SpectralComputePipeline {
           `[DEBUG-LAYERS] Layer ${layerIndex} after combine (first 4):`,
           combineValues.slice(0, 4).map((v) => v.toExponential(3))
         );
+      } else {
+        // === PRODUCTION MODE: Batch all 6 passes into single command encoder ===
+        // This reduces CPU-GPU sync overhead from 6 submits to 1 per layer
+        const layerEncoder = this.device.createCommandEncoder();
+
+        // Profile: begin layer passes (grouped timing)
+        if (this.profilingEnabled) {
+          this.profiler.beginPass("layerPasses");
+          this.profiler.beginDispatch("layerPasses", "layerPasses", {
+            layer: layerIndex,
+          });
+        }
+
+        // Pass 1: applyLayerAbsorption
+        const absPass = layerEncoder.beginComputePass();
+        absPass.setPipeline(this.layerAbsorptionPipeline!);
+        absPass.setBindGroup(0, this.bindGroup0!);
+        absPass.setBindGroup(1, this.bindGroup1!);
+        absPass.setBindGroup(2, this.bindGroup2!);
+        absPass.setBindGroup(3, this.bindGroup3!);
+        absPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        absPass.end();
+
+        // Pass 2: blurTransmittedH (spectralOutput → spectralInput)
+        const blurTransHPass = layerEncoder.beginComputePass();
+        blurTransHPass.setPipeline(this.blurTransmittedHPipeline!);
+        blurTransHPass.setBindGroup(0, this.bindGroup0!);
+        blurTransHPass.setBindGroup(1, this.bindGroup1!);
+        blurTransHPass.setBindGroup(2, this.bindGroup2!);
+        blurTransHPass.setBindGroup(3, this.bindGroup3!);
+        blurTransHPass.dispatchWorkgroups(blurHWorkgroupsX, blurHWorkgroupsY);
+        blurTransHPass.end();
+
+        // Pass 3: blurTransmittedV (spectralInput → blurredTransmitted)
+        const blurTransVPass = layerEncoder.beginComputePass();
+        blurTransVPass.setPipeline(this.blurTransmittedVPipeline!);
+        blurTransVPass.setBindGroup(0, this.bindGroup0!);
+        blurTransVPass.setBindGroup(1, this.bindGroup1!);
+        blurTransVPass.setBindGroup(2, this.bindGroup2!);
+        blurTransVPass.setBindGroup(3, this.bindGroup3!);
+        blurTransVPass.dispatchWorkgroups(blurVWorkgroupsX, blurVWorkgroupsY);
+        blurTransVPass.end();
+
+        // Pass 4: blurHorizontal (scatterSource → spectralInput)
+        const hBlurPass = layerEncoder.beginComputePass();
+        hBlurPass.setPipeline(this.blurHorizontalPipeline!);
+        hBlurPass.setBindGroup(0, this.bindGroup0!);
+        hBlurPass.setBindGroup(1, this.bindGroup1!);
+        hBlurPass.setBindGroup(2, this.bindGroup2!);
+        hBlurPass.setBindGroup(3, this.bindGroup3!);
+        hBlurPass.dispatchWorkgroups(blurHWorkgroupsX, blurHWorkgroupsY);
+        hBlurPass.end();
+
+        // Pass 5: blurVertical (spectralInput → scatterSource)
+        const vBlurPass = layerEncoder.beginComputePass();
+        vBlurPass.setPipeline(this.blurVerticalPipeline!);
+        vBlurPass.setBindGroup(0, this.bindGroup0!);
+        vBlurPass.setBindGroup(1, this.bindGroup1!);
+        vBlurPass.setBindGroup(2, this.bindGroup2!);
+        vBlurPass.setBindGroup(3, this.bindGroup3!);
+        vBlurPass.dispatchWorkgroups(blurVWorkgroupsX, blurVWorkgroupsY);
+        vBlurPass.end();
+
+        // Pass 6: combineScattered
+        const combinePass = layerEncoder.beginComputePass();
+        combinePass.setPipeline(this.combineScatteredPipeline!);
+        combinePass.setBindGroup(0, this.bindGroup0!);
+        combinePass.setBindGroup(1, this.bindGroup1!);
+        combinePass.setBindGroup(2, this.bindGroup2!);
+        combinePass.setBindGroup(3, this.bindGroup3!);
+        combinePass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        combinePass.end();
+
+        // Single submit for entire layer (6 passes batched)
+        this.device.queue.submit([layerEncoder.finish()]);
+
+        // Profile: end layer passes
+        if (this.profilingEnabled) {
+          const bytesRead = spectralBufferBytes; // absorption reads input
+          const bytesWritten = spectralBufferBytes * 4; // output, scatter, blurredTrans, final
+          this.profiler.endDispatch(
+            [workgroupsX, workgroupsY, 1],
+            [8, 8, 1],
+            bytesRead,
+            bytesWritten
+          );
+          this.profiler.endPass();
+        }
       }
 
       // Profile: end layer (wait for GPU to complete for accurate timing)
@@ -2608,6 +2484,15 @@ export class SpectralComputePipeline {
     const workgroupsX = Math.ceil(params.width / 8);
     const workgroupsY = Math.ceil(params.height / 8);
 
+    // Blur kernels use different workgroup sizes for shared memory optimization
+    // Horizontal blur: workgroup_size(64, 1) - one workgroup handles 64 pixels in X per row
+    // Vertical blur: workgroup_size(1, 64) - one workgroup handles 64 pixels in Y per column
+    const BLUR_TILE_SIZE = 64;
+    const blurHWorkgroupsX = Math.ceil(params.width / BLUR_TILE_SIZE);
+    const blurHWorkgroupsY = params.height;
+    const blurVWorkgroupsX = params.width;
+    const blurVWorkgroupsY = Math.ceil(params.height / BLUR_TILE_SIZE);
+
     this.lastPassTimings = [];
 
     // === Use unified per-layer spectral pipeline ===
@@ -2681,7 +2566,6 @@ export class SpectralComputePipeline {
         A: !!this.spectrumHighResA,
         B: !!this.spectrumHighResB,
         scatter: !!this.spectrumHighResScatter,
-        emission: !!this.spectrumHighResEmissionAura,
         blurredTransmitted: !!this.spectrumHighResBlurredTransmitted,
       });
 
@@ -2889,10 +2773,7 @@ export class SpectralComputePipeline {
               `High-Res Layer ${layer} Blur V`
             );
 
-            // Note: Emission aura buffer is now used for blurred transmitted (dual-path scatter).
-            // Emission aura blur is currently disabled in favor of the new scattering model.
-            const emissionAuraSigma = params.emissionAuraSigma ?? 3.0;
-            void emissionAuraSigma; // Suppress unused warning
+            // Note: Emission now unified with scatter - blurred together in blurHorizontal/Vertical
 
             // Combine scattered with transmitted (uses unified pipeline with spectrum params)
             dispatchHighRes(
@@ -3215,7 +3096,7 @@ export class SpectralComputePipeline {
    * - boxSize: u32 (60)
    * - globalMaxScatterSigma: f32 (64)
    * - emissionSpreadFactor: f32 (68)
-   * - emissionAuraSigma: f32 (72)
+   * - _padding1: f32 (72)  // Removed: emissionAuraSigma
    * - bufferWidth: u32 (76)      // Unified: width for render, boxSize for spectrum
    * - bufferHeight: u32 (80)     // Unified: height for render, boxSize for spectrum
    * - sampleCount: u32 (84)      // Unified: 32 for render, plotResolution for spectrum
@@ -3276,7 +3157,7 @@ export class SpectralComputePipeline {
     view.setUint32(60, this.boxSize, true);
     view.setFloat32(64, globalMaxScatterSigma, true);
     view.setFloat32(68, params.emissionSpreadFactor ?? 0.3, true);
-    view.setFloat32(72, params.emissionAuraSigma ?? 3.0, true);
+    view.setFloat32(72, 0.0, true); // Padding (emissionAuraSigma removed)
     // Unified pipeline params
     view.setUint32(76, bufferWidth, true);
     view.setUint32(80, bufferHeight, true);
@@ -3394,7 +3275,6 @@ export class SpectralComputePipeline {
       let inputBuffer: GPUBuffer;
       let outputBuffer: GPUBuffer;
       let scatterSrcBuffer: GPUBuffer;
-      let emissionAuraBuffer: GPUBuffer;
       let blurredTransmittedBuffer: GPUBuffer;
 
       if (this.useHighResBuffers && this.spectrumHighResA) {
@@ -3408,8 +3288,6 @@ export class SpectralComputePipeline {
           : this.spectrumHighResB!;
         scatterSrcBuffer =
           this.spectrumHighResScatter || this.maxPerPixelBuffer!;
-        emissionAuraBuffer =
-          this.spectrumHighResEmissionAura || this.maxPerPixelBuffer!;
         blurredTransmittedBuffer =
           this.spectrumHighResBlurredTransmitted || this.maxPerPixelBuffer!;
         console.log(
@@ -3433,7 +3311,6 @@ export class SpectralComputePipeline {
         inputBuffer = spectralInputBuffer || this.maxPerPixelBuffer!;
         outputBuffer = spectralOutputBuffer || this.maxPerPixelBuffer!;
         scatterSrcBuffer = this.scatterSourceBuffer || this.maxPerPixelBuffer!;
-        emissionAuraBuffer = this.emissionAuraBuffer || this.maxPerPixelBuffer!;
         blurredTransmittedBuffer = this.blurredTransmittedBuffer || this.maxPerPixelBuffer!;
       }
 
@@ -3451,10 +3328,9 @@ export class SpectralComputePipeline {
           // NOTE: High-res spectrum swaps actual buffer references via useHighResBuffers flag
           { binding: 6, resource: { buffer: inputBuffer } },
           { binding: 7, resource: { buffer: outputBuffer } },
-          // Note: binding 8 was scatteringSigma - removed (unused)
           { binding: 8, resource: { buffer: scatterSrcBuffer } },
-          { binding: 9, resource: { buffer: emissionAuraBuffer } },
-          { binding: 10, resource: { buffer: blurredTransmittedBuffer } },
+          // Note: binding 9 was emissionAura - removed (unified with scatterSource)
+          { binding: 9, resource: { buffer: blurredTransmittedBuffer } },
         ],
       });
     }
@@ -3678,7 +3554,7 @@ export class SpectralComputePipeline {
     this.spectralBufferA?.destroy();
     this.spectralBufferB?.destroy();
     this.scatterSourceBuffer?.destroy();
-    this.emissionAuraBuffer?.destroy();
+    // Note: emissionAuraBuffer removed - unified with scatterSource
 
     // Destroy high-res spectrum buffers
     this.destroyHighResBuffers();

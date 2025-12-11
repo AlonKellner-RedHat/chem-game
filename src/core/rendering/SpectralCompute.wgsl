@@ -70,9 +70,9 @@ struct Params {
   plotResolution: u32,       // High-res samples for spectrum output (5000)
   averageRadius: u32,        // Radius in pixels to average spectrum over (default: 5)
   boxSize: u32,              // Size of spectrum box (default: 30)
-  globalMaxScatterSigma: f32, // Global max scatter sigma for full-screen blur
+  globalMaxScatterSigma: f32, // Global sigma for unified aura blur (scatter + emission)
   emissionSpreadFactor: f32,  // Fraction of emission that spreads sideways (0-1)
-  emissionAuraSigma: f32,     // Gaussian sigma for emission aura blur
+  _padding1: f32,             // Removed: emissionAuraSigma (now uses globalMaxScatterSigma)
   
   // Unified pipeline mode parameters
   // These allow a single code path for both rendering (16 samples) and spectrum (5000 samples)
@@ -144,27 +144,46 @@ struct Shape {
 @group(3) @binding(4) var msdfSampler: sampler;
 
 // Spectral buffers for per-layer scattering blur (ping-pong)
-// Each stores 32 wavelength intensities per pixel using f16
-// NOTE: Using group(0) bindings 6-11 to stay within WebGPU's 4 bind group limit
+// Each stores 16 wavelength intensities per pixel using f16
+// NOTE: Using group(0) bindings 6-9 to stay within WebGPU's 4 bind group limit
 @group(0) @binding(6) var<storage, read_write> spectralInput: array<f16>;    // Input spectral buffer
 @group(0) @binding(7) var<storage, read_write> spectralOutput: array<f16>;   // Output spectral buffer (transmitted + direct emission)
-// Note: scatteringSigma (binding 8) removed - per-pixel sigma was replaced by global atmospheric sigma
-@group(0) @binding(8) var<storage, read_write> scatterSource: array<f16>;    // Light to be scattered/blurred (Voigt)
-@group(0) @binding(9) var<storage, read_write> emissionAura: array<f16>;     // Emission aura to be blurred (Gaussian glow)
-@group(0) @binding(10) var<storage, read_write> blurredTransmitted: array<f16>; // Blurred transmitted for in-shape scatter
+@group(0) @binding(8) var<storage, read_write> scatterSource: array<f16>;    // Unified aura (scatter + emission)
+// Note: emissionAura (was binding 9) removed - now unified with scatterSource
+@group(0) @binding(9) var<storage, read_write> blurredTransmitted: array<f16>; // Blurred transmitted for in-shape scatter
 
 // NOTE: High-res spectrum uses the SAME buffer bindings (6-10) but with different
 // buffer references. The TypeScript swaps the actual GPUBuffer objects to point
 // to the high-res buffers when computing the spectrum plot.
 
 // Number of spectral samples (must match TypeScript)
-// 32 samples across 100-1000nm to capture UV excitation for fluorescence
-const SPECTRAL_SAMPLES: u32 = 32u;
+// 16 samples across 100-1000nm for efficient rendering
+const SPECTRAL_SAMPLES: u32 = 16u;
 
 // Blur constants
 const MAX_BLUR_RADIUS: i32 = 16;           // Maximum blur radius in pixels (optimized for performance)
 const RAYLEIGH_BLUR_SCALE: f32 = 1e-10;    // Scale factor for Rayleigh blur (increased for visibility)
 const MIE_BLUR_SCALE: f32 = 1e-6;          // Scale factor for Mie blur (increased for visibility)
+
+// Shared memory blur constants
+const BLUR_TILE_WIDTH: u32 = 64u;          // Pixels processed per workgroup (horizontal)
+const BLUR_TILE_HEIGHT: u32 = 64u;         // Pixels processed per workgroup (vertical)
+const BLUR_HALO: u32 = 16u;                // Blur radius as u32
+const BLUR_SHARED_WIDTH: u32 = 96u;        // BLUR_TILE_WIDTH + 2*BLUR_HALO for horizontal
+const BLUR_SHARED_HEIGHT: u32 = 96u;       // BLUR_TILE_HEIGHT + 2*BLUR_HALO for vertical
+
+// Precomputed Gaussian weights for sigma=5.0 (33 weights, centered at index 16)
+// Using normalized Gaussian: exp(-x^2 / (2*sigma^2)) / sqrt(2*pi*sigma^2)
+// Weights are symmetric around center
+const BLUR_WEIGHTS: array<f32, 17> = array<f32, 17>(
+  0.0798,  // dx=0 (center)
+  0.0782, 0.0736, 0.0666, 0.0580, 0.0484, 0.0389, 0.0300, 0.0222,  // dx=1..8
+  0.0158, 0.0108, 0.0071, 0.0044, 0.0027, 0.0015, 0.0008, 0.0004   // dx=9..16
+);
+
+// Workgroup shared memory for tiled blur (reused across blur passes)
+// Size: 96 * 16 wavelengths = 1536 f16 values per tile row
+var<workgroup> blurTile: array<f16, 1536u>; // BLUR_SHARED_WIDTH * SPECTRAL_SAMPLES
 
 // ============================================================
 // MSDF Functions
@@ -1150,10 +1169,9 @@ fn getWavelength(wIdx: u32) -> f32 {
  */
 struct LayerPhysicsResult {
   transmitted: f32,      // Light that passes through without scattering
-  scatterSrc: f32,       // Light to be scattered (Voigt blur)
+  auraSrc: f32,          // Combined aura source (scatter + emission) for unified blur
   directEmission: f32,   // Emission that stays at pixel
-  emissionAuraSrc: f32,  // Emission aura (Gaussian blur)
-  // Note: maxSigma removed - we now use global atmospheric sigma instead of per-pixel
+  // Note: emissionAuraSrc merged into auraSrc - now using single unified blur sigma
 }
 
 /**
@@ -1178,9 +1196,8 @@ fn computeLayerPhysics(
 ) -> LayerPhysicsResult {
   var result: LayerPhysicsResult;
   result.transmitted = inputIntensity;
-  result.scatterSrc = 0.0;
+  result.auraSrc = 0.0;
   result.directEmission = 0.0;
-  result.emissionAuraSrc = 0.0;
   
   // Apply all shapes in this layer
   for (var i: u32 = 0u; i < numShapes; i++) {
@@ -1215,7 +1232,7 @@ fn computeLayerPhysics(
       // Compute scattered light for the aura effect (visual blur outside the shape).
       // Only a small fraction contributes to the visible aura to avoid brightening.
       let scatteredFrac = absorbedInput * scatterProb;
-      result.scatterSrc += scatteredFrac * AURA_SCATTER_FRACTION;
+      result.auraSrc += scatteredFrac * AURA_SCATTER_FRACTION;
       
       // Update transmitted for next shape in layer (full brightness preserved)
       result.transmitted = directTrans;
@@ -1249,8 +1266,8 @@ fn computeLayerPhysics(
         // Spread emission: part goes through scattering medium (Voigt blur)
         // and part is isotropic aura (Gaussian blur)
         // Scattered emission also loses most light to 3D scattering
-        result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
-        result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
+        // Unified aura: combine scatter and emission into single blur
+        result.auraSrc += spreadAmount * (scatterProb * AURA_SCATTER_FRACTION + (1.0 - scatterProb));
       }
     }
   }
@@ -1288,9 +1305,8 @@ fn computeLayerPhysicsOptimized(
 ) -> LayerPhysicsResult {
   var result: LayerPhysicsResult;
   result.transmitted = inputIntensity;
-  result.scatterSrc = 0.0;
+  result.auraSrc = 0.0;
   result.directEmission = 0.0;
-  result.emissionAuraSrc = 0.0;
   
   // Apply all shapes in this layer using pre-computed masks
   for (var i: u32 = 0u; i < numShapes; i++) {
@@ -1324,7 +1340,7 @@ fn computeLayerPhysicsOptimized(
       
       // Compute scattered light for the aura effect
       let scatteredFrac = absorbedInput * scatterProb;
-      result.scatterSrc += scatteredFrac * AURA_SCATTER_FRACTION;
+      result.auraSrc += scatteredFrac * AURA_SCATTER_FRACTION;
       
       // Update transmitted for next shape in layer
       result.transmitted = directTrans;
@@ -1366,8 +1382,8 @@ fn computeLayerPhysicsOptimized(
         let spreadAmount = maskedEmission * spreadFactor;
         
         result.directEmission += maskedEmission * directFraction;
-        result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
-        result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
+        // Unified aura: combine scatter and emission into single blur
+        result.auraSrc += spreadAmount * (scatterProb * AURA_SCATTER_FRACTION + (1.0 - scatterProb));
       }
     }
   }
@@ -1398,9 +1414,8 @@ fn computeLayerPhysicsWithFluorescence(
 ) -> LayerPhysicsResult {
   var result: LayerPhysicsResult;
   result.transmitted = inputIntensity;
-  result.scatterSrc = 0.0;
+  result.auraSrc = 0.0;
   result.directEmission = 0.0;
-  result.emissionAuraSrc = 0.0;
   
   // Apply all shapes in this layer using pre-computed masks
   for (var i: u32 = 0u; i < numShapes; i++) {
@@ -1434,7 +1449,7 @@ fn computeLayerPhysicsWithFluorescence(
       
       // Compute scattered light for the aura effect
       let scatteredFrac = absorbedInput * scatterProb;
-      result.scatterSrc += scatteredFrac * AURA_SCATTER_FRACTION;
+      result.auraSrc += scatteredFrac * AURA_SCATTER_FRACTION;
       
       // Update transmitted for next shape in layer
       result.transmitted = directTrans;
@@ -1466,8 +1481,8 @@ fn computeLayerPhysicsWithFluorescence(
         let spreadAmount = maskedEmission * spreadFactor;
         
         result.directEmission += maskedEmission * directFraction;
-        result.scatterSrc += spreadAmount * scatterProb * AURA_SCATTER_FRACTION;
-        result.emissionAuraSrc += spreadAmount * (1.0 - scatterProb);
+        // Unified aura: combine scatter and emission into single blur
+        result.auraSrc += spreadAmount * (scatterProb * AURA_SCATTER_FRACTION + (1.0 - scatterProb));
       }
     }
   }
@@ -1513,9 +1528,8 @@ fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
     // Write background to spectralOutput (will be swapped to become input)
     spectralOutput[spectralIdx] = intensity;
     
-    // Initialize other buffers to zero
+    // Initialize aura buffer to zero (unified scatter + emission)
     scatterSource[spectralIdx] = f16(0.0);
-    emissionAura[spectralIdx] = f16(0.0);
   }
   
 }
@@ -1572,7 +1586,6 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
       let spectralIdx = getSpectralIdx(localX, localY, wIdx);
       spectralOutput[spectralIdx] = spectralInput[spectralIdx];
       scatterSource[spectralIdx] = f16(0.0);
-      emissionAura[spectralIdx] = f16(0.0);
     }
     return;
   }
@@ -1645,246 +1658,329 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // Write outputs (convert f32 to f16)
     spectralOutput[spectralIdx] = f16(result.transmitted + result.directEmission);
-    scatterSource[spectralIdx] = f16(result.scatterSrc);
-    emissionAura[spectralIdx] = f16(result.emissionAuraSrc);
+    // Unified aura output - scatter and emission combined
+    scatterSource[spectralIdx] = f16(result.auraSrc);
   }
   
 }
 
 // ============================================================
-// Entry Point: Horizontal Scatter Blur (UNIFIED)
+// Entry Point: Horizontal Scatter Blur (UNIFIED - Shared Memory)
 // ============================================================
 
 /**
- * UNIFIED: Apply horizontal Voigt blur to scatter source (constant sigma for all wavelengths).
- * Used for aura effect (mask->blur path).
+ * UNIFIED: Apply horizontal Gaussian blur to scatter source using workgroup shared memory.
+ * Uses tiled approach: load tile + halo into shared memory, then blur from shared.
  * 
- * Reads from scatterSource (scattered light), writes blurred result to spectralInput.
+ * Workgroup: 64 threads process 64 pixels in X, 1 row at a time
+ * Shared memory: 96 values per wavelength (64 tile + 32 halo)
+ * 
+ * Reads from scatterSource, writes to spectralInput.
  */
-@compute @workgroup_size(8, 8)
-fn blurHorizontal(@builtin(global_invocation_id) id: vec3<u32>) {
-  let localX = id.x;
-  let localY = id.y;
+@compute @workgroup_size(64, 1)
+fn blurHorizontal(
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
+  let y = gid.y;
+  let tileStartX = wgid.x * BLUR_TILE_WIDTH;
+  let localIdx = lid.x;
+  let validY = y < params.bufferHeight;
+  let outX = tileStartX + localIdx;
+  let validOut = validY && outX < params.bufferWidth;
   
-  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
-    return;
-  }
-  
-  // Use global max sigma for blur radius
-  let baseSigma = params.globalMaxScatterSigma;
-  
-  // Skip blur if no scattering anywhere
-  if (baseSigma <= 0.0) {
-    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-      spectralInput[spectralIdx] = scatterSource[spectralIdx];
-    }
-    return;
-  }
-  
-  // Constant blur params for all wavelengths (scattering intensity varies per wavelength, blur does not)
-  let sigma = baseSigma;
-  let radius = MAX_BLUR_RADIUS;
-  
-  // Process each wavelength with same blur sigma
-  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    // Sample from scatter source
-    for (var dx: i32 = -radius; dx <= radius; dx++) {
-      let sampleX = i32(localX) + dx;
-      if (sampleX >= 0 && sampleX < i32(params.bufferWidth)) {
-        let sampleIdx = getSpectralIdx(u32(sampleX), localY, wIdx);
-        let weight = voigtBlurWeight(f32(dx), sigma);
-        sum += f32(scatterSource[sampleIdx]) * weight;
-        weightSum += weight;
+  // Skip blur if sigma is zero - just copy (all threads must participate uniformly)
+  if (params.globalMaxScatterSigma <= 0.0) {
+    if (validOut) {
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(outX, y, w);
+        spectralInput[idx] = scatterSource[idx];
       }
     }
+    return;
+  }
+  
+  // Load tile + halo into shared memory for all wavelengths
+  // All threads participate in loading, even out-of-bounds ones (they load zeros)
+  for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+    let sharedBase = w * BLUR_SHARED_WIDTH;
     
-    // Write H-blurred scatter to spectralInput
-    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    if (weightSum > 0.0) {
-      spectralInput[spectralIdx] = f16(sum / weightSum);
+    // Each thread loads one value from the main tile region
+    let globalX = i32(tileStartX) + i32(localIdx) - i32(BLUR_HALO);
+    if (validY && globalX >= 0 && u32(globalX) < params.bufferWidth) {
+      blurTile[sharedBase + localIdx] = scatterSource[getSpectralIdx(u32(globalX), y, w)];
     } else {
-      spectralInput[spectralIdx] = scatterSource[spectralIdx];
+      blurTile[sharedBase + localIdx] = f16(0.0);
+    }
+    
+    // First 32 threads also load the right halo
+    if (localIdx < 2u * BLUR_HALO) {
+      let haloX = i32(tileStartX) + i32(BLUR_TILE_WIDTH) + i32(localIdx) - i32(BLUR_HALO);
+      if (validY && haloX >= 0 && u32(haloX) < params.bufferWidth) {
+        blurTile[sharedBase + BLUR_TILE_WIDTH + localIdx] = scatterSource[getSpectralIdx(u32(haloX), y, w)];
+      } else {
+        blurTile[sharedBase + BLUR_TILE_WIDTH + localIdx] = f16(0.0);
+      }
+    }
+  }
+  
+  workgroupBarrier();
+  
+  // Blur from shared memory (precomputed weights for sigma=5)
+  if (validOut) {
+    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+      var sum = f16(0.0);
+      var weightSum = f16(0.0);
+      let sharedBase = w * BLUR_SHARED_WIDTH;
+      let centerIdx = localIdx + BLUR_HALO;
+      
+      // Apply blur using precomputed symmetric weights
+      for (var dx: i32 = -MAX_BLUR_RADIUS; dx <= MAX_BLUR_RADIUS; dx++) {
+        let sharedX = i32(centerIdx) + dx;
+        let weight = f16(BLUR_WEIGHTS[abs(dx)]);
+        sum += blurTile[sharedBase + u32(sharedX)] * weight;
+        weightSum += weight;
+      }
+      
+      let outIdx = getSpectralIdx(outX, y, w);
+      spectralInput[outIdx] = sum / weightSum;
     }
   }
 }
 
 // ============================================================
-// Entry Point: Vertical Scatter Blur (UNIFIED)
+// Entry Point: Vertical Scatter Blur (UNIFIED - Shared Memory)
 // ============================================================
 
 /**
- * UNIFIED: Apply vertical Voigt blur to scatter source (constant sigma for all wavelengths).
+ * UNIFIED: Apply vertical Gaussian blur using workgroup shared memory.
+ * Uses tiled approach: load tile + halo into shared memory, then blur from shared.
+ * 
+ * Workgroup: 1 thread in X, 64 threads in Y process a column
+ * Shared memory: 96 values per wavelength (64 tile + 32 halo)
+ * 
  * Reads from spectralInput (H-blurred), writes to scatterSource (fully blurred).
  */
-@compute @workgroup_size(8, 8)
-fn blurVertical(@builtin(global_invocation_id) id: vec3<u32>) {
-  let localX = id.x;
-  let localY = id.y;
+@compute @workgroup_size(1, 64)
+fn blurVertical(
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
+  let x = gid.x;
+  let tileStartY = wgid.y * BLUR_TILE_HEIGHT;
+  let localIdx = lid.y;
+  let validX = x < params.bufferWidth;
+  let outY = tileStartY + localIdx;
+  let validOut = validX && outY < params.bufferHeight;
   
-  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
-    return;
-  }
-  
-  // Use global max sigma for blur radius
-  let baseSigma = params.globalMaxScatterSigma;
-  
-  // Skip blur if no scattering anywhere
-  if (baseSigma <= 0.0) {
-    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-      scatterSource[spectralIdx] = spectralInput[spectralIdx];
-    }
-    return;
-  }
-  
-  // Constant blur params for all wavelengths
-  let sigma = baseSigma;
-  let radius = MAX_BLUR_RADIUS;
-  
-  // Process each wavelength with same blur sigma
-  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    // Sample from H-blurred scatter
-    for (var dy: i32 = -radius; dy <= radius; dy++) {
-      let sampleY = i32(localY) + dy;
-      if (sampleY >= 0 && sampleY < i32(params.bufferHeight)) {
-        let sampleIdx = getSpectralIdx(localX, u32(sampleY), wIdx);
-        let weight = voigtBlurWeight(f32(dy), sigma);
-        sum += f32(spectralInput[sampleIdx]) * weight;
-        weightSum += weight;
+  // Skip blur if sigma is zero - just copy (all threads must participate uniformly)
+  if (params.globalMaxScatterSigma <= 0.0) {
+    if (validOut) {
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(x, outY, w);
+        scatterSource[idx] = spectralInput[idx];
       }
     }
+    return;
+  }
+  
+  // Load tile + halo into shared memory for all wavelengths
+  for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+    let sharedBase = w * BLUR_SHARED_HEIGHT;
     
-    // Write fully blurred scatter to scatterSource
-    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    if (weightSum > 0.0) {
-      scatterSource[spectralIdx] = f16(sum / weightSum);
+    // Each thread loads one value from the main tile region
+    let globalY = i32(tileStartY) + i32(localIdx) - i32(BLUR_HALO);
+    if (validX && globalY >= 0 && u32(globalY) < params.bufferHeight) {
+      blurTile[sharedBase + localIdx] = spectralInput[getSpectralIdx(x, u32(globalY), w)];
     } else {
-      scatterSource[spectralIdx] = spectralInput[spectralIdx];
+      blurTile[sharedBase + localIdx] = f16(0.0);
+    }
+    
+    // First 32 threads also load the bottom halo
+    if (localIdx < 2u * BLUR_HALO) {
+      let haloY = i32(tileStartY) + i32(BLUR_TILE_HEIGHT) + i32(localIdx) - i32(BLUR_HALO);
+      if (validX && haloY >= 0 && u32(haloY) < params.bufferHeight) {
+        blurTile[sharedBase + BLUR_TILE_HEIGHT + localIdx] = spectralInput[getSpectralIdx(x, u32(haloY), w)];
+      } else {
+        blurTile[sharedBase + BLUR_TILE_HEIGHT + localIdx] = f16(0.0);
+      }
+    }
+  }
+  
+  workgroupBarrier();
+  
+  // Blur from shared memory
+  if (validOut) {
+    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+      var sum = f16(0.0);
+      var weightSum = f16(0.0);
+      let sharedBase = w * BLUR_SHARED_HEIGHT;
+      let centerIdx = localIdx + BLUR_HALO;
+      
+      // Apply blur using precomputed symmetric weights
+      for (var dy: i32 = -MAX_BLUR_RADIUS; dy <= MAX_BLUR_RADIUS; dy++) {
+        let sharedY = i32(centerIdx) + dy;
+        let weight = f16(BLUR_WEIGHTS[abs(dy)]);
+        sum += blurTile[sharedBase + u32(sharedY)] * weight;
+        weightSum += weight;
+      }
+      
+      let outIdx = getSpectralIdx(x, outY, w);
+      scatterSource[outIdx] = sum / weightSum;
     }
   }
 }
 
 // ============================================================
-// Entry Point: Blur Transmitted Horizontal (UNIFIED)
+// Entry Point: Blur Transmitted Horizontal (UNIFIED - Shared Memory)
 // ============================================================
 
 /**
- * UNIFIED: Apply horizontal Voigt blur to transmitted image (constant sigma for all wavelengths).
+ * UNIFIED: Apply horizontal Gaussian blur to transmitted using workgroup shared memory.
  * This is the blur->mask path: background bleeds INTO shapes.
  * 
  * Reads from spectralOutput, writes to spectralInput (temp).
  */
-@compute @workgroup_size(8, 8)
-fn blurTransmittedH(@builtin(global_invocation_id) id: vec3<u32>) {
-  let localX = id.x;
-  let localY = id.y;
+@compute @workgroup_size(64, 1)
+fn blurTransmittedH(
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
+  let y = gid.y;
+  let tileStartX = wgid.x * BLUR_TILE_WIDTH;
+  let localIdx = lid.x;
+  let validY = y < params.bufferHeight;
+  let outX = tileStartX + localIdx;
+  let validOut = validY && outX < params.bufferWidth;
   
-  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
-    return;
-  }
-  
-  let baseSigma = params.globalMaxScatterSigma;
-  
-  // Skip blur if no scattering anywhere
-  if (baseSigma <= 0.0) {
-    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-      spectralInput[spectralIdx] = spectralOutput[spectralIdx];
-    }
-    return;
-  }
-  
-  // Constant blur params for all wavelengths
-  let sigma = baseSigma;
-  let radius = MAX_BLUR_RADIUS;
-  
-  // Process each wavelength with same blur sigma
-  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    // Sample from transmitted light (spectralOutput)
-    for (var dx: i32 = -radius; dx <= radius; dx++) {
-      let sampleX = i32(localX) + dx;
-      if (sampleX >= 0 && sampleX < i32(params.bufferWidth)) {
-        let sampleIdx = getSpectralIdx(u32(sampleX), localY, wIdx);
-        let weight = voigtBlurWeight(f32(dx), sigma);
-        sum += f32(spectralOutput[sampleIdx]) * weight;
-        weightSum += weight;
+  // Skip blur if sigma is zero - just copy (all threads must participate uniformly)
+  if (params.globalMaxScatterSigma <= 0.0) {
+    if (validOut) {
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(outX, y, w);
+        spectralInput[idx] = spectralOutput[idx];
       }
     }
+    return;
+  }
+  
+  // Load tile + halo into shared memory for all wavelengths
+  for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+    let sharedBase = w * BLUR_SHARED_WIDTH;
     
-    // Write H-blurred transmitted to spectralInput
-    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    if (weightSum > 0.0) {
-      spectralInput[spectralIdx] = f16(sum / weightSum);
+    let globalX = i32(tileStartX) + i32(localIdx) - i32(BLUR_HALO);
+    if (validY && globalX >= 0 && u32(globalX) < params.bufferWidth) {
+      blurTile[sharedBase + localIdx] = spectralOutput[getSpectralIdx(u32(globalX), y, w)];
     } else {
-      spectralInput[spectralIdx] = spectralOutput[spectralIdx];
+      blurTile[sharedBase + localIdx] = f16(0.0);
+    }
+    
+    if (localIdx < 2u * BLUR_HALO) {
+      let haloX = i32(tileStartX) + i32(BLUR_TILE_WIDTH) + i32(localIdx) - i32(BLUR_HALO);
+      if (validY && haloX >= 0 && u32(haloX) < params.bufferWidth) {
+        blurTile[sharedBase + BLUR_TILE_WIDTH + localIdx] = spectralOutput[getSpectralIdx(u32(haloX), y, w)];
+      } else {
+        blurTile[sharedBase + BLUR_TILE_WIDTH + localIdx] = f16(0.0);
+      }
+    }
+  }
+  
+  workgroupBarrier();
+  
+  // Blur from shared memory
+  if (validOut) {
+    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+      var sum = f16(0.0);
+      var weightSum = f16(0.0);
+      let sharedBase = w * BLUR_SHARED_WIDTH;
+      let centerIdx = localIdx + BLUR_HALO;
+      
+      for (var dx: i32 = -MAX_BLUR_RADIUS; dx <= MAX_BLUR_RADIUS; dx++) {
+        let sharedX = i32(centerIdx) + dx;
+        let weight = f16(BLUR_WEIGHTS[abs(dx)]);
+        sum += blurTile[sharedBase + u32(sharedX)] * weight;
+        weightSum += weight;
+      }
+      
+      spectralInput[getSpectralIdx(outX, y, w)] = sum / weightSum;
     }
   }
 }
 
 // ============================================================
-// Entry Point: Blur Transmitted Vertical (UNIFIED)
+// Entry Point: Blur Transmitted Vertical (UNIFIED - Shared Memory)
 // ============================================================
 
 /**
- * UNIFIED: Apply vertical Voigt blur to transmitted image (constant sigma for all wavelengths).
- * Reads from spectralInput (H-blurred), writes to emissionAura (temp).
+ * UNIFIED: Apply vertical Gaussian blur to transmitted using workgroup shared memory.
+ * Reads from spectralInput (H-blurred), writes to blurredTransmitted.
  */
-@compute @workgroup_size(8, 8)
-fn blurTransmittedV(@builtin(global_invocation_id) id: vec3<u32>) {
-  let localX = id.x;
-  let localY = id.y;
+@compute @workgroup_size(1, 64)
+fn blurTransmittedV(
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
+  let x = gid.x;
+  let tileStartY = wgid.y * BLUR_TILE_HEIGHT;
+  let localIdx = lid.y;
+  let validX = x < params.bufferWidth;
+  let outY = tileStartY + localIdx;
+  let validOut = validX && outY < params.bufferHeight;
   
-  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
-    return;
-  }
-  
-  let baseSigma = params.globalMaxScatterSigma;
-  
-  // Skip blur if no scattering anywhere
-  if (baseSigma <= 0.0) {
-    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-      blurredTransmitted[spectralIdx] = spectralInput[spectralIdx];
-    }
-    return;
-  }
-  
-  // Constant blur params for all wavelengths
-  let sigma = baseSigma;
-  let radius = MAX_BLUR_RADIUS;
-  
-  // Process each wavelength with same blur sigma
-  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    // Sample from H-blurred transmitted (in spectralInput)
-    for (var dy: i32 = -radius; dy <= radius; dy++) {
-      let sampleY = i32(localY) + dy;
-      if (sampleY >= 0 && sampleY < i32(params.bufferHeight)) {
-        let sampleIdx = getSpectralIdx(localX, u32(sampleY), wIdx);
-        let weight = voigtBlurWeight(f32(dy), sigma);
-        sum += f32(spectralInput[sampleIdx]) * weight;
-        weightSum += weight;
+  // Skip blur if sigma is zero - just copy (all threads must participate uniformly)
+  if (params.globalMaxScatterSigma <= 0.0) {
+    if (validOut) {
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(x, outY, w);
+        blurredTransmitted[idx] = spectralInput[idx];
       }
     }
+    return;
+  }
+  
+  // Load tile + halo into shared memory for all wavelengths
+  for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+    let sharedBase = w * BLUR_SHARED_HEIGHT;
     
-    // Write fully blurred transmitted to blurredTransmitted buffer
-    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    if (weightSum > 0.0) {
-      blurredTransmitted[spectralIdx] = f16(sum / weightSum);
+    let globalY = i32(tileStartY) + i32(localIdx) - i32(BLUR_HALO);
+    if (validX && globalY >= 0 && u32(globalY) < params.bufferHeight) {
+      blurTile[sharedBase + localIdx] = spectralInput[getSpectralIdx(x, u32(globalY), w)];
     } else {
-      blurredTransmitted[spectralIdx] = spectralInput[spectralIdx];
+      blurTile[sharedBase + localIdx] = f16(0.0);
+    }
+    
+    if (localIdx < 2u * BLUR_HALO) {
+      let haloY = i32(tileStartY) + i32(BLUR_TILE_HEIGHT) + i32(localIdx) - i32(BLUR_HALO);
+      if (validX && haloY >= 0 && u32(haloY) < params.bufferHeight) {
+        blurTile[sharedBase + BLUR_TILE_HEIGHT + localIdx] = spectralInput[getSpectralIdx(x, u32(haloY), w)];
+      } else {
+        blurTile[sharedBase + BLUR_TILE_HEIGHT + localIdx] = f16(0.0);
+      }
+    }
+  }
+  
+  workgroupBarrier();
+  
+  // Blur from shared memory
+  if (validOut) {
+    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+      var sum = f16(0.0);
+      var weightSum = f16(0.0);
+      let sharedBase = w * BLUR_SHARED_HEIGHT;
+      let centerIdx = localIdx + BLUR_HALO;
+      
+      for (var dy: i32 = -MAX_BLUR_RADIUS; dy <= MAX_BLUR_RADIUS; dy++) {
+        let sharedY = i32(centerIdx) + dy;
+        let weight = f16(BLUR_WEIGHTS[abs(dy)]);
+        sum += blurTile[sharedBase + u32(sharedY)] * weight;
+        weightSum += weight;
+      }
+      
+      blurredTransmitted[getSpectralIdx(x, outY, w)] = sum / weightSum;
     }
   }
 }
@@ -1905,118 +2001,7 @@ fn gaussianWeight(dist: f32, sigma: f32) -> f32 {
   return exp(-0.5 * normalizedDist * normalizedDist);
 }
 
-// ============================================================
-// Entry Point: Horizontal Emission Aura Blur (UNIFIED)
-// ============================================================
-
-/**
- * UNIFIED: Apply horizontal Gaussian blur to emission aura.
- * Uses constant sigma (wavelength-independent) for isotropic emission.
- * Reads from emissionAura, writes to scatterSource (temp).
- */
-@compute @workgroup_size(8, 8)
-fn blurEmissionAuraH(@builtin(global_invocation_id) id: vec3<u32>) {
-  let localX = id.x;
-  let localY = id.y;
-  
-  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
-    return;
-  }
-  
-  let sigma = params.emissionAuraSigma;
-  
-  // Skip blur if sigma is zero
-  if (sigma <= 0.0) {
-    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-      // Write to spectralInput as temp storage (will be read by blurEmissionAuraV)
-      spectralInput[spectralIdx] = emissionAura[spectralIdx];
-    }
-    return;
-  }
-  
-  let radius = MAX_BLUR_RADIUS;  // Constant radius for predictable performance
-  
-  // Apply same blur to all wavelengths (wavelength-independent)
-  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    for (var dx: i32 = -radius; dx <= radius; dx++) {
-      let sampleX = i32(localX) + dx;
-      if (sampleX >= 0 && sampleX < i32(params.bufferWidth)) {
-        let sampleIdx = getSpectralIdx(u32(sampleX), localY, wIdx);
-        let weight = gaussianWeight(f32(dx), sigma);
-        sum += f32(emissionAura[sampleIdx]) * weight;
-        weightSum += weight;
-      }
-    }
-    
-    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    // Write to spectralInput as temp storage (will be read by blurEmissionAuraV)
-    if (weightSum > 0.0) {
-      spectralInput[spectralIdx] = f16(sum / weightSum);
-    } else {
-      spectralInput[spectralIdx] = emissionAura[spectralIdx];
-    }
-  }
-}
-
-// ============================================================
-// Entry Point: Vertical Emission Aura Blur (UNIFIED)
-// ============================================================
-
-/**
- * UNIFIED: Apply vertical Gaussian blur to emission aura.
- * Reads from scatterSource (H-blurred aura), writes to emissionAura (fully blurred).
- */
-@compute @workgroup_size(8, 8)
-fn blurEmissionAuraV(@builtin(global_invocation_id) id: vec3<u32>) {
-  let localX = id.x;
-  let localY = id.y;
-  
-  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
-    return;
-  }
-  
-  let sigma = params.emissionAuraSigma;
-  
-  // Skip blur if sigma is zero
-  if (sigma <= 0.0) {
-    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-      // Read from spectralInput (H-blurred aura from blurEmissionAuraH)
-      emissionAura[spectralIdx] = spectralInput[spectralIdx];
-    }
-    return;
-  }
-  
-  let radius = MAX_BLUR_RADIUS;  // Constant radius for predictable performance
-  
-  // Apply same blur to all wavelengths
-  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    for (var dy: i32 = -radius; dy <= radius; dy++) {
-      let sampleY = i32(localY) + dy;
-      if (sampleY >= 0 && sampleY < i32(params.bufferHeight)) {
-        let sampleIdx = getSpectralIdx(localX, u32(sampleY), wIdx);
-        let weight = gaussianWeight(f32(dy), sigma);
-        // Read from spectralInput (H-blurred aura from blurEmissionAuraH)
-        sum += f32(spectralInput[sampleIdx]) * weight;
-        weightSum += weight;
-      }
-    }
-    
-    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    if (weightSum > 0.0) {
-      emissionAura[spectralIdx] = f16(sum / weightSum);
-    } else {
-      emissionAura[spectralIdx] = spectralInput[spectralIdx];
-    }
-  }
-}
+// Note: blurEmissionAuraH/V removed - emission now unified with scatter aura
 
 // ============================================================
 // Helper: Compute total scatter probability for a pixel
@@ -2057,23 +2042,21 @@ fn computeScatterProb(fx: f32, fy: f32, wavelength: f32, numShapes: u32) -> f32 
 }
 
 // ============================================================
-// Entry Point: Combine All (Dual-Path Scatter + Emission Aura)
+// Entry Point: Combine All (Dual-Path Scatter + Unified Aura)
 // ============================================================
 
 /**
- * UNIFIED: Combine transmitted light with scattering and emission aura.
+ * UNIFIED: Combine transmitted light with scattering and unified aura.
  * 
- * Four-path combination model:
+ * Three-path combination model:
  * 1. Direct (unscattered): transmitted * (1 - scatterProb)
- * 2. In-shape blur (95%): blurredTransmitted * scatterProb * IN_SHAPE_SCATTER_FRACTION
- * 3. Scatter aura (5%): scatterSource (Voigt-blurred, scaled by AURA_SCATTER_FRACTION)
- * 4. Emission glow: emissionAura (Gaussian-blurred glow from hot/fluorescent objects)
+ * 2. In-shape blur: blurredTransmitted * scatterProb * IN_SHAPE_SCATTER_FRACTION
+ * 3. Unified aura: scatterSource (blurred scatter + emission combined)
  * 
  * Buffer layout after blur passes:
  * - spectralOutput: transmitted light + direct emission (sharp)
- * - blurredTransmitted: Voigt-blurred transmitted for in-shape scatter
- * - scatterSource: Voigt-blurred scatter aura (escaping scattered light)
- * - emissionAura: Gaussian-blurred emission glow (from hot/fluorescent objects)
+ * - blurredTransmitted: Blurred transmitted for in-shape scatter
+ * - scatterSource: Blurred unified aura (scatter + emission)
  */
 @compute @workgroup_size(8, 8)
 fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -2096,11 +2079,10 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
     
-    // Read the four components (stay in f16 for efficiency)
+    // Read the three components (stay in f16 for efficiency)
     let transmitted = spectralOutput[spectralIdx];           // Sharp transmitted + direct emission
-    let blurredFull = blurredTransmitted[spectralIdx];       // Voigt-blurred for in-shape scatter
-    let scatterAura = scatterSource[spectralIdx];            // Voigt-blurred scatter escaping
-    let emissionGlow = emissionAura[spectralIdx];            // Gaussian-blurred emission glow
+    let blurredFull = blurredTransmitted[spectralIdx];       // Blurred for in-shape scatter
+    let aura = scatterSource[spectralIdx];                   // Unified blurred aura (scatter + emission)
     
     // Compute scatter probability (only for in-bounds pixels)
     // scatterProb needs f32 for exp() in applyScattering
@@ -2110,10 +2092,10 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let scatterProb16 = f16(scatterProb);
     
-    // Four-path combination (f16 arithmetic):
+    // Three-path combination (f16 arithmetic):
     let direct = transmitted * (f16(1.0) - scatterProb16);
     let inShapeScatter = blurredFull * scatterProb16 * f16(IN_SHAPE_SCATTER_FRACTION);
-    let aura = scatterAura + emissionGlow;  // Both aura effects combined
+    // aura already unified (scatter + emission combined before blur)
     
     // Write to spectralInput - next layer reads from spectralInput (no swap needed)
     spectralInput[spectralIdx] = direct + inShapeScatter + aura;
