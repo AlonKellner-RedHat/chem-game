@@ -484,17 +484,17 @@ fn getAmbientIntensity(wavelengthNm: f32) -> f16 {
  * Sample ambient pattern from MSDF texture (diagonal-circle-grid).
  * Returns 0-1 coverage value based on position.
  * Uses diagonal-circle-grid from the large texture array (layer 0) for spatial variation.
- * The texture tiles across the screen at 1280x720 resolution.
+ * Pattern scales responsively to fit the current screen size.
  */
 fn getAmbientPattern(x: f32, y: f32) -> f16 {
-  // Texture size for diagonal-circle-grid (1280x720)
+  // Base texture size for diagonal-circle-grid (1280x720)
   let texWidth = 1280.0;
   let texHeight = 720.0;
   
-  // Compute UV coordinates that tile across the screen
-  // Using modulo to tile the pattern seamlessly
-  let u = (x % texWidth) / texWidth;
-  let v = (y % texHeight) / texHeight;
+  // Compute UV coordinates that scale to full screen (responsive)
+  // Maps pixel position to 0-1 range based on current screen dimensions
+  let u = x / f32(params.width);
+  let v = y / f32(params.height);
   let uv = vec2<f32>(u, v);
   
   // Sample MSDF texture from large array (index 1), layer 0 (diagonal-circle-grid)

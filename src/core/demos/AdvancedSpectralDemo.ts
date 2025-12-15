@@ -26,16 +26,21 @@ export class AdvancedSpectralDemo extends SpectralDemo {
     // Call parent to set up base shapes
     super.initialize(scene);
 
-    // Add gold square to the demo
+    // Get screen dimensions for pixel coordinate calculation
+    const canvas = scene.getCanvas();
+    const screenWidth = canvas.width;
+    const screenHeight = canvas.height;
+
+    // Add gold square to the demo with normalized coordinates
     const goldMaterial = createGoldMaterial();
     const goldShape: ShapeConfig = {
       id: "gold-square",
       name: "Gold Square",
       maskName: "rectangle",
-      x: 410,
-      y: 120,
-      width: 100,
-      height: 100,
+      // Normalized: x:410/1280, y:120/720, 100/1280 x 100/720
+      nx: 0.3203125, ny: 0.166667, nw: 0.078125, nh: 0.138889,
+      // Pixel coords (computed below)
+      x: 0, y: 0, width: 0, height: 0,
       layer: 4, // Front layer (after triangle which is layer 3)
       material: goldMaterial,
       properties: {
@@ -47,6 +52,9 @@ export class AdvancedSpectralDemo extends SpectralDemo {
     };
 
     this.shapes.push(goldShape);
+
+    // Compute pixel coordinates for the gold square
+    this.updateShapePixelCoordinates(screenWidth, screenHeight);
 
     // Trigger re-render to include the new shape
     this.needsRender = true;

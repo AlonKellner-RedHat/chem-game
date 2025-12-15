@@ -18,15 +18,26 @@ import {
 } from "../materials";
 import { BackgroundMode } from "../physics/config";
 import { profiler } from "../rendering/Profiler";
+import { toPixelRect } from "../geometry/CoordinateTransformer";
 
 export interface ShapeConfig {
   id: string;
   name: string;
   maskName: string; // Name of mask file (without .mask extension)
+
+  // Normalized coordinates (0-1 range, relative to screen dimensions)
+  // These define the shape's position and size as percentages
+  nx: number; // Normalized x position (0 = left edge, 1 = right edge)
+  ny: number; // Normalized y position (0 = top edge, 1 = bottom edge)
+  nw: number; // Normalized width (0 = zero, 1 = full screen width)
+  nh: number; // Normalized height (0 = zero, 1 = full screen height)
+
+  // Pixel coordinates (computed from normalized coords and screen size)
   x: number;
   y: number;
   width: number;
   height: number;
+
   layer: number; // Render order (0 = background)
   material: Material;
   properties: MaterialProperties;
@@ -176,8 +187,8 @@ export class SpectralDemo implements Demo {
       },
     };
 
-    // Create shapes (background layer first, then foreground)
-    // Background shapes use actual screen dimensions for full coverage
+    // Create shapes with normalized coordinates (0-1 range)
+    // Pixel coordinates are computed from normalized coords on init and resize
     this.shapes = [
       // Background layer (layer 0): Full-screen base + circle-grid overlay
       // Both are opaque to backlight, only visible via ambient light reflection
@@ -185,10 +196,16 @@ export class SpectralDemo implements Demo {
         id: "bg-base",
         name: "Background Base",
         maskName: "fullscreen", // Dedicated fullscreen MSDF (no margins)
+        // Normalized: full screen
+        nx: 0,
+        ny: 0,
+        nw: 1,
+        nh: 1,
+        // Pixel coords (computed below)
         x: 0,
         y: 0,
-        width: screenWidth, // Use actual screen width
-        height: screenHeight, // Use actual screen height
+        width: 0,
+        height: 0,
         layer: 0, // Background layer
         material: bgBaseMaterial,
         properties: createDefaultProperties(bgBaseMaterial),
@@ -199,25 +216,37 @@ export class SpectralDemo implements Demo {
         id: "bg-grid",
         name: "Background Grid",
         maskName: "circle-grid", // Circle-grid pattern overlay
+        // Normalized: full screen
+        nx: 0,
+        ny: 0,
+        nw: 1,
+        nh: 1,
+        // Pixel coords (computed below)
         x: 0,
         y: 0,
-        width: screenWidth, // Use actual screen width
-        height: screenHeight, // Use actual screen height
+        width: 0,
+        height: 0,
         layer: 0, // Same layer - overlays the base
         material: bgGridMaterial,
         properties: createDefaultProperties(bgGridMaterial),
         smallParticleDensity: 0,
         largeParticleDensity: 0,
       },
-      // Foreground shapes (layer 1)
+      // Foreground shapes (layer 1+)
       {
         id: "square",
         name: "Square (Water)",
         maskName: "rectangle",
-        x: 20,
-        y: 80,
-        width: 200,
-        height: 200,
+        // Normalized: x:20/1280, y:80/720, 200/1280 x 200/720
+        nx: 0.015625,
+        ny: 0.111111,
+        nw: 0.15625,
+        nh: 0.277778,
+        // Pixel coords (computed below)
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
         layer: 1, // Back layer
         material: waterMaterial,
         properties: createDefaultProperties(waterMaterial),
@@ -228,10 +257,16 @@ export class SpectralDemo implements Demo {
         id: "circle",
         name: "Circle (Crystal)",
         maskName: "circle",
-        x: 150,
-        y: 80,
-        width: 200,
-        height: 200,
+        // Normalized: x:150/1280, y:80/720, 200/1280 x 200/720
+        nx: 0.117188,
+        ny: 0.111111,
+        nw: 0.15625,
+        nh: 0.277778,
+        // Pixel coords (computed below)
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
         layer: 2, // Middle layer
         material: crystalMaterial,
         properties: createDefaultProperties(crystalMaterial),
@@ -242,10 +277,16 @@ export class SpectralDemo implements Demo {
         id: "triangle",
         name: "Triangle (Gas)",
         maskName: "triangle",
-        x: 280,
-        y: 80,
-        width: 200,
-        height: 200,
+        // Normalized: x:280/1280, y:80/720, 200/1280 x 200/720
+        nx: 0.21875,
+        ny: 0.111111,
+        nw: 0.15625,
+        nh: 0.277778,
+        // Pixel coords (computed below)
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
         layer: 3, // Front layer
         material: gasMaterial,
         properties: createDefaultProperties(gasMaterial),
@@ -253,6 +294,9 @@ export class SpectralDemo implements Demo {
         largeParticleDensity: 0,
       },
     ];
+
+    // Compute pixel coordinates from normalized coordinates
+    this.updateShapePixelCoordinates(screenWidth, screenHeight);
 
     // Create UI
     this.createUI(scene);
@@ -744,9 +788,29 @@ export class SpectralDemo implements Demo {
   }
 
   /**
+   * Update shape pixel coordinates from normalized coordinates
+   * Called on initialize and resize to maintain relative positions
+   */
+  protected updateShapePixelCoordinates(width: number, height: number): void {
+    for (const shape of this.shapes) {
+      const pixels = toPixelRect(
+        { nx: shape.nx, ny: shape.ny, nw: shape.nw, nh: shape.nh },
+        width,
+        height
+      );
+      shape.x = pixels.x;
+      shape.y = pixels.y;
+      shape.width = pixels.width;
+      shape.height = pixels.height;
+    }
+  }
+
+  /**
    * Handle resize events
    */
   resize(scene: GameScene, width: number, height: number): void {
+    // Update shape pixel coordinates for new screen size
+    this.updateShapePixelCoordinates(width, height);
     this.updateUIScale(scene);
     this.needsRender = true;
   }
