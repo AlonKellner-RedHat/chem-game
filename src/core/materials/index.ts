@@ -34,10 +34,12 @@ export {
 export { createWaterMaterial, CopperSulfate, MethyleneBlue } from './WaterMaterial';
 export { createCrystalMaterial, ChromiumIon, PotassiumPermanganate } from './CrystalMaterial';
 export { createGasMaterial, SodiumAtom, NeonAtom, MercuryAtom } from './GasMaterial';
+export { createGoldMaterial } from './GoldMaterial';
 
 import { createWaterMaterial } from './WaterMaterial';
 import { createCrystalMaterial } from './CrystalMaterial';
 import { createGasMaterial } from './GasMaterial';
+import { createGoldMaterial } from './GoldMaterial';
 import { Material } from './Material';
 
 /**
@@ -48,6 +50,7 @@ export function getAllMaterials(): Material[] {
     createWaterMaterial(),
     createCrystalMaterial(),
     createGasMaterial(),
+    createGoldMaterial(),
   ];
 }
 

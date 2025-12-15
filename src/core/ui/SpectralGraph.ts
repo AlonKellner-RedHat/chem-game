@@ -275,6 +275,21 @@ export class SpectralGraph {
     });
     buttonRow.appendChild(normalizeBtn);
     
+    // "Reset" button - resets wavelength range and magnitude to defaults
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = 'Reset';
+    resetBtn.style.cssText = buttonStyle;
+    resetBtn.addEventListener('mouseenter', () => {
+      resetBtn.style.background = '#444';
+    });
+    resetBtn.addEventListener('mouseleave', () => {
+      resetBtn.style.background = '#333';
+    });
+    resetBtn.addEventListener('click', () => {
+      this.resetAll();
+    });
+    buttonRow.appendChild(resetBtn);
+    
     this.container.appendChild(buttonRow);
     
     parent.appendChild(this.container);
@@ -331,6 +346,28 @@ export class SpectralGraph {
     if (this.rangeSlider) {
       this.rangeSlider.reset();
     }
+    
+    this.render();
+  }
+  
+  /**
+   * Reset all controls to initial values (wavelength range and magnitude)
+   */
+  resetAll(): void {
+    // Reset wavelength range to full data range
+    this.viewMin = this.options.wavelengthMin;
+    this.viewMax = this.options.wavelengthMax;
+    
+    if (this.rangeSlider) {
+      this.rangeSlider.reset();
+    }
+    
+    // Reset magnitude to 1x
+    this.magnitudeMultiplier = 1.0;
+    if (this.magnitudeSlider) {
+      this.magnitudeSlider.value = '0'; // 10^0 = 1x
+    }
+    this.updateMagnitudeDisplay();
     
     this.render();
   }

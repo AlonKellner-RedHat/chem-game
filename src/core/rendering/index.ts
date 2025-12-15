@@ -29,6 +29,7 @@ export {
   type LoadedMSDF,
   type MaskData,
   type LoadedMask,
+  type MaskIndex,
 } from './MaskLoader';
 
 export {

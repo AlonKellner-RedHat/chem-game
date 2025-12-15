@@ -8,6 +8,10 @@
  * - 0.5 (128) = edge, <0.5 = inside, >0.5 = outside
  * 
  * The median of R, G, B gives the true signed distance.
+ * 
+ * Textures are organized into two arrays by resolution:
+ * - Small array (256x256): Basic shapes like circle, rectangle, triangle
+ * - Large array (1280x720): Screen-sized patterns like grids
  */
 
 export interface MSDFMetadata {
@@ -26,6 +30,18 @@ export interface LoadedMSDF {
   texture: GPUTexture;
   pxRange: number;
 }
+
+/**
+ * Mask index result containing array and layer indices
+ */
+export interface MaskIndex {
+  arrayIndex: number;  // 0 = small (256x256), 1 = large (1280x720)
+  layerIndex: number;  // Layer within the array
+}
+
+// Resolution thresholds for categorizing masks
+const SMALL_MAX_WIDTH = 512;
+const SMALL_MAX_HEIGHT = 512;
 
 /**
  * Load PNG image as ImageBitmap
@@ -51,12 +67,14 @@ function createMSDFTexture(
   const { width, height } = imageBitmap;
   
   // Create texture with rgba8unorm format (standard for images)
+  // Include COPY_SRC for copying into texture arrays
   const texture = device.createTexture({
     label: `MSDF: ${label}`,
     size: { width, height, depthOrArrayLayers: 1 },
     format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | 
            GPUTextureUsage.COPY_DST | 
+           GPUTextureUsage.COPY_SRC |
            GPUTextureUsage.RENDER_ATTACHMENT,
   });
   
@@ -72,6 +90,10 @@ function createMSDFTexture(
 
 /**
  * MSDF Manager - handles loading and caching MSDF textures
+ * 
+ * Organizes textures into two arrays by resolution for efficient GPU binding:
+ * - Array 0 (small): 256x256 textures for basic shapes
+ * - Array 1 (large): 1280x720 textures for screen-sized patterns
  */
 export class MaskManager {
   private device: GPUDevice;
@@ -80,6 +102,14 @@ export class MaskManager {
   private basePath: string;
   private metadata: MSDFMetadata | null = null;
   private metadataPromise: Promise<MSDFMetadata> | null = null;
+  
+  // Track masks by resolution category for texture arrays
+  private smallMasks: string[] = [];  // Array index 0
+  private largeMasks: string[] = [];  // Array index 1
+  
+  // Resolution for each array
+  private smallResolution = { width: 256, height: 256 };
+  private largeResolution = { width: 1280, height: 720 };
 
   constructor(device: GPUDevice, basePath: string = '/msdf') {
     this.device = device;
@@ -115,6 +145,13 @@ export class MaskManager {
     })();
     
     return this.metadataPromise;
+  }
+
+  /**
+   * Determine if a mask is "small" (256x256) or "large" (1280x720)
+   */
+  private isSmallMask(width: number, height: number): boolean {
+    return width <= SMALL_MAX_WIDTH && height <= SMALL_MAX_HEIGHT;
   }
 
   /**
@@ -156,9 +193,6 @@ export class MaskManager {
     const imageBitmap = await loadImageBitmap(url);
     const texture = createMSDFTexture(this.device, imageBitmap, name);
 
-    // Get shape-specific metadata if available
-    const shapeInfo = metadata.shapes.find(s => s.name === name);
-
     const loaded: LoadedMSDF = {
       name,
       width: imageBitmap.width,
@@ -169,17 +203,58 @@ export class MaskManager {
     
     this.msdfs.set(name, loaded);
 
+    // Categorize by resolution
+    if (this.isSmallMask(loaded.width, loaded.height)) {
+      if (!this.smallMasks.includes(name)) {
+        this.smallMasks.push(name);
+      }
+    } else {
+      if (!this.largeMasks.includes(name)) {
+        this.largeMasks.push(name);
+      }
+    }
+
     console.log(
-      `[MaskManager] Loaded MSDF: ${name} (${loaded.width}x${loaded.height}, pxRange=${loaded.pxRange})`
+      `[MaskManager] Loaded MSDF: ${name} (${loaded.width}x${loaded.height}, ` +
+      `category=${this.isSmallMask(loaded.width, loaded.height) ? 'small' : 'large'}, ` +
+      `pxRange=${loaded.pxRange})`
     );
     return loaded;
   }
 
   /**
-   * Load multiple MSDF textures
+   * Load multiple MSDF textures.
+   * Masks are automatically categorized by resolution.
+   * IMPORTANT: Order is deterministic based on request order, not completion order.
    */
   async loadMasks(names: string[]): Promise<LoadedMSDF[]> {
-    return Promise.all(names.map(name => this.loadMask(name)));
+    // Load all masks in parallel for speed
+    const results = await Promise.all(names.map(name => this.loadMask(name)));
+    
+    // Rebuild category arrays in deterministic order based on request order
+    // This ensures layer indices are predictable regardless of network timing
+    this.smallMasks = [];
+    this.largeMasks = [];
+    
+    for (const name of names) {
+      const mask = this.msdfs.get(name);
+      if (mask) {
+        if (this.isSmallMask(mask.width, mask.height)) {
+          if (!this.smallMasks.includes(name)) {
+            this.smallMasks.push(name);
+          }
+        } else {
+          if (!this.largeMasks.includes(name)) {
+            this.largeMasks.push(name);
+          }
+        }
+      }
+    }
+    
+    console.log('[MaskManager] Small masks (ordered):', this.smallMasks);
+    console.log('[MaskManager] Large masks (ordered):', this.largeMasks);
+    
+    return results;
   }
 
   /**
@@ -190,24 +265,63 @@ export class MaskManager {
   }
 
   /**
-   * Get all loaded MSDFs as an array
+   * Get all loaded MSDFs as an array.
    */
   getAllMasks(): LoadedMSDF[] {
     return Array.from(this.msdfs.values());
   }
 
   /**
-   * Get MSDF index by name
-   * Returns 0 (default solid mask) if not found
+   * Get small masks (256x256) in order for texture array building
    */
-  getMaskIndex(name: string): number {
-    const msdfs = this.getAllMasks();
-    const index = msdfs.findIndex(m => m.name === name);
-    if (index < 0) {
-      console.warn(`[MaskManager] MSDF not found: ${name}, using default`);
-      return 0;
+  getSmallMasks(): LoadedMSDF[] {
+    return this.smallMasks
+      .map(name => this.msdfs.get(name))
+      .filter((m): m is LoadedMSDF => m !== undefined);
+  }
+
+  /**
+   * Get large masks (1280x720) in order for texture array building
+   */
+  getLargeMasks(): LoadedMSDF[] {
+    return this.largeMasks
+      .map(name => this.msdfs.get(name))
+      .filter((m): m is LoadedMSDF => m !== undefined);
+  }
+
+  /**
+   * Get the expected resolution for small masks
+   */
+  getSmallResolution(): { width: number; height: number } {
+    return this.smallResolution;
+  }
+
+  /**
+   * Get the expected resolution for large masks
+   */
+  getLargeResolution(): { width: number; height: number } {
+    return this.largeResolution;
+  }
+
+  /**
+   * Get MSDF index by name.
+   * Returns { arrayIndex, layerIndex } for texture array lookup.
+   */
+  getMaskIndex(name: string): MaskIndex {
+    // Check small masks first
+    const smallIndex = this.smallMasks.indexOf(name);
+    if (smallIndex >= 0) {
+      return { arrayIndex: 0, layerIndex: smallIndex };
     }
-    return index;
+    
+    // Check large masks
+    const largeIndex = this.largeMasks.indexOf(name);
+    if (largeIndex >= 0) {
+      return { arrayIndex: 1, layerIndex: largeIndex };
+    }
+    
+    console.warn(`[MaskManager] MSDF not found: ${name}, using default (small[0])`);
+    return { arrayIndex: 0, layerIndex: 0 };
   }
 
   /**
@@ -218,6 +332,20 @@ export class MaskManager {
   }
 
   /**
+   * Get count of small masks
+   */
+  getSmallMaskCount(): number {
+    return this.smallMasks.length;
+  }
+
+  /**
+   * Get count of large masks
+   */
+  getLargeMaskCount(): number {
+    return this.largeMasks.length;
+  }
+
+  /**
    * Destroy all textures
    */
   destroy(): void {
@@ -225,6 +353,8 @@ export class MaskManager {
       msdf.texture.destroy();
     }
     this.msdfs.clear();
+    this.smallMasks = [];
+    this.largeMasks = [];
     this.metadata = null;
   }
 }

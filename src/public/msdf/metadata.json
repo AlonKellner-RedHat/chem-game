@@ -20,6 +20,16 @@
       "name": "circle-grid",
       "width": 1280,
       "height": 720
+    },
+    {
+      "name": "diagonal-circle-grid",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "name": "fullscreen",
+      "width": 1280,
+      "height": 720
     }
   ]
 }

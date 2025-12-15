@@ -10,7 +10,7 @@
 
 import { SpectralComputePipeline, GPUShape, ComputeParams, DebugCollector } from './SpectralCompute';
 import { initWebGPU, WebGPUContext } from './WebGPUContext';
-import { MaskManager, LoadedMSDF } from './MaskLoader';
+import { MaskManager, MaskIndex } from './MaskLoader';
 import { BackgroundMode } from '../physics/config';
 import { profiler } from './Profiler';
 
@@ -42,6 +42,12 @@ export interface Renderer {
   /** Set rendering fluorescence spectra (low-res for rendering, bin-integrated) */
   setRenderingFluorescenceData?(excitation: Float32Array[], emission: Float32Array[]): void;
   
+  /** Set reflection spectra for ambient light (high-res for spectral plot) */
+  setReflectionData?(reflectionSpectra: Float32Array[]): void;
+  
+  /** Set rendering reflection spectra (low-res for rendering) */
+  setRenderingReflectionData?(reflectionSpectra: Float32Array[]): void;
+  
   /** Set shapes to render */
   setShapes(shapes: GPUShape[]): void;
   
@@ -72,8 +78,8 @@ export interface Renderer {
   /** Load MSDF files for shapes */
   loadMasks(maskNames: string[]): Promise<void>;
   
-  /** Get MSDF index by name */
-  getMaskIndex(name: string): number;
+  /** Get MSDF index by name (returns arrayIndex + layerIndex for texture arrays) */
+  getMaskIndex(name: string): MaskIndex;
   
   /** Get MSDF texture dimensions by name */
   getMaskDimensions(name: string): { width: number; height: number };
@@ -190,6 +196,27 @@ export class WebGPURenderer implements Renderer {
       this.pipeline.setRenderingFluorescenceData(excitation, emission);
     }
     // Invalidate cache since rendering will change
+    this.invalidateSpectrumCache();
+  }
+  
+  /**
+   * Set high-res reflection spectra for ambient light simulation
+   * Each row represents one material's reflection spectrum (0-1 per wavelength)
+   */
+  setReflectionData(reflectionSpectra: Float32Array[]): void {
+    if (this.pipeline) {
+      this.pipeline.setReflectionData(reflectionSpectra);
+    }
+    this.invalidateSpectrumCache();
+  }
+
+  /**
+   * Set low-res reflection spectra for rendering (32 samples)
+   */
+  setRenderingReflectionData(reflectionSpectra: Float32Array[]): void {
+    if (this.pipeline) {
+      this.pipeline.setRenderingReflectionData(reflectionSpectra);
+    }
     this.invalidateSpectrumCache();
   }
   
@@ -468,18 +495,28 @@ export class WebGPURenderer implements Renderer {
     // Load all requested MSDFs
     await this.maskManager.loadMasks(maskNames);
     
-    // Set MSDF textures on pipeline
-    const msdfs = this.maskManager.getAllMasks();
-    this.pipeline.setMaskTextures(msdfs.map(m => m.texture));
+    // Get masks grouped by resolution
+    const smallMasks = this.maskManager.getSmallMasks();
+    const largeMasks = this.maskManager.getLargeMasks();
     
-    console.log(`[WebGPURenderer] Loaded ${maskNames.length} MSDF textures`);
+    // Set MSDF texture arrays on pipeline
+    this.pipeline.setMaskArrays(
+      smallMasks.map(m => m.texture),
+      largeMasks.map(m => m.texture),
+      this.maskManager.getSmallResolution(),
+      this.maskManager.getLargeResolution()
+    );
+    
+    console.log(
+      `[WebGPURenderer] Loaded MSDF textures: ${smallMasks.length} small, ${largeMasks.length} large`
+    );
   }
   
   /**
-   * Get MSDF index by name
+   * Get MSDF index by name (returns arrayIndex + layerIndex)
    */
-  getMaskIndex(name: string): number {
-    return this.maskManager?.getMaskIndex(name) ?? 0;
+  getMaskIndex(name: string): MaskIndex {
+    return this.maskManager?.getMaskIndex(name) ?? { arrayIndex: 0, layerIndex: 0 };
   }
   
   /**
@@ -609,8 +646,8 @@ export class CPURenderer implements Renderer {
     console.log('[CPUFallbackRenderer] MSDF loading not supported in CPU mode');
   }
   
-  getMaskIndex(_name: string): number {
-    return 0; // CPU fallback returns default index
+  getMaskIndex(_name: string): MaskIndex {
+    return { arrayIndex: 0, layerIndex: 0 }; // CPU fallback returns default index
   }
   
   getMaskDimensions(_name: string): { width: number; height: number } {

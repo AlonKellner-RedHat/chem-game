@@ -72,7 +72,7 @@ struct Params {
   boxSize: u32,              // Size of spectrum box (default: 30)
   globalMaxScatterSigma: f32, // Global sigma for unified aura blur (scatter + emission)
   emissionSpreadFactor: f32,  // Fraction of emission that spreads sideways (0-1)
-  _padding1: f32,             // Removed: emissionAuraSigma (now uses globalMaxScatterSigma)
+  currentLayer: u32,          // Current layer being processed (for per-layer ambient)
   
   // Unified pipeline mode parameters
   // These allow a single code path for both rendering (16 samples) and spectrum (5000 samples)
@@ -83,22 +83,24 @@ struct Params {
   coordOffsetY: i32,         // 0 for rendering, sampleY - boxSize/2 for high-res
 }
 
-// Shape definition
+// Shape definition (64 bytes, 16-byte aligned)
 struct Shape {
-  x: f32,             // Position X
-  y: f32,             // Position Y
-  width: f32,         // Bounding box width
-  height: f32,        // Bounding box height
-  temperature: f32,   // For emission calculations
-  layer: u32,         // Render order (0 = background, higher = foreground)
-  materialIndex: u32, // Index into material textures
-  maskIndex: u32,     // Index into MSDF textures
-  texWidth: f32,      // MSDF texture width (for screenPxRange calculation)
-  texHeight: f32,     // MSDF texture height
-  smallParticleDensity: f32,  // Rayleigh scattering particle density (particles/cm³)
-  largeParticleDensity: f32,  // Mie scattering particle density (particles/cm³)
-  fluorescenceQuantumYield: f32, // Total quantum yield for fluorescence (0-1)
-  _padding: f32,      // Padding for 16-byte alignment
+  x: f32,             // Position X (offset 0)
+  y: f32,             // Position Y (offset 4)
+  width: f32,         // Bounding box width (offset 8)
+  height: f32,        // Bounding box height (offset 12)
+  temperature: f32,   // For emission calculations (offset 16)
+  layer: u32,         // Render order (0 = background, higher = foreground) (offset 20)
+  materialIndex: u32, // Index into material textures (offset 24)
+  maskArrayIndex: u32,  // Which MSDF array (0 = small/256x256, 1 = large/1280x720) (offset 28)
+  maskLayerIndex: u32,  // Layer index within the MSDF array (offset 32)
+  texWidth: f32,      // MSDF texture width (for screenPxRange calculation) (offset 36)
+  texHeight: f32,     // MSDF texture height (offset 40)
+  smallParticleDensity: f32,  // Rayleigh scattering particle density (particles/cm³) (offset 44)
+  largeParticleDensity: f32,  // Mie scattering particle density (particles/cm³) (offset 48)
+  fluorescenceQuantumYield: f32, // Total quantum yield for fluorescence (0-1) (offset 52)
+  _padding1: f32,     // Padding to 64 bytes for 16-byte alignment (offset 56)
+  _padding2: f32,     // Padding to 64 bytes for 16-byte alignment (offset 60)
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -127,6 +129,11 @@ struct Shape {
 @group(1) @binding(5) var renderExcitationPalette: texture_2d<f32>;
 @group(1) @binding(6) var renderEmissionPalette: texture_2d<f32>;
 
+// Reflection textures for ambient light simulation (2D atlas: X=wavelength, Y=material index)
+// Reflection is NOT depth-dependent - it's a surface property for ambient light scattering
+@group(1) @binding(7) var reflectionPalette: texture_2d<f32>;      // High-res (4500 samples)
+@group(1) @binding(8) var renderReflectionPalette: texture_2d<f32>; // Low-res (32 samples)
+
 // CIE color matching function textures (2D with height=1)
 @group(2) @binding(0) var cieXTexture: texture_2d<f32>;
 @group(2) @binding(1) var cieYTexture: texture_2d<f32>;
@@ -136,12 +143,13 @@ struct Shape {
 // CIE scale factors
 @group(2) @binding(4) var<uniform> cieScales: vec4<f32>; // x, y, z, unused
 
-// MSDF textures (rgba8unorm, RGB channels encode signed distances)
-@group(3) @binding(0) var msdfTexture0: texture_2d<f32>;
-@group(3) @binding(1) var msdfTexture1: texture_2d<f32>;
-@group(3) @binding(2) var msdfTexture2: texture_2d<f32>;
-@group(3) @binding(3) var msdfTexture3: texture_2d<f32>;
-@group(3) @binding(4) var msdfSampler: sampler;
+// MSDF texture arrays (rgba8unorm, RGB channels encode signed distances)
+// Two arrays for different resolutions to support hundreds of masks efficiently:
+// - msdfArraySmall: 256x256 textures (circle, rectangle, triangle, etc.)
+// - msdfArrayLarge: 1280x720 textures (circle-grid, diagonal-circle-grid, fullscreen, etc.)
+@group(3) @binding(0) var msdfArraySmall: texture_2d_array<f32>;  // 256x256 masks
+@group(3) @binding(1) var msdfArrayLarge: texture_2d_array<f32>;  // 1280x720 masks
+@group(3) @binding(2) var msdfSampler: sampler;
 
 // Spectral buffers for per-layer scattering blur (ping-pong)
 // Each stores 16 wavelength intensities per pixel using f16
@@ -198,20 +206,17 @@ fn msdfMedian(rgb: vec3<f32>) -> f32 {
 }
 
 /**
- * Sample MSDF texture by index
+ * Sample MSDF texture from the appropriate array
+ * @param arrayIndex - 0 for small (256x256), 1 for large (1280x720)
+ * @param layerIndex - Layer within the texture array
+ * @param uv - Texture coordinates
  */
-fn sampleMSDFTexture(maskIndex: u32, uv: vec2<f32>) -> vec3<f32> {
-  if (maskIndex == 0u) {
-    return textureSampleLevel(msdfTexture0, msdfSampler, uv, 0.0).rgb;
-  } else if (maskIndex == 1u) {
-    return textureSampleLevel(msdfTexture1, msdfSampler, uv, 0.0).rgb;
-  } else if (maskIndex == 2u) {
-    return textureSampleLevel(msdfTexture2, msdfSampler, uv, 0.0).rgb;
-  } else if (maskIndex == 3u) {
-    return textureSampleLevel(msdfTexture3, msdfSampler, uv, 0.0).rgb;
+fn sampleMSDFTexture(arrayIndex: u32, layerIndex: u32, uv: vec2<f32>) -> vec3<f32> {
+  if (arrayIndex == 0u) {
+    return textureSampleLevel(msdfArraySmall, msdfSampler, uv, i32(layerIndex), 0.0).rgb;
+  } else {
+    return textureSampleLevel(msdfArrayLarge, msdfSampler, uv, i32(layerIndex), 0.0).rgb;
   }
-  // Default: solid white (fully inside)
-  return vec3<f32>(0.0, 0.0, 0.0);
 }
 
 /**
@@ -220,10 +225,12 @@ fn sampleMSDFTexture(maskIndex: u32, uv: vec2<f32>) -> vec3<f32> {
  * In compute shaders we can't use fwidth(), so we calculate the screen-space
  * pixel range based on the known relationship between shape size and texture size.
  * 
+ * @param arrayIndex - Which MSDF array (0 = small, 1 = large)
+ * @param layerIndex - Layer within the array
  * @param shapeScreenSize - The shape's size in screen pixels (width or height)
  */
-fn sampleMSDF(maskIndex: u32, uv: vec2<f32>, pxRange: f32, texSize: vec2<f32>, shapeScreenSize: vec2<f32>) -> f32 {
-  let msd = sampleMSDFTexture(maskIndex, uv);
+fn sampleMSDF(arrayIndex: u32, layerIndex: u32, uv: vec2<f32>, pxRange: f32, texSize: vec2<f32>, shapeScreenSize: vec2<f32>) -> f32 {
+  let msd = sampleMSDFTexture(arrayIndex, layerIndex, uv);
   
   // Get signed distance: 0.5 = edge, >0.5 = inside, <0.5 = outside
   let sd = msdfMedian(msd) - 0.5;
@@ -262,7 +269,7 @@ fn getShapeMask(shape: Shape, x: f32, y: f32) -> f32 {
   // Sample MSDF texture with anti-aliasing
   let texSize = vec2<f32>(shape.texWidth, shape.texHeight);
   let shapeScreenSize = vec2<f32>(shape.width, shape.height);
-  return sampleMSDF(shape.maskIndex, uv, params.msdfPxRange, texSize, shapeScreenSize);
+  return sampleMSDF(shape.maskArrayIndex, shape.maskLayerIndex, uv, params.msdfPxRange, texSize, shapeScreenSize);
 }
 
 // ============================================================
@@ -434,6 +441,82 @@ fn getFluorescenceEmission(materialIndex: u32, wavelengthNm: f32) -> f32 {
   } else {
     return textureSampleLevel(renderEmissionPalette, materialSampler, vec2<f32>(u, v), 0.0).r;
   }
+}
+
+/**
+ * Sample material reflection at wavelength from palette
+ * Returns f16 for memory efficiency in ambient light calculations.
+ * Reflection is NOT depth-dependent - it's a surface property.
+ */
+fn getMaterialReflection(materialIndex: u32, wavelengthNm: f32) -> f16 {
+  // Handle case when no materials are loaded
+  if (params.numMaterials == 0u) {
+    return f16(0.02);  // Default 2% reflectance for dielectrics
+  }
+  
+  // U coordinate: wavelength position
+  let u = (wavelengthNm - params.wavelengthMin) / (params.wavelengthMax - params.wavelengthMin);
+  
+  // V coordinate: center of the row for this material
+  let v = (f32(materialIndex) + 0.5) / f32(params.numMaterials);
+  
+  // Use high-res texture for spectrum mode (sampleCount > 32), low-res for rendering
+  if (params.sampleCount > 32u) {
+    return f16(textureSampleLevel(reflectionPalette, materialSampler, vec2<f32>(u, v), 0.0).r);
+  } else {
+    return f16(textureSampleLevel(renderReflectionPalette, materialSampler, vec2<f32>(u, v), 0.0).r);
+  }
+}
+
+/**
+ * Get ambient light intensity based on background mode (same distribution, different source).
+ * Returns f16 for memory efficiency.
+ * 
+ * The ambient light has the same spectral distribution as the background
+ * but is applied from the "front" as reflected light rather than transmitted backlight.
+ */
+fn getAmbientIntensity(wavelengthNm: f32) -> f16 {
+  // Use same distribution as background - they are synced
+  return f16(getBackgroundIntensity(wavelengthNm));
+}
+
+/**
+ * Sample ambient pattern from MSDF texture (diagonal-circle-grid).
+ * Returns 0-1 coverage value based on position.
+ * Uses diagonal-circle-grid from the large texture array (layer 0) for spatial variation.
+ * The texture tiles across the screen at 1280x720 resolution.
+ */
+fn getAmbientPattern(x: f32, y: f32) -> f16 {
+  // Texture size for diagonal-circle-grid (1280x720)
+  let texWidth = 1280.0;
+  let texHeight = 720.0;
+  
+  // Compute UV coordinates that tile across the screen
+  // Using modulo to tile the pattern seamlessly
+  let u = (x % texWidth) / texWidth;
+  let v = (y % texHeight) / texHeight;
+  let uv = vec2<f32>(u, v);
+  
+  // Sample MSDF texture from large array (index 1), layer 0 (diagonal-circle-grid)
+  // diagonal-circle-grid is loaded first in the large texture array
+  let msd = sampleMSDFTexture(1u, 0u, uv);
+  
+  // Get signed distance: 0.5 = edge, >0.5 = inside, <0.5 = outside
+  let sd = msdfMedian(msd) - 0.5;
+  
+  // Calculate screen-space coverage with soft edge
+  // pxRange = 8 for the MSDF, screenPxRange scales based on texture-to-screen ratio
+  let texSize = vec2<f32>(texWidth, texHeight);
+  let screenSize = vec2<f32>(f32(params.width), f32(params.height));
+  let screenPxRange = max(params.msdfPxRange * (screenSize.x / texSize.x), 1.0);
+  
+  // Compute coverage with anti-aliased edge
+  let screenDist = sd * screenPxRange;
+  let coverage = clamp(screenDist + 0.5, 0.0, 1.0);
+  
+  // Map to ambient light contribution: inside circles = 0.6, outside = 1.0
+  // Same values as circle-grid overlay for consistent visual style
+  return f16(1.0 - 0.4 * coverage);
 }
 
 /**
@@ -1626,16 +1709,16 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
         if (mask > 0.0) {
           let shape = shapes[i];
           
-          // Fluorescent molecules absorb photons directly at excitation wavelengths
-          // excitationEff encodes the absorption cross-section (already weighted by mole fraction)
-          // This is physically correct: fluorophores absorb independently of carrier material
+          // Fluorescence requires absorption first - photons must be absorbed to be re-emitted
+          // absorbedLight depends on materialTrans which is depth-dependent (Beer-Lambert)
+          let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+          let absorbedLight = transmitted * (1.0 - materialTrans) * mask;
           let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
           
-          // Accumulate excitation for this shape
-          shapeExcitation[i] += transmitted * excitationEff * mask;
+          // Accumulate excitation for this shape (only absorbed light can excite fluorescence)
+          shapeExcitation[i] += absorbedLight * excitationEff;
           
-          // Update transmitted for next shape (material absorption still applies for general light)
-          let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
+          // Update transmitted for next shape (reuse materialTrans computed above)
           let absorption = mix(1.0, materialTrans, mask);
           transmitted *= absorption;
         }
@@ -2097,8 +2180,55 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
     let inShapeScatter = blurredFull * scatterProb16 * f16(IN_SHAPE_SCATTER_FRACTION);
     // aura already unified (scatter + emission combined before blur)
     
+    var result = direct + inShapeScatter + aura;
+    
+    // === Per-layer ambient reflection ===
+    // Add ambient light reflection for shapes in the current layer only
+    // This happens as the final step of each layer's processing
+    if (inBounds) {
+      let pattern = getAmbientPattern(fx, fy);
+      let ambient = getAmbientIntensity(wavelength);
+      
+      // Compound reflections multiplicatively from all shapes in the current layer
+      // This ensures overlapping shapes (like bg-base + bg-grid) work correctly:
+      // - bg-base with 100% reflection shows full ambient
+      // - bg-grid overlay with 60% reflection REDUCES the result to 60%
+      //
+      // We track coverage separately to avoid bright halos at anti-aliased edges.
+      // The old formula (mask*reflection + 1-mask) caused edges to be brighter
+      // than shape interiors for materials with reflection < 1.
+      var compoundedReflection: f16 = f16(1.0);
+      var maxCoverage: f16 = f16(0.0);
+      
+      for (var i: u32 = 0u; i < numShapes; i++) {
+        let shape = shapes[i];
+        // Only process shapes in the current layer
+        if (shape.layer != params.currentLayer) {
+          continue;
+        }
+        
+        let mask = getShapeMask(shape, fx, fy);
+        if (mask > 0.0) {
+          // Get material reflection coefficient
+          let reflection = getMaterialReflection(shape.materialIndex, wavelength);
+          // Multiply reflections directly (no pass-through blending)
+          // This gives correct multiplicative behavior for overlapping shapes
+          compoundedReflection *= reflection;
+          // Track maximum coverage for anti-aliasing (smooth edges, no bright halo)
+          maxCoverage = max(maxCoverage, f16(mask));
+        }
+      }
+      
+      // Apply coverage at the end - edges are correctly dimmer than inside
+      if (maxCoverage > f16(0.0)) {
+        result += ambient * compoundedReflection * maxCoverage * pattern;
+      }
+      
+    }
+    
+    
     // Write to spectralInput - next layer reads from spectralInput (no swap needed)
-    spectralInput[spectralIdx] = direct + inShapeScatter + aura;
+    spectralInput[spectralIdx] = result;
   }
 }
 
@@ -2164,3 +2294,101 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
   rgbOutput[pixelIndex] = vec4<f32>(xyz, maxIntensity);
   maxPerPixel[pixelIndex] = xyz.y; // Luminance for global max
 }
+
+// ============================================================
+// Entry Point: Apply Ambient Light (Post-Layer Processing)
+// ============================================================
+
+/**
+ * Apply ambient light pass after all layer processing and blurring.
+ * 
+ * This pass adds reflected ambient light to materials, ensuring that
+ * opaque/highly-absorbing materials still show color instead of black.
+ * 
+ * Formula per wavelength:
+ *   result = current + ambient_intensity × material_reflection × mask × pattern
+ * 
+ * Where:
+ * - current: result from transmission/absorption/blur pipeline
+ * - ambient_intensity: ambient light distribution (synced with background mode)
+ * - material_reflection: wavelength-dependent reflection coefficient (0-1)
+ * - mask: shape coverage from MSDF (where light is reflected)
+ * - pattern: diagonal circle-grid spatial variation
+ * 
+ * All calculations use f16 for memory bandwidth efficiency.
+ */
+@compute @workgroup_size(8, 8)
+fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
+  let localX = id.x;
+  let localY = id.y;
+  
+  // Bounds check using unified buffer dimensions
+  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
+    return;
+  }
+  
+  // Convert local coords to screen coords
+  let screenPos = localToScreen(localX, localY);
+  let inBounds = isValidScreenPos(screenPos);
+  let fx = f32(screenPos.x);
+  let fy = f32(screenPos.y);
+  let numShapes = arrayLength(&shapes);
+  
+  // Early exit if out of bounds
+  if (!inBounds) {
+    return;
+  }
+  
+  // Get ambient pattern value for spatial variation
+  let pattern = getAmbientPattern(fx, fy);
+  
+  // Calculate compounded reflection per wavelength
+  // Reflection compounds multiplicatively, similar to absorption (Beer-Lambert)
+  // Example: fullscreen (100%) × circle-grid (60%) = 60% total reflection
+  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
+    let wavelength = getWavelength(wIdx);
+    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+    
+    // Read current intensity (result of transmission pipeline)
+    let current = spectralInput[spectralIdx];
+    
+    // Get ambient light intensity for this wavelength
+    let ambient = getAmbientIntensity(wavelength);
+    
+    // Compound reflection from all overlapping shapes at this pixel
+    // Start with 1.0 and multiply by each shape's reflection
+    var compoundedReflection: f16 = f16(1.0);
+    var anyShapeCovers: bool = false;
+    
+    for (var i: u32 = 0u; i < numShapes; i++) {
+      let mask = getShapeMask(shapes[i], fx, fy);
+      if (mask > 0.0) {
+        let shape = shapes[i];
+        anyShapeCovers = true;
+        
+        // Get material reflection at this wavelength
+        let reflection = getMaterialReflection(shape.materialIndex, wavelength);
+        
+        // Compound: multiply reflections together
+        // For partial coverage (mask < 1), blend between full reflection and pass-through
+        // reflection_effective = mask * reflection + (1 - mask) * 1.0
+        // This means: covered area reflects, uncovered area passes through
+        let effectiveReflection = f16(mask) * reflection + f16(1.0 - mask);
+        compoundedReflection *= effectiveReflection;
+      }
+    }
+    
+    // If no shapes cover this pixel, no ambient reflection
+    if (!anyShapeCovers) {
+      compoundedReflection = f16(0.0);
+    }
+    
+    // Apply ambient light formula:
+    // ambient_contribution = ambient × compounded_reflection × pattern
+    let ambientContribution = ambient * compoundedReflection * pattern;
+    
+    // Add to current (f16 arithmetic throughout)
+    spectralInput[spectralIdx] = current + ambientContribution;
+  }
+}
+

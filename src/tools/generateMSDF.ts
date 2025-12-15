@@ -83,11 +83,105 @@ function generateCircleGridSVG(): string {
 `;
 }
 
+/**
+ * Generate diagonal-circle-grid SVG with staggered circles and diagonal lattice lines
+ * Creates a honeycomb-like pattern for ambient light
+ * All shapes are subpaths of a single <path> element for MSDF compatibility
+ */
+function generateDiagonalCircleGridSVG(): string {
+  const pathParts: string[] = [];
+  
+  // Calculate grid dimensions
+  const cols = Math.floor(GRID_WIDTH / CELL_SIZE) + 1;  // Extra column for offset rows
+  const rows = Math.floor(GRID_HEIGHT / CELL_SIZE);
+  const halfCell = CELL_SIZE / 2;
+  const lineHalfWidth = LINE_WIDTH / 2;
+  
+  // Store circle centers for line generation
+  const circles: Array<{cx: number; cy: number; row: number; col: number}> = [];
+  
+  // Generate circles (staggered - every other row offset by half cell)
+  for (let row = 0; row < rows; row++) {
+    const cy = row * CELL_SIZE + halfCell;  // Center of cell
+    const xOffset = (row % 2) * halfCell;   // Offset for odd rows
+    
+    for (let col = 0; col < cols; col++) {
+      const cx = col * CELL_SIZE + halfCell + xOffset;
+      
+      // Skip if outside bounds
+      if (cx < 0 || cx > GRID_WIDTH) continue;
+      
+      circles.push({ cx, cy, row, col });
+      
+      const r = CIRCLE_RADIUS;
+      // Circle as two arcs: M (cx-r) cy A r r 0 1 0 (cx+r) cy A r r 0 1 0 (cx-r) cy Z
+      pathParts.push(`M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`);
+    }
+  }
+  
+  // Generate diagonal lattice lines connecting circles to neighbors in next row
+  for (let row = 0; row < rows - 1; row++) {
+    const y1 = row * CELL_SIZE + halfCell;
+    const y2 = (row + 1) * CELL_SIZE + halfCell;
+    const xOffset1 = (row % 2) * halfCell;
+    const xOffset2 = ((row + 1) % 2) * halfCell;
+    
+    for (let col = 0; col < cols; col++) {
+      const x1 = col * CELL_SIZE + halfCell + xOffset1;
+      
+      // Skip if outside bounds
+      if (x1 < 0 || x1 > GRID_WIDTH) continue;
+      
+      // Connect to down-left neighbor (in next row)
+      const x2left = x1 - halfCell;
+      if (x2left >= 0 && x2left <= GRID_WIDTH) {
+        // Draw line as thin parallelogram (2px wide)
+        const dx = x2left - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const nx = (-dy / len) * lineHalfWidth;  // perpendicular normal x
+        const ny = (dx / len) * lineHalfWidth;   // perpendicular normal y
+        pathParts.push(`M ${x1 + nx} ${y1 + ny} L ${x2left + nx} ${y2 + ny} L ${x2left - nx} ${y2 - ny} L ${x1 - nx} ${y1 - ny} Z`);
+      }
+      
+      // Connect to down-right neighbor (in next row)
+      const x2right = x1 + halfCell;
+      if (x2right >= 0 && x2right <= GRID_WIDTH) {
+        const dx = x2right - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const nx = (-dy / len) * lineHalfWidth;
+        const ny = (dx / len) * lineHalfWidth;
+        pathParts.push(`M ${x1 + nx} ${y1 + ny} L ${x2right + nx} ${y2 + ny} L ${x2right - nx} ${y2 - ny} L ${x1 - nx} ${y1 - ny} Z`);
+      }
+    }
+  }
+  
+  const pathData = pathParts.join(' ');
+  
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GRID_WIDTH} ${GRID_HEIGHT}">
+  <path d="${pathData}" fill="black"/>
+</svg>
+`;
+}
+
 interface ShapeConfig {
   name: string;
   svgFile: string;
   width: number;
   height: number;
+}
+
+/**
+ * Generate fullscreen SVG - a simple filled rectangle covering the entire viewport
+ * Used as the base background shape for ambient light reflection
+ */
+function generateFullscreenSVG(): string {
+  // Simple filled rectangle covering the entire area
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GRID_WIDTH} ${GRID_HEIGHT}">
+  <path d="M 0 0 L ${GRID_WIDTH} 0 L ${GRID_WIDTH} ${GRID_HEIGHT} L 0 ${GRID_HEIGHT} Z" fill="black"/>
+</svg>
+`;
 }
 
 // Define shapes to generate
@@ -96,6 +190,8 @@ const shapes: ShapeConfig[] = [
   { name: 'rectangle', svgFile: 'rectangle.svg', width: 256, height: 256 },
   { name: 'triangle', svgFile: 'triangle.svg', width: 256, height: 256 },
   { name: 'circle-grid', svgFile: 'circle-grid.svg', width: 1280, height: 720 },
+  { name: 'diagonal-circle-grid', svgFile: 'diagonal-circle-grid.svg', width: 1280, height: 720 },
+  { name: 'fullscreen', svgFile: 'fullscreen.svg', width: 1280, height: 720 },
 ];
 
 /**
@@ -179,6 +275,20 @@ async function main(): Promise<void> {
   const circleGridSvg = generateCircleGridSVG();
   fs.writeFileSync(circleGridSvgPath, circleGridSvg);
   console.log(`  -> ${circleGridSvgPath}\n`);
+  
+  // Generate diagonal-circle-grid SVG programmatically
+  const diagonalCircleGridSvgPath = path.join(SVG_DIR, 'diagonal-circle-grid.svg');
+  console.log('Generating diagonal-circle-grid.svg...');
+  const diagonalCircleGridSvg = generateDiagonalCircleGridSVG();
+  fs.writeFileSync(diagonalCircleGridSvgPath, diagonalCircleGridSvg);
+  console.log(`  -> ${diagonalCircleGridSvgPath}\n`);
+  
+  // Generate fullscreen SVG programmatically
+  const fullscreenSvgPath = path.join(SVG_DIR, 'fullscreen.svg');
+  console.log('Generating fullscreen.svg...');
+  const fullscreenSvg = generateFullscreenSVG();
+  fs.writeFileSync(fullscreenSvgPath, fullscreenSvg);
+  console.log(`  -> ${fullscreenSvgPath}\n`);
   
   // Generate MSDF for each shape
   for (const shape of shapes) {
