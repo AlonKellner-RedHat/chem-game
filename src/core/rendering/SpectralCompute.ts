@@ -379,6 +379,9 @@ export class SpectralComputePipeline {
   private blurredTransmittedBuffer: GPUBuffer | null = null; // Blurred transmitted for in-shape scatter
   private scatterBuffersAllocated = false; // Lazy allocation flag for scatter buffers
   private cachedSpectralBufferSize = 0; // Cached size for lazy allocation
+  // Dummy buffer for bind group fallback bindings - avoids aliasing with maxPerPixelBuffer
+  // This is used when scatter buffers haven't been allocated yet
+  private dummyStorageBuffer: GPUBuffer | null = null;
   // 16 samples across 100-1000nm for efficient rendering
   private static readonly SPECTRAL_SAMPLES = 16;
 
@@ -719,6 +722,10 @@ export class SpectralComputePipeline {
 
     // Initialize spectrum box buffer
     this.initSpectrumBoxBuffer();
+
+    // Initialize dummy storage buffer for bind group fallbacks
+    // This prevents buffer aliasing when scatter buffers haven't been allocated
+    this.initDummyStorageBuffer();
 
     console.log('[SpectralCompute] Pipeline initialized');
     console.log(
@@ -1200,6 +1207,22 @@ export class SpectralComputePipeline {
     console.log(
       `[SpectralCompute] Spectrum box buffer (f16): ${(bufferSize / 1024 / 1024).toFixed(2)} MB`
     );
+  }
+
+  /**
+   * Initialize a small dummy buffer for bind group fallback bindings.
+   * This prevents buffer aliasing when scatter buffers haven't been allocated yet.
+   * Without this, fallback to maxPerPixelBuffer would cause the same buffer
+   * to be bound to multiple bindings (4 and 8), violating WebGPU's aliasing rules.
+   */
+  private initDummyStorageBuffer(): void {
+    // Minimum size that satisfies WebGPU requirements (256 bytes minimum for storage)
+    // Using 1KB to be safe
+    this.dummyStorageBuffer = this.device.createBuffer({
+      label: 'Dummy Storage (fallback)',
+      size: 1024,
+      usage: GPUBufferUsage.STORAGE,
+    });
   }
 
   /**
@@ -3672,6 +3695,13 @@ export class SpectralComputePipeline {
    * @returns true if all bind groups are ready, false otherwise
    */
   private ensureBindGroups(): boolean {
+    // Ensure scatter buffers are allocated first to avoid using dummy fallback buffers
+    // This prevents buffer aliasing where the same dummy buffer would be bound
+    // to multiple bindings (8 and 9) in the same bind group
+    if (this.cachedSpectralBufferSize > 0 && !this.scatterBuffersAllocated) {
+      this.ensureScatterBuffers();
+    }
+
     // Bind group 0: params, shapes, outputs, spectrum box
     // Uses current write buffer for double-buffering
     if (!this.bindGroup0) {
@@ -3699,14 +3729,17 @@ export class SpectralComputePipeline {
       let scatterSrcBuffer: GPUBuffer;
       let blurredTransmittedBuffer: GPUBuffer;
 
+      // Use dummyStorageBuffer for fallback bindings to avoid aliasing with maxPerPixelBuffer
+      // maxPerPixelBuffer is bound to binding 4, so we can't also use it for bindings 6-9
+      const fallbackBuffer = this.dummyStorageBuffer!;
+
       if (this.useHighResBuffers && this.spectrumHighResA) {
         // High-res spectrum mode: use dedicated high-res buffers
         const highResSwap = this.spectrumHighResSwapped;
         inputBuffer = highResSwap ? this.spectrumHighResB! : this.spectrumHighResA!;
         outputBuffer = highResSwap ? this.spectrumHighResA! : this.spectrumHighResB!;
-        scatterSrcBuffer = this.spectrumHighResScatter || this.maxPerPixelBuffer!;
-        blurredTransmittedBuffer =
-          this.spectrumHighResBlurredTransmitted || this.maxPerPixelBuffer!;
+        scatterSrcBuffer = this.spectrumHighResScatter || fallbackBuffer;
+        blurredTransmittedBuffer = this.spectrumHighResBlurredTransmitted || fallbackBuffer;
         console.log('[DEBUG-SPECTRUM] Creating bind group with HIGH-RES buffers:', {
           swapped: highResSwap,
           inputLabel: inputBuffer.label,
@@ -3722,10 +3755,10 @@ export class SpectralComputePipeline {
         const spectralOutputBuffer = this.spectralBufferSwapped
           ? this.spectralBufferA
           : this.spectralBufferB;
-        inputBuffer = spectralInputBuffer || this.maxPerPixelBuffer!;
-        outputBuffer = spectralOutputBuffer || this.maxPerPixelBuffer!;
-        scatterSrcBuffer = this.scatterSourceBuffer || this.maxPerPixelBuffer!;
-        blurredTransmittedBuffer = this.blurredTransmittedBuffer || this.maxPerPixelBuffer!;
+        inputBuffer = spectralInputBuffer || fallbackBuffer;
+        outputBuffer = spectralOutputBuffer || fallbackBuffer;
+        scatterSrcBuffer = this.scatterSourceBuffer || fallbackBuffer;
+        blurredTransmittedBuffer = this.blurredTransmittedBuffer || fallbackBuffer;
       }
 
       this.bindGroup0 = this.device.createBindGroup({
@@ -4011,6 +4044,8 @@ export class SpectralComputePipeline {
     this.spectralBufferA?.destroy();
     this.spectralBufferB?.destroy();
     this.scatterSourceBuffer?.destroy();
+    this.blurredTransmittedBuffer?.destroy();
+    this.dummyStorageBuffer?.destroy();
     // Note: emissionAuraBuffer removed - unified with scatterSource
 
     // Destroy high-res spectrum buffers

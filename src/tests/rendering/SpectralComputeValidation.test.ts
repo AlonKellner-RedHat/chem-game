@@ -7,9 +7,6 @@
  *
  * The pushErrorScope/popErrorScope pattern captures validation errors
  * that would otherwise only appear in the browser console.
- *
- * NOTE: Tests marked with it.fails() are KNOWN BUGS that need fixing.
- * Once the buffer aliasing bug is fixed, change it.fails() back to it().
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -99,9 +96,7 @@ describe('SpectralCompute Validation', () => {
     device?.destroy();
   });
 
-  // KNOWN BUG: Buffer aliasing where maxPerPixelBuffer is bound to both binding 4 and 8
-  // when scatterSourceBuffer is null. Change to it() once fixed.
-  it.fails('should not have buffer aliasing in bind groups', async () => {
+  it('should not have buffer aliasing in bind groups', async () => {
     if (!device) {
       console.warn('[SpectralCompute Validation] Skipping: WebGPU device not available');
       return;
@@ -189,8 +184,7 @@ describe('SpectralCompute Validation', () => {
     expect(computeError).toBeNull();
   });
 
-  // KNOWN BUG: Same buffer aliasing issue on repeated calls
-  it.fails('should handle multiple compute calls without validation errors', async () => {
+  it('should handle multiple compute calls without validation errors', async () => {
     if (!device) {
       console.warn('[SpectralCompute Validation] Skipping: WebGPU device not available');
       return;
@@ -261,8 +255,7 @@ describe('SpectralCompute Validation', () => {
     expect(validationError).toBeNull();
   });
 
-  // KNOWN BUG: Same buffer aliasing issue with scattering enabled
-  it.fails('should handle scattering without buffer aliasing', async () => {
+  it('should handle scattering without buffer aliasing', async () => {
     if (!device) {
       console.warn('[SpectralCompute Validation] Skipping: WebGPU device not available');
       return;
