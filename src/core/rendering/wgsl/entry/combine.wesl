@@ -147,7 +147,10 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
         if (mask > 0.0 || isFullCoverage) {
           let reflFactor = getReflectionFactor(shape, fx, fy);
           let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-          totalReflection *= f16(reflFactor) * materialRefl;
+          // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
+          let effectiveMask = select(mask, 1.0, isFullCoverage);
+          let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
+          totalReflection *= f16(reflFactor) * effectiveRefl;
         }
       }
 
@@ -346,7 +349,10 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
       if (mask > 0.0 || isFullCoverage) {
         let reflFactor = getReflectionFactor(shape, fx, fy);
         let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-        totalReflection *= f16(reflFactor) * materialRefl;
+        // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
+        let effectiveMask = select(mask, 1.0, isFullCoverage);
+        let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
+        totalReflection *= f16(reflFactor) * effectiveRefl;
       }
     }
 
@@ -486,7 +492,10 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
           if (mask > 0.0 || isFullCoverage) {
             let reflFactor = getReflectionFactor(shape, fx, fy);
             let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-            totalReflection *= f16(reflFactor) * materialRefl;
+            // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
+            let effectiveMask = select(mask, 1.0, isFullCoverage);
+            let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
+            totalReflection *= f16(reflFactor) * effectiveRefl;
           }
         }
       }
@@ -700,7 +709,10 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
               getMaterialReflection(shape.materialIndex, wavelengths.w)
             );
 
-            totalReflection *= vec4<f16>(reflFactor) * materialRefl;
+            // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
+            let effectiveMask = select(f16(mask), f16(1.0), isFullCoverage);
+            let effectiveRefl = mix(one4, materialRefl, vec4<f16>(effectiveMask));
+            totalReflection *= vec4<f16>(reflFactor) * effectiveRefl;
           }
         }
       }

@@ -390,3 +390,161 @@ describe('Mask Gating for Ambient Contribution', () => {
     });
   });
 });
+
+describe('Coverage-based Reflection Blending', () => {
+  /**
+   * Reference implementation: blend material reflection based on coverage
+   * This matches WGSL mix(1.0, materialRefl, mask)
+   *
+   * The key insight: at partial coverage (anti-aliased edge), we should BLEND
+   * between no effect (1.0) and full material effect, NOT apply full material.
+   */
+  function blendReflection(materialRefl: number, mask: number): number {
+    // mix(a, b, t) = a * (1-t) + b * t = (1-t) + t * b when a=1.0
+    return 1 - mask + mask * materialRefl;
+  }
+
+  describe('Basic blending', () => {
+    it('full coverage (mask=1.0) applies full material reflection', () => {
+      expect(blendReflection(0.8, 1.0)).toBe(0.8);
+      expect(blendReflection(0.6, 1.0)).toBe(0.6);
+      expect(blendReflection(1.0, 1.0)).toBe(1.0);
+    });
+
+    it('zero coverage (mask=0.0) has no material effect', () => {
+      expect(blendReflection(0.8, 0.0)).toBe(1.0);
+      expect(blendReflection(0.5, 0.0)).toBe(1.0);
+      expect(blendReflection(0.0, 0.0)).toBe(1.0);
+    });
+
+    it('partial coverage blends proportionally (anti-aliased edge)', () => {
+      // At edge with 50% coverage: mix(1.0, 0.8, 0.5) = 0.9
+      expect(blendReflection(0.8, 0.5)).toBeCloseTo(0.9, 5);
+      // At edge with 25% coverage: mix(1.0, 0.8, 0.25) = 0.95
+      expect(blendReflection(0.8, 0.25)).toBeCloseTo(0.95, 5);
+      // At edge with 75% coverage: mix(1.0, 0.8, 0.75) = 0.85
+      expect(blendReflection(0.8, 0.75)).toBeCloseTo(0.85, 5);
+    });
+  });
+
+  describe('Golden square edge scenario', () => {
+    it('inside (mask=1.0): full gold reflection 0.8', () => {
+      const goldRefl = 0.8;
+      expect(blendReflection(goldRefl, 1.0)).toBe(0.8);
+    });
+
+    it('at edge (mask=0.5): blended to 0.9', () => {
+      const goldRefl = 0.8;
+      // Instead of 0.8, we get smooth blend: 0.5 * 1.0 + 0.5 * 0.8 = 0.9
+      expect(blendReflection(goldRefl, 0.5)).toBe(0.9);
+    });
+
+    it('just outside (mask=0.0): no effect (1.0)', () => {
+      const goldRefl = 0.8;
+      expect(blendReflection(goldRefl, 0.0)).toBe(1.0);
+    });
+
+    it('smooth gradient across edge', () => {
+      const goldRefl = 0.8;
+      // Verify monotonic transition from 1.0 to 0.8 as coverage increases
+      const results = [0.0, 0.25, 0.5, 0.75, 1.0].map((mask) => blendReflection(goldRefl, mask));
+      const expected = [1.0, 0.95, 0.9, 0.85, 0.8];
+      for (let i = 0; i < results.length; i++) {
+        expect(results[i]).toBeCloseTo(expected[i], 5);
+      }
+    });
+  });
+
+  describe('Updated compounding with blend', () => {
+    /**
+     * Updated compound function that uses blended reflection
+     */
+    function compoundWithBlend(
+      shapes: Array<{
+        mask: number;
+        reflFactor: number;
+        materialRefl: number;
+        hasMsdf: boolean;
+        hasAlpha: boolean;
+      }>
+    ): number {
+      let totalReflection = 1.0;
+      for (const shape of shapes) {
+        const isFullCoverage = !shape.hasMsdf && !shape.hasAlpha;
+        if (shape.mask > 0 || isFullCoverage) {
+          const effectiveMask = isFullCoverage ? 1.0 : shape.mask;
+          const effectiveRefl = blendReflection(shape.materialRefl, effectiveMask);
+          totalReflection *= shape.reflFactor * effectiveRefl;
+        }
+      }
+      return totalReflection;
+    }
+
+    it('bg-base + golden square outside shape: only bg-base contributes', () => {
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0,
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 0.0, // Outside golden square
+          reflFactor: 1.0,
+          materialRefl: 0.8,
+          hasMsdf: true,
+          hasAlpha: false,
+        },
+      ];
+      // Only bg-base contributes: 1.0
+      expect(compoundWithBlend(shapes)).toBe(1.0);
+    });
+
+    it('bg-base + golden square at edge (mask=0.5): smooth blend', () => {
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0,
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 0.5, // At edge of golden square
+          reflFactor: 1.0,
+          materialRefl: 0.8,
+          hasMsdf: true,
+          hasAlpha: false,
+        },
+      ];
+      // bg-base: 1.0 * blend(1.0, 1.0) = 1.0
+      // golden: 1.0 * blend(0.8, 0.5) = 0.9
+      // Total: 1.0 * 0.9 = 0.9
+      expect(compoundWithBlend(shapes)).toBe(0.9);
+    });
+
+    it('bg-base + golden square inside (mask=1.0): full material', () => {
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0,
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 1.0, // Inside golden square
+          reflFactor: 1.0,
+          materialRefl: 0.8,
+          hasMsdf: true,
+          hasAlpha: false,
+        },
+      ];
+      // bg-base: 1.0
+      // golden: blend(0.8, 1.0) = 0.8
+      // Total: 1.0 * 0.8 = 0.8
+      expect(compoundWithBlend(shapes)).toBe(0.8);
+    });
+  });
+});
