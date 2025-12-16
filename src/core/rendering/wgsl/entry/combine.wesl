@@ -147,9 +147,10 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
         if (mask > 0.0 || isFullCoverage) {
           let reflFactor = getReflectionFactor(shape, fx, fy);
           let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-          // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
-          let effectiveMask = select(mask, 1.0, isFullCoverage);
-          let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
+          // Sharpen mask to remove halo: min(mask * 2.0, 1.0)
+          // This makes edge (mask=0.5) same as interior (mask=1.0)
+          let sharpenedMask = select(min(mask * 2.0, 1.0), 1.0, isFullCoverage);
+          let effectiveRefl = mix(f16(1.0), materialRefl, f16(sharpenedMask));
           totalReflection *= f16(reflFactor) * effectiveRefl;
         }
       }
@@ -349,9 +350,10 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
       if (mask > 0.0 || isFullCoverage) {
         let reflFactor = getReflectionFactor(shape, fx, fy);
         let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-        // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
-        let effectiveMask = select(mask, 1.0, isFullCoverage);
-        let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
+        // Sharpen mask to remove halo: min(mask * 2.0, 1.0)
+        // This makes edge (mask=0.5) same as interior (mask=1.0)
+        let sharpenedMask = select(min(mask * 2.0, 1.0), 1.0, isFullCoverage);
+        let effectiveRefl = mix(f16(1.0), materialRefl, f16(sharpenedMask));
         totalReflection *= f16(reflFactor) * effectiveRefl;
       }
     }
@@ -492,9 +494,10 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
           if (mask > 0.0 || isFullCoverage) {
             let reflFactor = getReflectionFactor(shape, fx, fy);
             let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-            // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
-            let effectiveMask = select(mask, 1.0, isFullCoverage);
-            let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
+            // Sharpen mask to remove halo: min(mask * 2.0, 1.0)
+            // This makes edge (mask=0.5) same as interior (mask=1.0)
+            let sharpenedMask = select(min(mask * 2.0, 1.0), 1.0, isFullCoverage);
+            let effectiveRefl = mix(f16(1.0), materialRefl, f16(sharpenedMask));
             totalReflection *= f16(reflFactor) * effectiveRefl;
           }
         }
@@ -709,9 +712,10 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
               getMaterialReflection(shape.materialIndex, wavelengths.w)
             );
 
-            // Blend material reflection based on coverage: mix(1.0, materialRefl, mask)
-            let effectiveMask = select(f16(mask), f16(1.0), isFullCoverage);
-            let effectiveRefl = mix(one4, materialRefl, vec4<f16>(effectiveMask));
+            // Sharpen mask to remove halo: min(mask * 2.0, 1.0)
+            // This makes edge (mask=0.5) same as interior (mask=1.0)
+            let sharpenedMask = select(f16(min(mask * 2.0, 1.0)), f16(1.0), isFullCoverage);
+            let effectiveRefl = mix(one4, materialRefl, vec4<f16>(sharpenedMask));
             totalReflection *= vec4<f16>(reflFactor) * effectiveRefl;
           }
         }
