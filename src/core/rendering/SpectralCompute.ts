@@ -3630,9 +3630,24 @@ export class SpectralComputePipeline {
     // hasMsdf, hasAlpha (2 u32) - 8 bytes
     // smallParticleDensity, largeParticleDensity (2 f32) - 8 bytes
     // fluorescenceQuantumYield (1 f32) - 4 bytes
+    // blendMode (1 u32) - 4 bytes
     // _padding1 (1 f32) - 4 bytes
     // Total: 80 bytes
     const shapeSize = 80;
+
+    // DEBUG: Log background shapes (layer 0) for circle-grid visibility investigation
+    const bgShapes = shapes.filter((s) => s.layer === 0);
+    if (bgShapes.length > 0) {
+      console.log(`[SpectralCompute] Background shapes (layer 0): ${bgShapes.length}`);
+      for (const s of bgShapes) {
+        console.log(
+          `  - materialIdx=${s.materialIndex}: pos=(${s.x},${s.y}) size=${s.width}x${s.height} ` +
+            `hasMsdf=${s.hasMsdf}(arr=${s.msdfArrayIndex},layer=${s.msdfLayerIndex}) ` +
+            `hasAlpha=${s.hasAlpha}(arr=${s.alphaArrayIndex},layer=${s.alphaLayerIndex}) ` +
+            `texSize=${s.texWidth}x${s.texHeight}`
+        );
+      }
+    }
     const data = new ArrayBuffer(Math.max(shapes.length, 1) * shapeSize);
     const view = new DataView(data);
 
