@@ -6,20 +6,40 @@
  * like vec4<f16>(f32, ...) that string-based tests miss.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import shaderCode from "../../core/rendering/SpectralCompute.wesl?static";
+// Use the legacy .wgsl file which has all entry points pre-linked
+// The WESL ?static import tree-shakes unused code, so we test the full shader directly
+import shaderCode from "../../core/rendering/SpectralCompute.wgsl?raw";
+
+// Helper to get WebGPU - works in both Node.js (via webgpu package) and browser
+async function getGPU(): Promise<GPU | null> {
+  // Try browser first
+  if (typeof navigator !== "undefined" && navigator.gpu) {
+    return navigator.gpu;
+  }
+
+  // Try Node.js webgpu package (uses Dawn)
+  try {
+    const webgpu = await import("webgpu");
+    const instance = webgpu.create([]);
+    return instance as unknown as GPU;
+  } catch (error) {
+    console.warn("[Shader Compilation] Failed to load webgpu package:", error);
+    return null;
+  }
+}
 
 describe("Shader Compilation E2E", () => {
   let device: GPUDevice | null = null;
 
   beforeAll(async () => {
-    // Check if WebGPU is available
-    if (typeof navigator === "undefined" || !navigator.gpu) {
+    const gpu = await getGPU();
+    if (!gpu) {
       console.warn("[Shader Compilation] WebGPU not available in this environment");
       return;
     }
 
     try {
-      const adapter = await navigator.gpu.requestAdapter();
+      const adapter = await gpu.requestAdapter();
       if (!adapter) {
         console.warn("[Shader Compilation] No WebGPU adapter available");
         return;

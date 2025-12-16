@@ -2622,7 +2622,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
           unscattered.w *= applyScattering(1.0, wavelengths.w, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
         }
       }
-      scatterProb4 = vec4<f16>(1.0h - unscattered.x, 1.0h - unscattered.y, 1.0h - unscattered.z, 1.0h - unscattered.w);
+      scatterProb4 = vec4<f16>(f16(1.0 - unscattered.x), f16(1.0 - unscattered.y), f16(1.0 - unscattered.z), f16(1.0 - unscattered.w));
     }
     
     // Vectorized three-path combination
