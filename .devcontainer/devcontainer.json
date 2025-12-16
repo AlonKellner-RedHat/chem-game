@@ -1,10 +1,18 @@
 {
   "name": "Chemistry Simulator (TypeScript + Phaser3)",
-  // Use docker-compose for memory configuration
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-20-bookworm",
+  // Use Ubuntu Noble (24.04) for GLIBC 2.38 compatibility with pre-built Dawn ARM64 binary
+  "image": "mcr.microsoft.com/devcontainers/base:noble",
   "workspaceFolder": "/workspaces/chem-game",
 
+  // Persist GitHub CLI auth across rebuilds
+  "mounts": [
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached"
+  ],
+
   "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/common-utils:2": {
