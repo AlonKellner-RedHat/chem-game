@@ -138,18 +138,18 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
         if (shape.layer != params.currentLayer) {
           continue;
         }
-        anyShapeOnLayer = true;
 
         // Mask gating: only contribute if inside shape or full-coverage shape
         let mask = getShapeMask(shape, fx, fy);
         let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
         if (mask > 0.0 || isFullCoverage) {
+          // Only count as "on layer" when shape ACTUALLY covers this pixel
+          anyShapeOnLayer = true;
+
           let reflFactor = getReflectionFactor(shape, fx, fy);
           let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
           // Blend material reflection by coverage for proper anti-aliasing
-          // Note: This creates a slight "halo" at edges (edge brighter than interior)
-          // which is the correct behavior for anti-aliased blending
           let effectiveMask = select(mask, 1.0, isFullCoverage);
           let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
           totalReflection *= f16(reflFactor) * effectiveRefl;
@@ -342,13 +342,15 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
 
     for (var i: u32 = 0u; i < numShapes; i++) {
       let shape = shapes[i];
-      anyShapeOnLayer = true;
 
       // Mask gating: only contribute if inside shape or full-coverage shape
       let mask = getShapeMask(shape, fx, fy);
       let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
       if (mask > 0.0 || isFullCoverage) {
+        // Only count as "on layer" when shape ACTUALLY covers this pixel
+        anyShapeOnLayer = true;
+
         let reflFactor = getReflectionFactor(shape, fx, fy);
         let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
         // Blend material reflection by coverage for proper anti-aliasing
@@ -485,14 +487,17 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          anyShapeOnLayer = true;
-
           // Use CACHED mask for consistency with scattering/absorption
           // This ensures reflection and absorption use the SAME anti-aliasing
           let mask = f32(shapeMasks[i]);
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           if (mask > 0.0 || isFullCoverage) {
+            // Only count as "on layer" when shape ACTUALLY covers this pixel
+            // This prevents pixels outside shapes from getting reflection
+            // without the material's spectral distribution
+            anyShapeOnLayer = true;
+
             let reflFactor = getReflectionFactor(shape, fx, fy);
             let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
             // Blend material reflection by coverage for proper anti-aliasing
@@ -695,14 +700,15 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          anyShapeOnLayer = true;
-
           // Use CACHED mask for consistency with scattering/absorption
           // This ensures reflection and absorption use the SAME anti-aliasing
           let mask = f32(shapeMasks[i]);
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           if (mask > 0.0 || isFullCoverage) {
+            // Only count as "on layer" when shape ACTUALLY covers this pixel
+            anyShapeOnLayer = true;
+
             let reflFactor = f16(getReflectionFactor(shape, fx, fy));
 
             // Get material reflection for each wavelength
