@@ -20,7 +20,7 @@
  */
 
 import package::wgsl::bindings::{params, msdfArraySmall, msdfArrayLarge, alphaArraySmall, alphaArrayLarge, msdfSampler};
-import package::wgsl::structs::Shape;
+import package::wgsl::structs::{Shape, BLEND_MODE_COVERAGE, BLEND_MODE_REFLECTION};
 
 // ============================================================
 // MSDF Sampling Functions
@@ -177,4 +177,75 @@ fn getShapeMask(shape: Shape, x: f32, y: f32) -> f32 {
 
   // Combine: MSDF defines boundary, alpha modulates intensity
   return msdfCoverage * alphaValue;
+}
+
+// ============================================================
+// Reflection Factor Function (OCP Extension)
+// ============================================================
+
+/**
+ * Get reflection factor for ambient light calculation.
+ *
+ * This is an OCP extension - getShapeMask() remains unchanged for material absorption.
+ * For ambient light, we need the inverse interpretation:
+ * - Outside circles: Full reflection (1.0)
+ * - Inside circles: Reflection reduced by alpha (absorption)
+ *
+ * Formula: reflection = 1.0 - (msdfCoverage * alpha)
+ * - msdfCoverage=0 (outside): reflection=1.0
+ * - msdfCoverage=1, alpha=0: reflection=1.0 (no absorption)
+ * - msdfCoverage=1, alpha=0.5: reflection=0.5 (50% absorption)
+ * - msdfCoverage=1, alpha=1.0: reflection=0.0 (full absorption)
+ *
+ * @param shape - Shape definition
+ * @param x - Pixel X coordinate
+ * @param y - Pixel Y coordinate
+ * @returns Reflection factor (0-1), where 1.0 = full reflection
+ */
+fn getReflectionFactor(shape: Shape, x: f32, y: f32) -> f32 {
+  // No textures = full reflection (like bg-base with no mask)
+  if (shape.hasMsdf == 0u && shape.hasAlpha == 0u) {
+    return 1.0;
+  }
+
+  // Check if within bounding box - outside = full reflection
+  if (x < shape.x || x >= shape.x + shape.width ||
+      y < shape.y || y >= shape.y + shape.height) {
+    return 1.0;
+  }
+
+  // Calculate UV coordinates relative to shape bounds
+  let u = (x - shape.x) / shape.width;
+  let v = (y - shape.y) / shape.height;
+  let uv = vec2<f32>(u, v);
+
+  let texSize = vec2<f32>(shape.texWidth, shape.texHeight);
+  let shapeScreenSize = vec2<f32>(shape.width, shape.height);
+
+  // Get MSDF coverage (1.0 if no MSDF = entire shape is "inside")
+  var msdfCoverage: f32 = 1.0;
+  if (shape.hasMsdf == 1u) {
+    msdfCoverage = sampleMSDF(
+      shape.msdfArrayIndex,
+      shape.msdfLayerIndex,
+      uv,
+      params.msdfPxRange,
+      texSize,
+      shapeScreenSize
+    );
+  }
+
+  // Get alpha value (1.0 if no alpha = full absorption when inside)
+  var alphaValue: f32 = 1.0;
+  if (shape.hasAlpha == 1u) {
+    alphaValue = sampleAlphaTexture(
+      shape.alphaArrayIndex,
+      shape.alphaLayerIndex,
+      uv
+    );
+  }
+
+  // Reflection = 1 - absorption
+  // absorption = msdfCoverage * alpha
+  return 1.0 - (msdfCoverage * alphaValue);
 }

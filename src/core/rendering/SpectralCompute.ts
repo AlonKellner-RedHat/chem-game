@@ -50,6 +50,10 @@ import { create1DTexture, createUniformBuffer, readBufferData } from './WebGPUCo
  * - Both: MSDF defines boundary, alpha modulates intensity (multiply)
  * - Neither: Full coverage with alpha 1.0
  */
+// Blend mode constants (match WGSL structs.wesl)
+export const BLEND_MODE_COVERAGE = 0; // mask = coverage (for material absorption)
+export const BLEND_MODE_REFLECTION = 1; // mask = reflection factor (for ambient light)
+
 export interface GPUShape {
   x: number; // Position X
   y: number; // Position Y
@@ -69,6 +73,7 @@ export interface GPUShape {
   smallParticleDensity: number; // Rayleigh scattering particle density (particles/cm³)
   largeParticleDensity: number; // Mie scattering particle density (particles/cm³)
   fluorescenceQuantumYield: number; // Total quantum yield for fluorescence (0-1)
+  blendMode?: number; // 0=COVERAGE (default), 1=REFLECTION (for ambient light)
 }
 
 /**
@@ -3683,8 +3688,10 @@ export class SpectralComputePipeline {
       // Fluorescence properties (4 bytes)
       view.setFloat32(offset + 68, shape.fluorescenceQuantumYield ?? 0, true);
 
-      // Padding to 80 bytes (16-byte alignment)
-      view.setFloat32(offset + 72, 0, true);
+      // Blend mode (4 bytes) - 0=COVERAGE (default), 1=REFLECTION
+      view.setUint32(offset + 72, shape.blendMode ?? BLEND_MODE_COVERAGE, true);
+
+      // Padding to 80 bytes (16-byte alignment) (4 bytes)
       view.setFloat32(offset + 76, 0, true);
     }
 

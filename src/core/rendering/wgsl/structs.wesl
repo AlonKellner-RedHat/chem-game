@@ -67,6 +67,16 @@ struct Params {
 }
 
 // ============================================================
+// Blend Mode Constants (OCP extension)
+// ============================================================
+
+/// Blend mode for shape mask interpretation
+/// COVERAGE: mask = coverage value (for material absorption)
+/// REFLECTION: mask = reflection factor (for ambient light compounding)
+const BLEND_MODE_COVERAGE: u32 = 0u;
+const BLEND_MODE_REFLECTION: u32 = 1u;
+
+// ============================================================
 // Shape Definition
 // ============================================================
 
@@ -78,6 +88,10 @@ struct Params {
 /// - Alpha only: All pixels in shape, variable intensity
 /// - Both: MSDF defines boundary, alpha modulates intensity (multiply)
 /// - Neither: Full coverage with alpha 1.0
+///
+/// Blend modes (OCP extension):
+/// - COVERAGE (0): mask = msdfCoverage * alpha (for material absorption)
+/// - REFLECTION (1): reflection = 1 - msdfCoverage * alpha (for ambient light)
 struct Shape {
   // Position and bounds (16 bytes)
   x: f32,              // Position X
@@ -112,6 +126,9 @@ struct Shape {
 
   // Fluorescence properties (4 bytes)
   fluorescenceQuantumYield: f32,  // Quantum yield (0-1)
+
+  // Blend mode for mask interpretation (4 bytes)
+  blendMode: u32,      // 0=COVERAGE (default), 1=REFLECTION
 
   // Padding for 16-byte alignment (4 bytes)
   _padding1: f32,

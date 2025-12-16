@@ -104,9 +104,42 @@ export class SpectralDemo implements Demo {
 
     // Background layer materials - opaque (0% transmission), only visible via ambient reflection
     //
-    // The background layer consists of:
-    // Background layer: Circle-grid with 60% reflection and alpha gradients
-    // The alpha gradients modulate ambient intensity across the screen
+    // The background layer consists of two shapes with multiplicative compounding:
+    // 1. bg-base: Full-screen with 100% reflection (no mask)
+    // 2. bg-grid: Circle-grid with variable reflection (MSDF + alpha gradients)
+    //
+    // With multiplicative compounding:
+    // - Outside circles: 100% × 100% = 100% reflection
+    // - Inside circles: 100% × (60% × reflectionFactor) = varies by alpha gradient
+
+    // Full-screen background material: 100% reflection, 0% transmission
+    const bgBaseMaterial: Material = {
+      id: 'bg-base',
+      name: 'Background Base',
+      molecules: [],
+      bandGap: 0,
+      uvCutoff: 0,
+      baseAbsorption: { id: 'none', getExtinction: () => 0 },
+      baseMolarConcentration: 1,
+      getBaseMoleFraction: () => 1.0,
+      generateTransmissionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
+        // 0% transmission - completely opaque to backlight
+        return new Float32Array(resolution).fill(0.0);
+      },
+      generateFluorescenceTextures: (_minWl: number, _maxWl: number, resolution: number) => {
+        return {
+          excitation: new Float32Array(resolution).fill(0),
+          emission: new Float32Array(resolution).fill(0),
+          totalQuantumYield: 0,
+        };
+      },
+      generateReflectionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
+        // 100% reflection - full brightness from ambient light
+        return new Float32Array(resolution).fill(1.0);
+      },
+    };
+
+    // Circle-grid overlay material: 60% reflection, 0% transmission
     const bgGridMaterial: Material = {
       id: 'bg-grid',
       name: 'Background Grid',
@@ -136,12 +169,29 @@ export class SpectralDemo implements Demo {
     // Create shapes with normalized coordinates (0-1 range)
     // Pixel coordinates are computed from normalized coords on init and resize
     this.shapes = [
-      // Background layer (layer 0): Circle-grid with alpha gradients
-      // The alpha gradients (RTL linear + radial from bottom-left) modulate ambient intensity:
-      // - Bottom-left corner: brightest (high alpha from radial gradient)
-      // - Right side: medium brightness (70% alpha from linear gradient)
-      // - Top-left: darkest (low alpha from both gradients)
-      // Note: No bg-base shape - it would override alpha gradients via maxCoverage
+      // Background layer (layer 0): Two shapes with multiplicative compounding
+      // bg-base provides full ambient reflection outside circles
+      // bg-grid provides the circle pattern with alpha gradient modulation
+      {
+        id: 'bg-base',
+        name: 'Background Base',
+        maskName: '', // No mask = full coverage (reflection factor = 1.0 everywhere)
+        // Normalized: full screen
+        nx: 0,
+        ny: 0,
+        nw: 1,
+        nh: 1,
+        // Pixel coords (computed below)
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        layer: 0, // Background layer
+        material: bgBaseMaterial,
+        properties: createDefaultProperties(bgBaseMaterial),
+        smallParticleDensity: 0,
+        largeParticleDensity: 0,
+      },
       {
         id: 'bg-grid',
         name: 'Background Grid',
@@ -156,7 +206,7 @@ export class SpectralDemo implements Demo {
         y: 0,
         width: 0,
         height: 0,
-        layer: 0, // Background layer
+        layer: 0, // Same layer - compounds multiplicatively with bg-base
         material: bgGridMaterial,
         properties: createDefaultProperties(bgGridMaterial),
         smallParticleDensity: 0,

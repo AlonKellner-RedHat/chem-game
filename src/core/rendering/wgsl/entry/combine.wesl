@@ -21,7 +21,7 @@ import package::wgsl::physics::materials::{
 };
 import package::wgsl::physics::planck::getKirchhoffEmission;
 import package::wgsl::physics::layer::computeLayerPhysicsWithFluorescence;
-import package::wgsl::rendering::msdf::getShapeMask;
+import package::wgsl::rendering::msdf::{getShapeMask, getReflectionFactor};
 import package::wgsl::rendering::ambient::{getAmbientPattern, getAmbientIntensity};
 
 // ============================================================
@@ -124,30 +124,32 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
 
     var result = direct + inShapeScatter + aura;
 
-    // Per-layer ambient reflection
+    // Per-layer ambient reflection (multiplicative compounding)
     if (inBounds) {
       let pattern = getAmbientPattern(fx, fy);
       let ambient = getAmbientIntensity(wavelength);
 
-      var compoundedReflection: f16 = f16(1.0);
-      var maxCoverage: f16 = f16(0.0);
+      // Multiplicative compounding: each shape's reflection factor multiplies together
+      var totalReflection: f16 = f16(1.0);
+      var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < numShapes; i++) {
         let shape = shapes[i];
         if (shape.layer != params.currentLayer) {
           continue;
         }
+        anyShapeOnLayer = true;
 
-        let mask = getShapeMask(shape, fx, fy);
-        if (mask > 0.0) {
-          let reflection = getMaterialReflection(shape.materialIndex, wavelength);
-          compoundedReflection *= reflection;
-          maxCoverage = max(maxCoverage, f16(mask));
-        }
+        // Get reflection factor: 1.0 outside circles, 1-alpha inside
+        let reflFactor = getReflectionFactor(shape, fx, fy);
+        let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+
+        // Compound: each shape reduces reflection multiplicatively
+        totalReflection *= f16(reflFactor) * materialRefl;
       }
 
-      if (maxCoverage > f16(0.0)) {
-        result += ambient * compoundedReflection * maxCoverage * pattern;
+      if (anyShapeOnLayer) {
+        result += ambient * totalReflection * pattern;
       }
     }
 
@@ -326,26 +328,27 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
     let current = spectralInput[spectralIdx];
     let ambient = getAmbientIntensity(wavelength);
 
-    var compoundedReflection: f16 = f16(1.0);
-    var anyShapeCovers: bool = false;
+    // Multiplicative compounding: each shape's reflection factor multiplies together
+    var totalReflection: f16 = f16(1.0);
+    var anyShapeOnLayer: bool = false;
 
     for (var i: u32 = 0u; i < numShapes; i++) {
-      let mask = getShapeMask(shapes[i], fx, fy);
-      if (mask > 0.0) {
-        let shape = shapes[i];
-        anyShapeCovers = true;
+      let shape = shapes[i];
+      anyShapeOnLayer = true;
 
-        let reflection = getMaterialReflection(shape.materialIndex, wavelength);
-        let effectiveReflection = f16(mask) * reflection + f16(1.0 - mask);
-        compoundedReflection *= effectiveReflection;
-      }
+      // Get reflection factor: 1.0 outside circles, 1-alpha inside
+      let reflFactor = getReflectionFactor(shape, fx, fy);
+      let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+
+      // Compound: each shape reduces reflection multiplicatively
+      totalReflection *= f16(reflFactor) * materialRefl;
     }
 
-    if (!anyShapeCovers) {
-      compoundedReflection = f16(0.0);
+    if (!anyShapeOnLayer) {
+      totalReflection = f16(0.0);
     }
 
-    let ambientContribution = ambient * compoundedReflection * pattern;
+    let ambientContribution = ambient * totalReflection * pattern;
     spectralInput[spectralIdx] = current + ambientContribution;
   }
 }
@@ -456,27 +459,32 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
     var combined = direct + inShapeScatter + aura;
 
     // ============================================================
-    // STEP 2: Apply ambient reflection
+    // STEP 2: Apply ambient reflection (multiplicative compounding)
     // ============================================================
-    if (inBounds && anyMask) {
+    if (inBounds) {
       let ambient = getAmbientIntensity(wavelength);
-      var compoundedReflection: f16 = f16(1.0);
-      var maxCoverage: f16 = f16(0.0);
+
+      // Multiplicative compounding: each shape's reflection factor multiplies together
+      var totalReflection: f16 = f16(1.0);
+      var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
-        let mask = shapeMasks[i];
-        if (mask > f16(0.0)) {
-          let shape = shapes[i];
-          if (shape.layer == params.currentLayer) {
-            let reflection = getMaterialReflection(shape.materialIndex, wavelength);
-            compoundedReflection *= reflection;
-            maxCoverage = max(maxCoverage, mask);
-          }
+        let shape = shapes[i];
+        if (shape.layer == params.currentLayer) {
+          anyShapeOnLayer = true;
+
+          // Get reflection factor: 1.0 outside circles, 1-alpha inside
+          // Note: We compute this directly rather than using shapeMasks (which are for absorption)
+          let reflFactor = getReflectionFactor(shape, fx, fy);
+          let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+
+          // Compound: each shape reduces reflection multiplicatively
+          totalReflection *= f16(reflFactor) * materialRefl;
         }
       }
 
-      if (maxCoverage > f16(0.0)) {
-        combined += ambient * compoundedReflection * maxCoverage * ambientPattern;
+      if (anyShapeOnLayer) {
+        combined += ambient * totalReflection * ambientPattern;
       }
     }
 
@@ -650,8 +658,8 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     let inShapeScatter = blurred * scatterProb4 * scatter_frac;
     var combined = direct + inShapeScatter + aura;
 
-    // Vectorized ambient reflection
-    if (inBounds && anyMask) {
+    // Vectorized ambient reflection (multiplicative compounding)
+    if (inBounds) {
       // Get ambient intensity for each wavelength
       let ambient = vec4<f16>(
         getAmbientIntensity(wavelengths.x),
@@ -660,29 +668,33 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         getAmbientIntensity(wavelengths.w)
       );
 
-      var compoundedReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
-      var maxCoverage: f16 = f16(0.0);
+      // Multiplicative compounding: each shape's reflection factor multiplies together
+      var totalReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
+      var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
-        let mask = shapeMasks[i];
-        if (mask > f16(0.0)) {
-          let shape = shapes[i];
-          if (shape.layer == params.currentLayer) {
-            // Get reflection for each wavelength
-            let refl = vec4<f16>(
-              getMaterialReflection(shape.materialIndex, wavelengths.x),
-              getMaterialReflection(shape.materialIndex, wavelengths.y),
-              getMaterialReflection(shape.materialIndex, wavelengths.z),
-              getMaterialReflection(shape.materialIndex, wavelengths.w)
-            );
-            compoundedReflection *= refl;
-            maxCoverage = max(maxCoverage, mask);
-          }
+        let shape = shapes[i];
+        if (shape.layer == params.currentLayer) {
+          anyShapeOnLayer = true;
+
+          // Get reflection factor: 1.0 outside circles, 1-alpha inside
+          let reflFactor = f16(getReflectionFactor(shape, fx, fy));
+
+          // Get material reflection for each wavelength
+          let materialRefl = vec4<f16>(
+            getMaterialReflection(shape.materialIndex, wavelengths.x),
+            getMaterialReflection(shape.materialIndex, wavelengths.y),
+            getMaterialReflection(shape.materialIndex, wavelengths.z),
+            getMaterialReflection(shape.materialIndex, wavelengths.w)
+          );
+
+          // Compound: each shape reduces reflection multiplicatively
+          totalReflection *= vec4<f16>(reflFactor) * materialRefl;
         }
       }
 
-      if (maxCoverage > f16(0.0)) {
-        combined += ambient * compoundedReflection * vec4<f16>(maxCoverage) * vec4<f16>(ambientPattern);
+      if (anyShapeOnLayer) {
+        combined += ambient * totalReflection * vec4<f16>(ambientPattern);
       }
     }
 
