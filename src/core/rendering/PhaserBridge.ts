@@ -1,18 +1,23 @@
 /**
  * Phaser Bridge
- * 
+ *
  * Bridges WebGPU compute output to Phaser rendering.
  * Currently implements a Canvas2D fallback since Phaser 4 is in RC.
- * 
+ *
  * Once Phaser 4 is stable, this will be updated to use native
  * Phaser 4 WebGPU textures.
  */
 
-import { SpectralComputePipeline, GPUShape, ComputeParams, DebugCollector } from './SpectralCompute';
-import { initWebGPU, WebGPUContext } from './WebGPUContext';
-import { MaskManager, MaskIndex } from './MaskLoader';
-import { BackgroundMode } from '../physics/config';
+import type { BackgroundMode } from '../physics/config';
+import { type MaskIndex, MaskManager } from './MaskLoader';
 import { profiler } from './Profiler';
+import {
+  type ComputeParams,
+  type DebugCollector,
+  type GPUShape,
+  SpectralComputePipeline,
+} from './SpectralCompute';
+import { initWebGPU, type WebGPUContext } from './WebGPUContext';
 
 // Re-export GPUShape for convenience
 export type { GPUShape } from './SpectralCompute';
@@ -23,73 +28,73 @@ export type { GPUShape } from './SpectralCompute';
 export interface Renderer {
   /** Initialize the renderer */
   init(): Promise<boolean>;
-  
+
   /** Resize the render target */
   resize(width: number, height: number): void;
-  
+
   /** Get the compute pipeline (for profiling integration) */
   getComputePipeline(): SpectralComputePipeline | null;
-  
+
   /** Set material transmission spectra (high-res for spectral plot) */
   setMaterials(materials: Float32Array[]): void;
-  
+
   /** Set rendering material spectra (low-res for rendering, bin-integrated) */
   setRenderingMaterials?(materials: Float32Array[]): void;
-  
+
   /** Set fluorescence excitation and emission spectra (high-res for spectral plot) */
   setFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void;
-  
+
   /** Set rendering fluorescence spectra (low-res for rendering, bin-integrated) */
   setRenderingFluorescenceData?(excitation: Float32Array[], emission: Float32Array[]): void;
-  
+
   /** Set reflection spectra for ambient light (high-res for spectral plot) */
   setReflectionData?(reflectionSpectra: Float32Array[]): void;
-  
+
   /** Set rendering reflection spectra (low-res for rendering) */
   setRenderingReflectionData?(reflectionSpectra: Float32Array[]): void;
-  
+
   /** Set shapes to render */
   setShapes(shapes: GPUShape[]): void;
-  
+
   /** Set background mode */
   setBackgroundMode(mode: BackgroundMode): void;
-  
+
   /** Enable/disable emission */
   setEmissionEnabled(enabled: boolean): void;
-  
+
   /** Set emission spread factor (fraction of emission that spreads sideways) */
   setEmissionSpreadFactor?(factor: number): void;
-  
+
   /** Set emission aura blur sigma (in pixels) */
   setEmissionAuraSigma?(sigma: number): void;
-  
+
   /** Render and return ImageData */
   render(): Promise<ImageData>;
-  
+
   /** Get spectrum at a point */
   sampleSpectrum(x: number, y: number): Promise<Float32Array>;
-  
+
   /** Get global max Y (luminance) from last render (for screen normalization) */
   getGlobalMaxIntensity(): number;
-  
+
   /** Get global max spectral intensity from last render (for plot normalization) */
   getGlobalMaxSpectral(): number;
-  
+
   /** Load MSDF files for shapes */
   loadMasks(maskNames: string[]): Promise<void>;
-  
+
   /** Get MSDF index by name (returns arrayIndex + layerIndex for texture arrays) */
   getMaskIndex(name: string): MaskIndex;
-  
+
   /** Get MSDF texture dimensions by name */
   getMaskDimensions(name: string): { width: number; height: number };
-  
+
   /** Get MSDF pixel range */
   getMsdfPxRange(): number;
-  
+
   /** Get debug collector for layer order investigation */
   getDebugCollector(): DebugCollector | null;
-  
+
   /** Destroy resources */
   destroy(): void;
 }
@@ -101,25 +106,25 @@ export class WebGPURenderer implements Renderer {
   private context: WebGPUContext | null = null;
   private pipeline: SpectralComputePipeline | null = null;
   private maskManager: MaskManager | null = null;
-  
+
   private width = 0;
   private height = 0;
   private shapes: GPUShape[] = [];
   private materials: Float32Array[] = [];
   private backgroundMode: BackgroundMode = 'normal';
   private emissionEnabled = true;
-  private emissionSpreadFactor = 0.3;  // Fraction of emission that spreads sideways (aura)
+  private emissionSpreadFactor = 0.3; // Fraction of emission that spreads sideways (aura)
   // Note: emissionAuraSigma removed - now uses unified sigma with scatter
-  
+
   // Spectrum sampling state
   private sampleX = -1;
   private sampleY = -1;
   private lastSpectrum: Float32Array = new Float32Array(0);
-  
+
   // Global max intensity from last render
-  private lastGlobalMax: number = 1.0;      // Max Y (luminance) for screen
-  private lastGlobalMaxSpectral: number = 1.0; // Max spectral intensity for plot
-  
+  private lastGlobalMax = 1.0; // Max Y (luminance) for screen
+  private lastGlobalMaxSpectral = 1.0; // Max spectral intensity for plot
+
   // Caching state for spectrum - avoid recomputing when nothing changed
   private cachedSampleX = -1;
   private cachedSampleY = -1;
@@ -127,45 +132,45 @@ export class WebGPURenderer implements Renderer {
   private cachedBackgroundMode: BackgroundMode = 'normal';
   private cachedEmissionEnabled = true;
   private spectrumCacheValid = false;
-  
+
   // Spectrum throttling - unconditional N-frame throttle
   private spectrumFrameCounter = 0;
-  private spectrumThrottleFrames = 10;  // Compute spectrum every 10th frame (perf optimization)
+  private spectrumThrottleFrames = 10; // Compute spectrum every 10th frame (perf optimization)
   private lastComputedX = -1;
   private lastComputedY = -1;
-  
+
   // Stationary detection - track when mouse stops moving
   private stationaryFrameCount = 0;
-  private stationaryThreshold = 3;  // Must be stationary for N frames before considered "stopped"
-  
+  private stationaryThreshold = 3; // Must be stationary for N frames before considered "stopped"
+
   // Progressive resolution - draft during movement, full when stationary
-  private static readonly DRAFT_RESOLUTION = 450;   // Fast preview during movement (10% of full)
-  private static readonly FULL_RESOLUTION = 4500;   // High quality when stationary (900nm / 4500 = 0.2nm)
-  private isDraftSpectrum = true;  // True if current spectrum is draft quality
-  
+  private static readonly DRAFT_RESOLUTION = 450; // Fast preview during movement (10% of full)
+  private static readonly FULL_RESOLUTION = 4500; // High quality when stationary (900nm / 4500 = 0.2nm)
+  private isDraftSpectrum = true; // True if current spectrum is draft quality
+
   async init(): Promise<boolean> {
     this.context = await initWebGPU();
     if (!this.context) {
       return false;
     }
-    
+
     this.pipeline = new SpectralComputePipeline(this.context.device);
     await this.pipeline.initialize();
-    
+
     // Set profiler device capabilities
     profiler.setDeviceCapabilities(
       this.context.device.features.has('shader-f16'),
       this.context.device.features.has('timestamp-query')
     );
-    
+
     return true;
   }
-  
+
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
   }
-  
+
   setMaterials(materials: Float32Array[]): void {
     this.materials = materials;
     if (this.pipeline) {
@@ -174,7 +179,7 @@ export class WebGPURenderer implements Renderer {
     // Invalidate spectrum cache when materials change
     this.invalidateSpectrumCache();
   }
-  
+
   setRenderingMaterials(materials: Float32Array[]): void {
     if (this.pipeline) {
       this.pipeline.setRenderingMaterials(materials);
@@ -182,7 +187,7 @@ export class WebGPURenderer implements Renderer {
     // Invalidate cache since rendering will change
     this.invalidateSpectrumCache();
   }
-  
+
   setFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void {
     if (this.pipeline) {
       this.pipeline.setFluorescenceData(excitation, emission);
@@ -190,7 +195,7 @@ export class WebGPURenderer implements Renderer {
     // Invalidate spectrum cache when fluorescence changes
     this.invalidateSpectrumCache();
   }
-  
+
   setRenderingFluorescenceData(excitation: Float32Array[], emission: Float32Array[]): void {
     if (this.pipeline) {
       this.pipeline.setRenderingFluorescenceData(excitation, emission);
@@ -198,7 +203,7 @@ export class WebGPURenderer implements Renderer {
     // Invalidate cache since rendering will change
     this.invalidateSpectrumCache();
   }
-  
+
   /**
    * Set high-res reflection spectra for ambient light simulation
    * Each row represents one material's reflection spectrum (0-1 per wavelength)
@@ -219,45 +224,48 @@ export class WebGPURenderer implements Renderer {
     }
     this.invalidateSpectrumCache();
   }
-  
+
   setShapes(shapes: GPUShape[]): void {
     this.shapes = shapes;
     // Invalidate spectrum cache when shapes change
     this.invalidateSpectrumCache();
   }
-  
+
   setBackgroundMode(mode: BackgroundMode): void {
     this.backgroundMode = mode;
     // Invalidate spectrum cache when background changes
     this.invalidateSpectrumCache();
   }
-  
+
   setEmissionEnabled(enabled: boolean): void {
     this.emissionEnabled = enabled;
     // Invalidate spectrum cache when emission setting changes
     this.invalidateSpectrumCache();
   }
-  
+
   /**
    * Set emission spread factor (fraction of emission that spreads sideways)
    */
   setEmissionSpreadFactor(factor: number): void {
     this.emissionSpreadFactor = Math.max(0, Math.min(1, factor));
   }
-  
+
   // Note: setEmissionAuraSigma removed - now uses unified sigma with scatter
-  
+
   /**
    * Compute a hash of shapes configuration for cache invalidation
    */
   private computeShapesHash(): string {
     // Simple hash based on shape properties that affect spectrum
     // Include particle densities which affect scattering
-    return this.shapes.map(s => 
-      `${s.x},${s.y},${s.width},${s.height},${s.materialIndex},${s.maskIndex},${s.temperature},${s.smallParticleDensity},${s.largeParticleDensity}`
-    ).join('|');
+    return this.shapes
+      .map(
+        (s) =>
+          `${s.x},${s.y},${s.width},${s.height},${s.materialIndex},${s.maskIndex},${s.temperature},${s.smallParticleDensity},${s.largeParticleDensity}`
+      )
+      .join('|');
   }
-  
+
   /**
    * Check if spectrum cache is valid
    */
@@ -270,7 +278,7 @@ export class WebGPURenderer implements Renderer {
     if (this.computeShapesHash() !== this.cachedShapesHash) return false;
     return true;
   }
-  
+
   /**
    * Update the spectrum cache
    */
@@ -282,15 +290,15 @@ export class WebGPURenderer implements Renderer {
     this.cachedShapesHash = this.computeShapesHash();
     this.spectrumCacheValid = true;
   }
-  
+
   /**
    * Invalidate the spectrum cache (call when shapes/settings change)
    */
   invalidateSpectrumCache(): void {
     this.spectrumCacheValid = false;
-    this.isDraftSpectrum = true;  // Reset to draft when cache invalidated
+    this.isDraftSpectrum = true; // Reset to draft when cache invalidated
   }
-  
+
   /**
    * Check if spectrum should be computed this frame based on throttling
    * Uses unconditional N-frame throttle - no exceptions for movement
@@ -298,16 +306,16 @@ export class WebGPURenderer implements Renderer {
   private shouldComputeSpectrum(): boolean {
     // Increment frame counter
     this.spectrumFrameCounter++;
-    
+
     // Only compute every N frames - no exceptions
     if (this.spectrumFrameCounter >= this.spectrumThrottleFrames) {
       this.spectrumFrameCounter = 0;
       return true;
     }
-    
+
     return false;
   }
-  
+
   /**
    * Check if mouse has been stationary for several frames
    * Used to determine when to upgrade from draft to full resolution
@@ -315,18 +323,18 @@ export class WebGPURenderer implements Renderer {
   private isStationary(): boolean {
     const dx = Math.abs(this.sampleX - this.lastComputedX);
     const dy = Math.abs(this.sampleY - this.lastComputedY);
-    
+
     // Within 1 pixel = considered same position
     if (dx <= 1 && dy <= 1) {
       this.stationaryFrameCount++;
       return this.stationaryFrameCount > this.stationaryThreshold;
     }
-    
+
     // Mouse moved - reset counter
     this.stationaryFrameCount = 0;
     return false;
   }
-  
+
   /**
    * Update tracking after spectrum was computed
    */
@@ -340,24 +348,24 @@ export class WebGPURenderer implements Renderer {
     if (!this.pipeline || this.width === 0 || this.height === 0) {
       return new ImageData(1, 1);
     }
-    
+
     // Start profiling frame
     profiler.startFrame();
-    
+
     const isSampling = this.sampleX >= 0 && this.sampleY >= 0;
-    
+
     // Determine if we should compute spectrum this frame
     // Use both caching (scene unchanged) and throttling (frame skipping)
     const cacheValid = this.isSpectrumCacheValid();
     const throttleAllows = this.shouldComputeSpectrum();
     const stationary = this.isStationary();
-    
+
     // Decide what to compute and at what resolution:
     // - If cache invalid and throttle allows: compute (draft if moving, full if stationary)
     // - If cache valid but stationary with draft: upgrade to full resolution
     let shouldCompute = false;
     let useFullResolution = false;
-    
+
     if (isSampling && throttleAllows) {
       if (!cacheValid) {
         // Scene/position changed - compute spectrum
@@ -370,19 +378,19 @@ export class WebGPURenderer implements Renderer {
         useFullResolution = true;
       }
     }
-    
+
     // For profiler, record cache hit only when we truly skip computation
     profiler.recordCacheHit(!shouldCompute && isSampling);
-    
+
     // Select resolution based on movement state
-    const plotResolution = useFullResolution 
-      ? WebGPURenderer.FULL_RESOLUTION 
+    const plotResolution = useFullResolution
+      ? WebGPURenderer.FULL_RESOLUTION
       : WebGPURenderer.DRAFT_RESOLUTION;
-    
+
     const params: ComputeParams = {
       width: this.width,
       height: this.height,
-      wavelengthMin: 100,  // Extended to show band gap absorption
+      wavelengthMin: 100, // Extended to show band gap absorption
       wavelengthMax: 1000,
       // Always use 16 samples for color integration (fast)
       spectralResolution: 16,
@@ -402,7 +410,7 @@ export class WebGPURenderer implements Renderer {
       emissionSpreadFactor: this.emissionSpreadFactor,
       // Note: emissionAuraSigma removed - uses unified sigma
     };
-    
+
     // Update profiler config
     profiler.updateConfig({
       boxSize: params.boxSize,
@@ -412,19 +420,19 @@ export class WebGPURenderer implements Renderer {
       screenWidth: this.width,
       screenHeight: this.height,
     });
-    
+
     // Two-pass compute with global normalization
     const result = await this.pipeline.compute(params, this.shapes);
     this.lastGlobalMax = result.globalMaxIntensity;
     this.lastGlobalMaxSpectral = result.globalMaxSpectral;
-    
+
     // Record pass timings from pipeline
     profiler.recordPassTimings(this.pipeline.getPassTimings());
-    
+
     // Read back RGB data
     const readbackStart = performance.now();
     const rgbData = await this.pipeline.readRGBOutput();
-    
+
     // If we computed spectrum this frame, read it and update tracking
     if (shouldCompute) {
       this.lastSpectrum = await this.pipeline.readSpectrumOutput();
@@ -434,7 +442,7 @@ export class WebGPURenderer implements Renderer {
     }
     const readbackEnd = performance.now();
     profiler.recordReadbackTime(readbackEnd - readbackStart);
-    
+
     // Convert to ImageData (RGBA)
     const imageData = new ImageData(this.width, this.height);
     for (let i = 0; i < this.width * this.height; i++) {
@@ -443,41 +451,41 @@ export class WebGPURenderer implements Renderer {
       imageData.data[i * 4 + 2] = Math.round(rgbData[i * 4 + 2] * 255);
       imageData.data[i * 4 + 3] = 255;
     }
-    
+
     // End profiling frame
     profiler.endFrame();
-    
+
     return imageData;
   }
-  
+
   /**
    * Get global max Y (luminance) from last render - for screen normalization
    */
   getGlobalMaxIntensity(): number {
     return this.lastGlobalMax;
   }
-  
+
   /**
    * Get the debug collector for layer order investigation
    */
   getDebugCollector() {
     return this.pipeline?.debugCollector ?? null;
   }
-  
+
   /**
    * Get the compute pipeline for profiling integration
    */
   getComputePipeline(): SpectralComputePipeline | null {
     return this.pipeline;
   }
-  
+
   /**
    * Get global max spectral intensity from last render - for plot normalization
    */
   getGlobalMaxSpectral(): number {
     return this.lastGlobalMaxSpectral;
   }
-  
+
   /**
    * Load shape mask files (MSDF and/or alpha)
    */
@@ -486,21 +494,21 @@ export class WebGPURenderer implements Renderer {
       console.warn('[WebGPURenderer] Cannot load masks - not initialized');
       return;
     }
-    
+
     // Create mask manager if not exists
     if (!this.maskManager) {
       this.maskManager = new MaskManager(this.context.device, '/msdf');
     }
-    
+
     // Load all requested shapes
     await this.maskManager.loadMasks(maskNames);
-    
+
     // Get textures grouped by type and resolution
     const smallMsdfs = this.maskManager.getSmallMsdfs();
     const largeMsdfs = this.maskManager.getLargeMsdfs();
     const smallAlphas = this.maskManager.getSmallAlphas();
     const largeAlphas = this.maskManager.getLargeAlphas();
-    
+
     // Set texture arrays on pipeline
     this.pipeline.setMaskArrays(
       smallMsdfs,
@@ -510,40 +518,42 @@ export class WebGPURenderer implements Renderer {
       this.maskManager.getSmallResolution(),
       this.maskManager.getLargeResolution()
     );
-    
+
     console.log(
       `[WebGPURenderer] Loaded masks: MSDF small=${smallMsdfs.length}, large=${largeMsdfs.length}; Alpha small=${smallAlphas.length}, large=${largeAlphas.length}`
     );
   }
-  
+
   /**
    * Get mask indices by name (returns MSDF and alpha array/layer indices)
    */
   getMaskIndex(name: string): MaskIndex {
-    return this.maskManager?.getMaskIndex(name) ?? {
-      msdfArrayIndex: 0,
-      msdfLayerIndex: -1,
-      alphaArrayIndex: 0,
-      alphaLayerIndex: -1,
-      hasMsdf: false,
-      hasAlpha: false,
-    };
+    return (
+      this.maskManager?.getMaskIndex(name) ?? {
+        msdfArrayIndex: 0,
+        msdfLayerIndex: -1,
+        alphaArrayIndex: 0,
+        alphaLayerIndex: -1,
+        hasMsdf: false,
+        hasAlpha: false,
+      }
+    );
   }
-  
+
   /**
    * Get shape texture dimensions by name
    */
   getMaskDimensions(name: string): { width: number; height: number } {
     return this.maskManager?.getShapeDimensions(name) ?? { width: 256, height: 256 };
   }
-  
+
   /**
    * Get MSDF pixel range
    */
   getMsdfPxRange(): number {
     return this.maskManager?.getPxRange() ?? 4.0;
   }
-  
+
   /**
    * Set the sample point for spectrum readout
    */
@@ -551,14 +561,14 @@ export class WebGPURenderer implements Renderer {
     this.sampleX = x;
     this.sampleY = y;
   }
-  
+
   async sampleSpectrum(x: number, y: number): Promise<Float32Array> {
     // Just update the sample point - spectrum will be read during next render
     this.sampleX = x;
     this.sampleY = y;
     return this.lastSpectrum;
   }
-  
+
   destroy(): void {
     this.pipeline?.destroy();
     this.maskManager?.destroy();
@@ -577,52 +587,52 @@ export class CPURenderer implements Renderer {
   private backgroundMode: BackgroundMode = 'normal';
   private emissionEnabled = true;
   private lastSpectrum: Float32Array = new Float32Array(320).fill(1.0);
-  private lastGlobalMax: number = 1.0;
-  private lastGlobalMaxSpectral: number = 1.0;
-  
+  private lastGlobalMax = 1.0;
+  private lastGlobalMaxSpectral = 1.0;
+
   async init(): Promise<boolean> {
     console.log('[CPURenderer] Using CPU fallback');
     return true;
   }
-  
+
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
   }
-  
+
   setMaterials(materials: Float32Array[]): void {
     this.materials = materials;
   }
-  
+
   setFluorescenceData(_excitation: Float32Array[], _emission: Float32Array[]): void {
     // No-op for CPU fallback (fluorescence not implemented in CPU renderer)
   }
-  
+
   setShapes(shapes: GPUShape[]): void {
     this.shapes = shapes;
   }
-  
+
   setBackgroundMode(mode: BackgroundMode): void {
     this.backgroundMode = mode;
   }
-  
+
   setEmissionEnabled(enabled: boolean): void {
     this.emissionEnabled = enabled;
   }
-  
+
   setEmissionSpreadFactor(_factor: number): void {
     // No-op for CPU fallback
   }
-  
+
   setEmissionAuraSigma(_sigma: number): void {
     // No-op for CPU fallback
   }
-  
+
   async render(): Promise<ImageData> {
     // CPU implementation would use the physics module
     // For now, return a placeholder
     const imageData = new ImageData(this.width, this.height);
-    
+
     // Fill with background color based on mode
     const bgColor = this.backgroundMode === 'dark' ? 0 : 255;
     for (let i = 0; i < this.width * this.height; i++) {
@@ -631,28 +641,28 @@ export class CPURenderer implements Renderer {
       imageData.data[i * 4 + 2] = bgColor;
       imageData.data[i * 4 + 3] = 255;
     }
-    
+
     return imageData;
   }
-  
+
   async sampleSpectrum(x: number, y: number): Promise<Float32Array> {
     // Return cached spectrum for now
     return this.lastSpectrum;
   }
-  
+
   getGlobalMaxIntensity(): number {
     return this.lastGlobalMax;
   }
-  
+
   getGlobalMaxSpectral(): number {
     return this.lastGlobalMaxSpectral;
   }
-  
+
   async loadMasks(_maskNames: string[]): Promise<void> {
     // CPU fallback doesn't use GPU masks
     console.log('[CPUFallbackRenderer] MSDF loading not supported in CPU mode');
   }
-  
+
   getMaskIndex(_name: string): MaskIndex {
     // CPU fallback returns default index (no textures)
     return {
@@ -664,23 +674,23 @@ export class CPURenderer implements Renderer {
       hasAlpha: false,
     };
   }
-  
+
   getMaskDimensions(_name: string): { width: number; height: number } {
-    return { width: 256, height: 256 };  // Default
+    return { width: 256, height: 256 }; // Default
   }
-  
+
   getMsdfPxRange(): number {
-    return 4.0;  // Default
+    return 4.0; // Default
   }
-  
+
   getDebugCollector(): DebugCollector | null {
-    return null;  // CPU renderer doesn't support debug collection
+    return null; // CPU renderer doesn't support debug collection
   }
-  
+
   getComputePipeline(): SpectralComputePipeline | null {
-    return null;  // CPU renderer doesn't have a compute pipeline
+    return null; // CPU renderer doesn't have a compute pipeline
   }
-  
+
   destroy(): void {
     // Nothing to clean up
   }
@@ -695,7 +705,7 @@ export async function createRenderer(): Promise<Renderer> {
   if (await gpuRenderer.init()) {
     return gpuRenderer;
   }
-  
+
   // Fall back to CPU
   console.warn('[createRenderer] WebGPU not available, using CPU fallback');
   const cpuRenderer = new CPURenderer();

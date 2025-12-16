@@ -273,4 +273,3 @@ CARGO_BUILD_JOBS=1 cargo test --test integration_tests wasm_canvas_should_be_int
 ```
 
 This should work even with limited memory.
-

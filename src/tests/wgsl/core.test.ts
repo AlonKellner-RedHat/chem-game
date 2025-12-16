@@ -1,18 +1,17 @@
 /**
  * Core WESL Module Tests
- * 
+ *
  * Tests for constants, structs, and bindings modules.
- * 
+ *
  * Note: GPU tests are in a separate file (core.gpu.test.ts) and only run
  * when WebGPU is available. These tests validate the constant values
  * that are shared between TypeScript and WGSL.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PHYSICAL_CONSTANTS } from './testHelpers';
 
 describe('Core WESL Modules', () => {
-
   describe('Physical Constants', () => {
     it('D65_TEMPERATURE should be 6500K', () => {
       expect(PHYSICAL_CONSTANTS.D65_TEMPERATURE).toBe(6500.0);
@@ -33,17 +32,21 @@ describe('Core WESL Modules', () => {
       // Rayleigh coefficient should produce ~2-3% scattering at moderate densities
       expect(PHYSICAL_CONSTANTS.RAYLEIGH_COEFF).toBeGreaterThan(1e-15);
       expect(PHYSICAL_CONSTANTS.RAYLEIGH_COEFF).toBeLessThan(1e-12);
-      
+
       // Mie coefficient should be smaller (larger particles, fewer needed)
       expect(PHYSICAL_CONSTANTS.MIE_COEFF).toBeLessThan(PHYSICAL_CONSTANTS.RAYLEIGH_COEFF);
     });
 
     it('particle sizes should match Rayleigh/Mie regimes', () => {
       // Rayleigh: particle << wavelength (50nm << 380nm)
-      expect(PHYSICAL_CONSTANTS.SMALL_PARTICLE_SIZE).toBeLessThan(PHYSICAL_CONSTANTS.VISIBLE_MIN / 4);
-      
+      expect(PHYSICAL_CONSTANTS.SMALL_PARTICLE_SIZE).toBeLessThan(
+        PHYSICAL_CONSTANTS.VISIBLE_MIN / 4
+      );
+
       // Mie: particle ~ wavelength (1000nm > 700nm)
-      expect(PHYSICAL_CONSTANTS.LARGE_PARTICLE_SIZE).toBeGreaterThan(PHYSICAL_CONSTANTS.VISIBLE_MAX);
+      expect(PHYSICAL_CONSTANTS.LARGE_PARTICLE_SIZE).toBeGreaterThan(
+        PHYSICAL_CONSTANTS.VISIBLE_MAX
+      );
     });
 
     it('SPECTRAL_SAMPLES should be 16 for rendering', () => {
@@ -77,4 +80,3 @@ describe('Core WESL Modules', () => {
     });
   });
 });
-

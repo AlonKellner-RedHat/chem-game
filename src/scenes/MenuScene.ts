@@ -1,11 +1,11 @@
 /**
  * Menu Scene
- * 
+ *
  * Demo selection overlay.
  */
 
-import { Demo } from '../core/demos/Demo';
-import { GameScene } from './GameScene';
+import type { Demo } from '../core/demos/Demo';
+import type { GameScene } from './GameScene';
 
 // Base design dimensions
 const BASE_WIDTH = 1280;
@@ -31,13 +31,13 @@ export class MenuScene {
   private demos: Demo[];
   private onSelect: ((demo: Demo) => void) | null = null;
   private resizeHandler: (() => void) | null = null;
-  
+
   constructor(container: HTMLElement, gameScene: GameScene, demos: Demo[]) {
     this.container = container;
     this.gameScene = gameScene;
     this.demos = demos;
   }
-  
+
   /**
    * Show the menu
    */
@@ -45,11 +45,11 @@ export class MenuScene {
     if (this.overlay) {
       return; // Already visible
     }
-    
+
     this.onSelect = onSelect || null;
     this.createOverlay();
   }
-  
+
   /**
    * Hide the menu
    */
@@ -65,7 +65,7 @@ export class MenuScene {
       this.items = [];
     }
   }
-  
+
   /**
    * Toggle visibility
    */
@@ -76,7 +76,7 @@ export class MenuScene {
       this.show(onSelect);
     }
   }
-  
+
   /**
    * Create the overlay UI
    */
@@ -96,7 +96,7 @@ export class MenuScene {
       z-index: 1000;
       overflow: hidden;
     `;
-    
+
     // Create scaled wrapper for menu content
     this.scaleWrapper = document.createElement('div');
     this.scaleWrapper.style.cssText = `
@@ -107,14 +107,14 @@ export class MenuScene {
       transform-origin: center center;
     `;
     this.overlay.appendChild(this.scaleWrapper);
-    
+
     // Apply initial scale
     this.updateScale();
-    
+
     // Listen for resize
     this.resizeHandler = () => this.updateScale();
     window.addEventListener('resize', this.resizeHandler);
-    
+
     // Title
     const title = document.createElement('h1');
     title.textContent = 'Select Demo';
@@ -124,17 +124,17 @@ export class MenuScene {
       margin-bottom: 24px;
     `;
     this.scaleWrapper.appendChild(title);
-    
+
     // Demo buttons
     const currentDemo = this.gameScene.getCurrentDemo();
-    
+
     for (const demo of this.demos) {
       const isCurrent = currentDemo?.name === demo.name;
       const button = this.createButton(demo, isCurrent);
       this.scaleWrapper.appendChild(button.element);
       this.items.push(button);
     }
-    
+
     // Close button
     const closeButton = document.createElement('button');
     closeButton.textContent = 'Close (M)';
@@ -150,28 +150,28 @@ export class MenuScene {
     `;
     closeButton.onclick = () => this.hide();
     this.scaleWrapper.appendChild(closeButton);
-    
+
     // Click outside to close
     this.overlay.onclick = (e) => {
       if (e.target === this.overlay) {
         this.hide();
       }
     };
-    
+
     this.container.appendChild(this.overlay);
   }
-  
+
   /**
    * Update scale based on container size
    */
   private updateScale(): void {
     if (!this.scaleWrapper) return;
-    
+
     const { width, height } = this.gameScene.getDimensions();
     const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
     this.scaleWrapper.style.transform = `scale(${scale})`;
   }
-  
+
   /**
    * Create a demo button
    */
@@ -189,39 +189,37 @@ export class MenuScene {
       cursor: pointer;
       text-align: left;
     `;
-    
+
     const title = document.createElement('div');
     title.textContent = demo.name;
     title.style.fontWeight = 'bold';
     button.appendChild(title);
-    
+
     if (demo.description) {
       const desc = document.createElement('div');
       desc.textContent = demo.description;
       desc.style.cssText = 'font-size: 14px; color: #ccc; margin-top: 4px;';
       button.appendChild(desc);
     }
-    
+
     button.onmouseover = () => {
       if (!isCurrent) {
         button.style.background = '#444';
       }
     };
-    
+
     button.onmouseout = () => {
       if (!isCurrent) {
         button.style.background = '#333';
       }
     };
-    
+
     button.onclick = () => {
       this.gameScene.loadDemo(demo);
       this.onSelect?.(demo);
       this.hide();
     };
-    
+
     return { demo, element: button };
   }
 }
-
-

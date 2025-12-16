@@ -4,21 +4,21 @@
  * Core spectral coloring demo with absorption and transmission.
  */
 
-import { Demo } from "./Demo";
-import { GameScene } from "../../scenes/GameScene";
-import { GPUShape } from "../rendering";
-import { ControlPanel, SpectralGraph, RadioButtonGroup } from "../ui";
+import type { GameScene } from '../../scenes/GameScene';
+import { toPixelRect } from '../geometry/CoordinateTransformer';
 import {
-  createWaterMaterial,
   createCrystalMaterial,
-  createGasMaterial,
   createDefaultProperties,
-  Material,
-  MaterialProperties,
-} from "../materials";
-import { BackgroundMode } from "../physics/config";
-import { profiler } from "../rendering/Profiler";
-import { toPixelRect } from "../geometry/CoordinateTransformer";
+  createGasMaterial,
+  createWaterMaterial,
+  type Material,
+  type MaterialProperties,
+} from '../materials';
+import type { BackgroundMode } from '../physics/config';
+import type { GPUShape } from '../rendering';
+import { profiler } from '../rendering/Profiler';
+import { ControlPanel, RadioButtonGroup, SpectralGraph } from '../ui';
+import type { Demo } from './Demo';
 
 export interface ShapeConfig {
   id: string;
@@ -51,9 +51,8 @@ const BASE_WIDTH = 1280;
 const BASE_HEIGHT = 720;
 
 export class SpectralDemo implements Demo {
-  readonly name: string = "Spectral Coloring";
-  readonly description: string =
-    "Physics-based spectral absorption and transmission";
+  readonly name: string = 'Spectral Coloring';
+  readonly description: string = 'Physics-based spectral absorption and transmission';
 
   // Configuration
   protected enableEmission = false;
@@ -61,7 +60,7 @@ export class SpectralDemo implements Demo {
 
   // Shapes
   protected shapes: ShapeConfig[] = [];
-  protected backgroundMode: BackgroundMode = "normal";
+  protected backgroundMode: BackgroundMode = 'normal';
   protected uvMode = false;
 
   // UI
@@ -111,38 +110,26 @@ export class SpectralDemo implements Demo {
 
     // Full-screen background material: 100% reflection, 0% transmission
     const bgBaseMaterial: Material = {
-      id: "bg-base",
-      name: "Background Base",
+      id: 'bg-base',
+      name: 'Background Base',
       molecules: [],
       bandGap: 0,
       uvCutoff: 0,
-      baseAbsorption: { id: "none", getExtinction: () => 0 },
+      baseAbsorption: { id: 'none', getExtinction: () => 0 },
       baseMolarConcentration: 1,
       getBaseMoleFraction: () => 1.0,
-      generateTransmissionSpectrum: (
-        _minWl: number,
-        _maxWl: number,
-        resolution: number
-      ) => {
+      generateTransmissionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
         // 0% transmission - completely opaque to backlight
         return new Float32Array(resolution).fill(0.0);
       },
-      generateFluorescenceTextures: (
-        _minWl: number,
-        _maxWl: number,
-        resolution: number
-      ) => {
+      generateFluorescenceTextures: (_minWl: number, _maxWl: number, resolution: number) => {
         return {
           excitation: new Float32Array(resolution).fill(0),
           emission: new Float32Array(resolution).fill(0),
           totalQuantumYield: 0,
         };
       },
-      generateReflectionSpectrum: (
-        _minWl: number,
-        _maxWl: number,
-        resolution: number
-      ) => {
+      generateReflectionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
         // 100% reflection - full brightness from ambient light
         return new Float32Array(resolution).fill(1.0);
       },
@@ -150,38 +137,26 @@ export class SpectralDemo implements Demo {
 
     // Circle-grid overlay material: 60% reflection, 0% transmission
     const bgGridMaterial: Material = {
-      id: "bg-grid",
-      name: "Background Grid",
+      id: 'bg-grid',
+      name: 'Background Grid',
       molecules: [],
       bandGap: 0,
       uvCutoff: 0,
-      baseAbsorption: { id: "none", getExtinction: () => 0 },
+      baseAbsorption: { id: 'none', getExtinction: () => 0 },
       baseMolarConcentration: 1,
       getBaseMoleFraction: () => 1.0,
-      generateTransmissionSpectrum: (
-        _minWl: number,
-        _maxWl: number,
-        resolution: number
-      ) => {
+      generateTransmissionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
         // 0% transmission - completely opaque to backlight
         return new Float32Array(resolution).fill(0.0);
       },
-      generateFluorescenceTextures: (
-        _minWl: number,
-        _maxWl: number,
-        resolution: number
-      ) => {
+      generateFluorescenceTextures: (_minWl: number, _maxWl: number, resolution: number) => {
         return {
           excitation: new Float32Array(resolution).fill(0),
           emission: new Float32Array(resolution).fill(0),
           totalQuantumYield: 0,
         };
       },
-      generateReflectionSpectrum: (
-        _minWl: number,
-        _maxWl: number,
-        resolution: number
-      ) => {
+      generateReflectionSpectrum: (_minWl: number, _maxWl: number, resolution: number) => {
         // 60% reflection - darker pattern overlaid on base
         return new Float32Array(resolution).fill(0.6);
       },
@@ -193,9 +168,9 @@ export class SpectralDemo implements Demo {
       // Background layer (layer 0): Full-screen base + circle-grid overlay
       // Both are opaque to backlight, only visible via ambient light reflection
       {
-        id: "bg-base",
-        name: "Background Base",
-        maskName: "", // No mask = full coverage (all pixels in shape with alpha 1.0)
+        id: 'bg-base',
+        name: 'Background Base',
+        maskName: '', // No mask = full coverage (all pixels in shape with alpha 1.0)
         // Normalized: full screen
         nx: 0,
         ny: 0,
@@ -213,9 +188,9 @@ export class SpectralDemo implements Demo {
         largeParticleDensity: 0,
       },
       {
-        id: "bg-grid",
-        name: "Background Grid",
-        maskName: "circle-grid", // Circle-grid pattern overlay
+        id: 'bg-grid',
+        name: 'Background Grid',
+        maskName: 'circle-grid', // Circle-grid pattern overlay
         // Normalized: full screen
         nx: 0,
         ny: 0,
@@ -234,9 +209,9 @@ export class SpectralDemo implements Demo {
       },
       // Foreground shapes (layer 1+)
       {
-        id: "square",
-        name: "Square (Water)",
-        maskName: "rectangle",
+        id: 'square',
+        name: 'Square (Water)',
+        maskName: 'rectangle',
         // Normalized: x:20/1280, y:80/720, 200/1280 x 200/720
         nx: 0.015625,
         ny: 0.111111,
@@ -254,9 +229,9 @@ export class SpectralDemo implements Demo {
         largeParticleDensity: 0,
       },
       {
-        id: "circle",
-        name: "Circle (Crystal)",
-        maskName: "circle",
+        id: 'circle',
+        name: 'Circle (Crystal)',
+        maskName: 'circle',
         // Normalized: x:150/1280, y:80/720, 200/1280 x 200/720
         nx: 0.117188,
         ny: 0.111111,
@@ -274,9 +249,9 @@ export class SpectralDemo implements Demo {
         largeParticleDensity: 0,
       },
       {
-        id: "triangle",
-        name: "Triangle (Gas)",
-        maskName: "triangle",
+        id: 'triangle',
+        name: 'Triangle (Gas)',
+        maskName: 'triangle',
         // Normalized: x:280/1280, y:80/720, 200/1280 x 200/720
         nx: 0.21875,
         ny: 0.111111,
@@ -310,13 +285,13 @@ export class SpectralDemo implements Demo {
       this.mouseX = Math.floor((e.clientX - rect.left) * scaleX);
       this.mouseY = Math.floor((e.clientY - rect.top) * scaleY);
     };
-    canvas.addEventListener("mousemove", this.mouseMoveHandler);
+    canvas.addEventListener('mousemove', this.mouseMoveHandler);
 
     // Setup keyboard handler
     this.keyHandler = (e: KeyboardEvent) => {
-      if (e.key === "r" || e.key === "R") {
+      if (e.key === 'r' || e.key === 'R') {
         this.reset?.(scene);
-      } else if (e.key === "l" || e.key === "L") {
+      } else if (e.key === 'l' || e.key === 'L') {
         // Toggle spectrum lock
         if (this.isSpectrumLocked) {
           // Unlock
@@ -333,16 +308,14 @@ export class SpectralDemo implements Demo {
             this.spectralGraph?.setLockedPosition(this.lockedX, this.lockedY);
           }
         }
-      } else if (e.key === "p" || e.key === "P") {
+      } else if (e.key === 'p' || e.key === 'P') {
         // Toggle profiling overlay
         this.profilingVisible = !this.profilingVisible;
         if (this.profilingOverlay) {
-          this.profilingOverlay.style.display = this.profilingVisible
-            ? "block"
-            : "none";
+          this.profilingOverlay.style.display = this.profilingVisible ? 'block' : 'none';
         }
         // Set profiler logging mode
-        profiler.setLoggingMode(this.profilingVisible ? "summary" : "silent");
+        profiler.setLoggingMode(this.profilingVisible ? 'summary' : 'silent');
 
         // Set compute pipeline reference when opening overlay
         if (this.profilingVisible) {
@@ -351,20 +324,20 @@ export class SpectralDemo implements Demo {
             profiler.setComputePipeline(pipeline);
           }
         }
-      } else if (e.key === "g" || e.key === "G") {
+      } else if (e.key === 'g' || e.key === 'G') {
         // Toggle GPU profiling (detailed dispatch-level analysis)
         if (this.profilingVisible) {
           const newState = !profiler.isGPUProfilingEnabled();
           profiler.setGPUProfilingEnabled(newState);
         }
-      } else if (e.key === "d" || e.key === "D") {
+      } else if (e.key === 'd' || e.key === 'D') {
         // Download profiling report (only if overlay is visible)
         if (this.profilingVisible) {
           profiler.downloadReport();
         }
       }
     };
-    document.addEventListener("keydown", this.keyHandler);
+    document.addEventListener('keydown', this.keyHandler);
 
     // Initial render (async, but we don't need to wait)
     this.updateRenderer(scene);
@@ -411,38 +384,35 @@ export class SpectralDemo implements Demo {
 
       // Reset mole fraction sliders
       for (const molecule of shape.material.molecules) {
-        panel.setSliderValue(
-          molecule.id,
-          shape.properties.moleFractions[molecule.id] || 0.0001
-        );
+        panel.setSliderValue(molecule.id, shape.properties.moleFractions[molecule.id] || 0.0001);
       }
 
       // Reset depth slider
-      panel.setSliderValue("depth", shape.properties.pathLength);
+      panel.setSliderValue('depth', shape.properties.pathLength);
 
       // Reset temperature slider if present
       if (this.enableEmission) {
-        panel.setSliderValue("temperature", shape.properties.temperature);
+        panel.setSliderValue('temperature', shape.properties.temperature);
       }
 
       // Reset pressure slider for gas materials
-      if (shape.material.id === "gas") {
-        panel.setSliderValue("pressure", shape.properties.pressure);
+      if (shape.material.id === 'gas') {
+        panel.setSliderValue('pressure', shape.properties.pressure);
       }
 
       // Reset scattering sliders for condensed materials
-      if (shape.material.id === "water" || shape.material.id === "crystal") {
-        panel.setSliderValue("smallParticles", shape.smallParticleDensity);
-        panel.setSliderValue("largeParticles", shape.largeParticleDensity);
+      if (shape.material.id === 'water' || shape.material.id === 'crystal') {
+        panel.setSliderValue('smallParticles', shape.smallParticleDensity);
+        panel.setSliderValue('largeParticles', shape.largeParticleDensity);
       }
 
       panelIndex++;
     }
 
     // Reset background mode
-    this.backgroundMode = "normal";
+    this.backgroundMode = 'normal';
     this.uvMode = false;
-    this.ambientModeRadio?.setValue("normal", false);
+    this.ambientModeRadio?.setValue('normal', false);
 
     // Reset spectrum lock
     this.isSpectrumLocked = false;
@@ -492,23 +462,19 @@ export class SpectralDemo implements Demo {
   /**
    * Update the measurement indicator circle position and appearance
    */
-  protected updateMeasurementIndicator(
-    scene: GameScene,
-    x: number,
-    y: number
-  ): void {
+  protected updateMeasurementIndicator(scene: GameScene, x: number, y: number): void {
     if (!this.measurementIndicator) return;
 
     const { width, height } = scene.getDimensions();
 
     // Hide indicator if position is invalid
     if (x < 0 || y < 0 || x >= width || y >= height) {
-      this.measurementIndicator.style.display = "none";
+      this.measurementIndicator.style.display = 'none';
       return;
     }
 
     // Show indicator
-    this.measurementIndicator.style.display = "block";
+    this.measurementIndicator.style.display = 'block';
 
     // Scale the position from canvas coordinates to UI coordinates (base dimensions)
     const scaleX = BASE_WIDTH / width;
@@ -523,17 +489,16 @@ export class SpectralDemo implements Demo {
     // Update style based on locked state
     if (this.isSpectrumLocked) {
       // Locked: more prominent indicator with solid border
-      this.measurementIndicator.style.borderColor = "rgba(100, 200, 255, 0.9)";
-      this.measurementIndicator.style.background = "rgba(100, 200, 255, 0.3)";
-      this.measurementIndicator.style.borderWidth = "2px";
-      this.measurementIndicator.style.boxShadow =
-        "0 0 8px rgba(100, 200, 255, 0.5)";
+      this.measurementIndicator.style.borderColor = 'rgba(100, 200, 255, 0.9)';
+      this.measurementIndicator.style.background = 'rgba(100, 200, 255, 0.3)';
+      this.measurementIndicator.style.borderWidth = '2px';
+      this.measurementIndicator.style.boxShadow = '0 0 8px rgba(100, 200, 255, 0.5)';
     } else {
       // Unlocked: subtle indicator
-      this.measurementIndicator.style.borderColor = "rgba(255, 255, 255, 0.8)";
-      this.measurementIndicator.style.background = "rgba(255, 255, 255, 0.2)";
-      this.measurementIndicator.style.borderWidth = "2px";
-      this.measurementIndicator.style.boxShadow = "0 0 4px rgba(0, 0, 0, 0.5)";
+      this.measurementIndicator.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+      this.measurementIndicator.style.background = 'rgba(255, 255, 255, 0.2)';
+      this.measurementIndicator.style.borderWidth = '2px';
+      this.measurementIndicator.style.boxShadow = '0 0 4px rgba(0, 0, 0, 0.5)';
     }
   }
 
@@ -544,19 +509,19 @@ export class SpectralDemo implements Demo {
     if (!this.profilingOverlay) return;
 
     const lines = profiler.getDisplayText();
-    let html = "";
+    let html = '';
 
     for (const line of lines) {
       // Parse color hints from format "text [color]"
       const match = line.match(/^(.+) \[(green|yellow|red)\]$/);
       if (match) {
         const colorMap: { [key: string]: string } = {
-          green: "#4f4",
-          yellow: "#ff4",
-          red: "#f44",
+          green: '#4f4',
+          yellow: '#ff4',
+          red: '#f44',
         };
-        html += `<div style="color: ${colorMap[match[2]] || "#fff"}">${match[1]}</div>`;
-      } else if (line === "---") {
+        html += `<div style="color: ${colorMap[match[2]] || '#fff'}">${match[1]}</div>`;
+      } else if (line === '---') {
         html +=
           '<hr style="border: none; border-top: 1px solid rgba(255,255,255,0.2); margin: 4px 0;">';
       } else {
@@ -573,11 +538,11 @@ export class SpectralDemo implements Demo {
     // Remove event listeners
     const canvas = scene.getCanvas();
     if (this.mouseMoveHandler) {
-      canvas.removeEventListener("mousemove", this.mouseMoveHandler);
+      canvas.removeEventListener('mousemove', this.mouseMoveHandler);
       this.mouseMoveHandler = null;
     }
     if (this.keyHandler) {
-      document.removeEventListener("keydown", this.keyHandler);
+      document.removeEventListener('keydown', this.keyHandler);
       this.keyHandler = null;
     }
 
@@ -612,7 +577,7 @@ export class SpectralDemo implements Demo {
     const parent = canvas.parentElement!;
 
     // Create UI container that matches canvas position
-    this.uiContainer = document.createElement("div");
+    this.uiContainer = document.createElement('div');
     this.uiContainer.style.cssText = `
       position: absolute;
       top: 0;
@@ -622,11 +587,11 @@ export class SpectralDemo implements Demo {
       pointer-events: none;
       overflow: hidden;
     `;
-    parent.style.position = "relative";
+    parent.style.position = 'relative';
     parent.appendChild(this.uiContainer);
 
     // Create scaled wrapper for UI elements (designed at BASE_WIDTH x BASE_HEIGHT)
-    this.uiScaleWrapper = document.createElement("div");
+    this.uiScaleWrapper = document.createElement('div');
     this.uiScaleWrapper.style.cssText = `
       position: absolute;
       top: 0;
@@ -649,19 +614,14 @@ export class SpectralDemo implements Demo {
     for (let i = 0; i < this.shapes.length; i++) {
       const shape = this.shapes[i];
       if (shape.layer > 0) {
-        const panel = this.createControlPanel(
-          scene,
-          shape,
-          10 + panelIndex * 270,
-          panelY
-        );
+        const panel = this.createControlPanel(scene, shape, 10 + panelIndex * 270, panelY);
         this.controlPanels.push(panel);
         panelIndex++;
       }
     }
 
     // Create controls container (positioned to the left of the spectral graph)
-    const buttonContainer = document.createElement("div");
+    const buttonContainer = document.createElement('div');
     buttonContainer.style.cssText = `
       position: absolute;
       top: 10px;
@@ -673,32 +633,29 @@ export class SpectralDemo implements Demo {
     // Ambient mode radio buttons
     // Build options based on whether dark mode is enabled
     const ambientOptions: Array<{ value: BackgroundMode; label: string }> = [
-      { value: "normal", label: "Visible" },
-      { value: "uv", label: "UV" },
+      { value: 'normal', label: 'Visible' },
+      { value: 'uv', label: 'UV' },
     ];
 
     if (this.enableDarkMode) {
-      ambientOptions.push({ value: "dark", label: "Dark" });
+      ambientOptions.push({ value: 'dark', label: 'Dark' });
     }
 
-    this.ambientModeRadio = new RadioButtonGroup<BackgroundMode>(
-      buttonContainer,
-      {
-        name: "ambient-mode",
-        options: ambientOptions,
-        selectedValue: "normal",
-        label: "Ambient Light",
-        onChange: (value) => {
-          this.backgroundMode = value;
-          this.uvMode = value === "uv";
-          this.needsRender = true;
-        },
-      }
-    );
+    this.ambientModeRadio = new RadioButtonGroup<BackgroundMode>(buttonContainer, {
+      name: 'ambient-mode',
+      options: ambientOptions,
+      selectedValue: 'normal',
+      label: 'Ambient Light',
+      onChange: (value) => {
+        this.backgroundMode = value;
+        this.uvMode = value === 'uv';
+        this.needsRender = true;
+      },
+    });
 
     // Debug report button (for layer order investigation)
-    const debugButton = document.createElement("button");
-    debugButton.textContent = "Generate Debug Report";
+    const debugButton = document.createElement('button');
+    debugButton.textContent = 'Generate Debug Report';
     debugButton.style.cssText = `
       margin: 5px;
       padding: 8px 12px;
@@ -713,7 +670,7 @@ export class SpectralDemo implements Demo {
     buttonContainer.appendChild(debugButton);
 
     // Spectral graph (top right corner)
-    const graphContainer = document.createElement("div");
+    const graphContainer = document.createElement('div');
     graphContainer.style.cssText = `
       position: absolute;
       top: 10px;
@@ -727,13 +684,13 @@ export class SpectralDemo implements Demo {
       height: 200,
       wavelengthMin: 100, // Extended to show band gap absorption
       wavelengthMax: 1000,
-      title: "Spectral Distribution (hover over canvas)",
+      title: 'Spectral Distribution (hover over canvas)',
     });
 
     // Create measurement indicator circle (shows averaging area)
     // This indicator shows where the spectrum is being sampled from
     // Radius of 5 matches the averageRadius parameter in the shader
-    this.measurementIndicator = document.createElement("div");
+    this.measurementIndicator = document.createElement('div');
     this.measurementIndicator.style.cssText = `
       position: absolute;
       width: 10px;
@@ -750,7 +707,7 @@ export class SpectralDemo implements Demo {
     this.uiScaleWrapper.appendChild(this.measurementIndicator);
 
     // Create profiling overlay (hidden by default, toggle with P key)
-    this.profilingOverlay = document.createElement("div");
+    this.profilingOverlay = document.createElement('div');
     this.profilingOverlay.style.cssText = `
       position: absolute;
       bottom: 10px;
@@ -821,7 +778,7 @@ export class SpectralDemo implements Demo {
     x: number,
     y: number
   ): ControlPanel {
-    const container = document.createElement("div");
+    const container = document.createElement('div');
     container.style.cssText = `
       position: absolute;
       left: ${x}px;
@@ -836,12 +793,12 @@ export class SpectralDemo implements Demo {
     });
 
     // Add depth/path length slider first (up to 10 meters)
-    panel.addSlider("depth", {
+    panel.addSlider('depth', {
       min: 0,
       max: 1000,
       value: shape.properties.pathLength,
       logarithmic: true,
-      label: "Depth (cm)",
+      label: 'Depth (cm)',
       onChange: (value) => {
         shape.properties.pathLength = value;
         this.needsRender = true;
@@ -852,7 +809,7 @@ export class SpectralDemo implements Demo {
     // Format as percentage with appropriate precision
     const formatPercent = (value: number): string => {
       const percent = value * 100;
-      if (percent < 0.001) return "0%";
+      if (percent < 0.001) return '0%';
       if (percent < 0.1) return `${percent.toFixed(3)}%`;
       if (percent < 1) return `${percent.toFixed(2)}%`;
       if (percent < 10) return `${percent.toFixed(1)}%`;
@@ -876,12 +833,12 @@ export class SpectralDemo implements Demo {
 
     // Temperature slider for emission and line broadening
     if (this.enableEmission) {
-      panel.addSlider("temperature", {
+      panel.addSlider('temperature', {
         min: 0,
         max: 13000,
         value: shape.properties.temperature,
         logarithmic: true,
-        label: "Temperature (K)",
+        label: 'Temperature (K)',
         onChange: (value) => {
           shape.properties.temperature = value;
           this.needsRender = true;
@@ -891,13 +848,13 @@ export class SpectralDemo implements Demo {
 
     // Pressure slider for gas materials (collisional broadening)
     // Only show for gas since pressure broadening is negligible in liquids/solids
-    if (shape.material.id === "gas") {
-      panel.addSlider("pressure", {
+    if (shape.material.id === 'gas') {
+      panel.addSlider('pressure', {
         min: 0,
         max: 50, // 0 = vacuum, 50 = high-pressure lamp conditions
         value: shape.properties.pressure,
         logarithmic: true,
-        label: "Pressure (atm)",
+        label: 'Pressure (atm)',
         onChange: (value) => {
           shape.properties.pressure = value;
           this.needsRender = true;
@@ -908,22 +865,22 @@ export class SpectralDemo implements Demo {
     // Scattering sliders for condensed materials (water/crystal, not gas)
     // Rayleigh scattering: small particles << wavelength (nanoparticles, blue sky effect)
     // Mie scattering: large particles ~ wavelength (microparticles, milk/fog effect)
-    if (shape.material.id === "water" || shape.material.id === "crystal") {
+    if (shape.material.id === 'water' || shape.material.id === 'crystal') {
       // Format particle count in billions
       const formatBillions = (value: number): string => {
         const billions = value / 1e9;
-        if (billions < 0.001) return "0";
+        if (billions < 0.001) return '0';
         if (billions < 1) return `${billions.toFixed(2)}B`;
         if (billions < 1000) return `${billions.toFixed(1)}B`;
         return `${(billions / 1000).toFixed(1)}T`; // Trillions
       };
 
-      panel.addSlider("smallParticles", {
+      panel.addSlider('smallParticles', {
         min: 0,
         max: 1e14, // particles/cm³ (100,000 billion)
         value: shape.smallParticleDensity,
         logarithmic: true,
-        label: "Nanoparticles (Rayleigh)",
+        label: 'Nanoparticles (Rayleigh)',
         formatValue: formatBillions,
         onChange: (value) => {
           shape.smallParticleDensity = value;
@@ -931,12 +888,12 @@ export class SpectralDemo implements Demo {
         },
       });
 
-      panel.addSlider("largeParticles", {
+      panel.addSlider('largeParticles', {
         min: 0,
         max: 1e10, // particles/cm³ (10 billion)
         value: shape.largeParticleDensity,
         logarithmic: true,
-        label: "Microparticles (Mie)",
+        label: 'Microparticles (Mie)',
         formatValue: formatBillions,
         onChange: (value) => {
           shape.largeParticleDensity = value;
@@ -961,7 +918,9 @@ export class SpectralDemo implements Demo {
         // Start loading
         this.masksLoadingPromise = (async () => {
           // Collect unique masks from shapes (filter out empty names - those use full coverage)
-          const shapeMasks = [...new Set(this.shapes.map((s) => s.maskName).filter(name => name !== ""))];
+          const shapeMasks = [
+            ...new Set(this.shapes.map((s) => s.maskName).filter((name) => name !== '')),
+          ];
 
           // Build mask list: include basic shapes, ambient pattern, and all shape masks
           // The MaskManager will automatically categorize them by resolution:
@@ -969,11 +928,11 @@ export class SpectralDemo implements Demo {
           // - Large (1280x720): circle-grid, diagonal-circle-grid
           // Note: Shapes without a maskName use full coverage (no texture needed)
           const allMasks: string[] = [
-            "circle",
-            "rectangle",
-            "triangle", // Basic shapes
-            "diagonal-circle-grid", // Ambient pattern
-            "circle-grid", // Background grid
+            'circle',
+            'rectangle',
+            'triangle', // Basic shapes
+            'diagonal-circle-grid', // Ambient pattern
+            'circle-grid', // Background grid
           ];
 
           // Add any additional masks from shapes that aren't in the list
@@ -986,7 +945,7 @@ export class SpectralDemo implements Demo {
           await renderer.loadMasks(allMasks);
           this.masksLoaded = true;
 
-          console.log("[SpectralDemo] Loaded masks:", allMasks);
+          console.log('[SpectralDemo] Loaded masks:', allMasks);
         })();
 
         await this.masksLoadingPromise;
@@ -1038,10 +997,7 @@ export class SpectralDemo implements Demo {
     const highResFluor = this.generateFluorescenceTextures(PLOT_SAMPLES);
     const lowResFluor = this.generateFluorescenceTextures(RENDER_SAMPLES);
 
-    renderer.setFluorescenceData(
-      highResFluor.excitationSpectra,
-      highResFluor.emissionSpectra
-    );
+    renderer.setFluorescenceData(highResFluor.excitationSpectra, highResFluor.emissionSpectra);
     if (renderer.setRenderingFluorescenceData) {
       renderer.setRenderingFluorescenceData(
         lowResFluor.excitationSpectra,
@@ -1103,16 +1059,16 @@ export class SpectralDemo implements Demo {
   protected async generateDebugReport(scene: GameScene): Promise<void> {
     const renderer = scene.getRenderer();
     if (!renderer) {
-      console.error("[DEBUG-REPORT] No renderer available");
+      console.error('[DEBUG-REPORT] No renderer available');
       return;
     }
 
-    console.log("[DEBUG-REPORT] Starting debug report generation...");
+    console.log('[DEBUG-REPORT] Starting debug report generation...');
 
     // Get the debug collector from the renderer
     const debugCollector = renderer.getDebugCollector();
     if (!debugCollector) {
-      console.error("[DEBUG-REPORT] Debug collector not available");
+      console.error('[DEBUG-REPORT] Debug collector not available');
       return;
     }
 
@@ -1138,13 +1094,11 @@ export class SpectralDemo implements Demo {
     console.log(`[DEBUG-REPORT] Shapes containing this pixel:`);
     for (const shape of foregroundShapes) {
       const inX =
-        debugCollector.testPixelX >= shape.x &&
-        debugCollector.testPixelX < shape.x + shape.width;
+        debugCollector.testPixelX >= shape.x && debugCollector.testPixelX < shape.x + shape.width;
       const inY =
-        debugCollector.testPixelY >= shape.y &&
-        debugCollector.testPixelY < shape.y + shape.height;
+        debugCollector.testPixelY >= shape.y && debugCollector.testPixelY < shape.y + shape.height;
       console.log(
-        `  - ${shape.name} (layer ${shape.layer}): ${inX && inY ? "YES" : "NO"} (pos: ${shape.x},${shape.y} size: ${shape.width}x${shape.height})`
+        `  - ${shape.name} (layer ${shape.layer}): ${inX && inY ? 'YES' : 'NO'} (pos: ${shape.x},${shape.y} size: ${shape.width}x${shape.height})`
       );
     }
 
@@ -1153,7 +1107,7 @@ export class SpectralDemo implements Demo {
     const originalBackground = this.backgroundMode;
 
     // Ensure dark mode for emission visibility
-    this.backgroundMode = "dark";
+    this.backgroundMode = 'dark';
 
     // Helper to run a single test
     const runTest = async (testName: string, hotLayer: number) => {
@@ -1188,7 +1142,7 @@ export class SpectralDemo implements Demo {
 
       // NOW start capture and render with clean state
       debugCollector.enabled = true;
-      debugCollector.startCapture(testName, "dark", true, shapeConfig);
+      debugCollector.startCapture(testName, 'dark', true, shapeConfig);
 
       // Trigger the render that will be captured
       await renderer.render();
@@ -1200,21 +1154,19 @@ export class SpectralDemo implements Demo {
     };
 
     // Test 1: Hot square (layer 1)
-    await runTest("hot_layer1_square", 1);
+    await runTest('hot_layer1_square', 1);
 
     // Test 2: Hot circle (layer 2)
-    await runTest("hot_layer2_circle", 2);
+    await runTest('hot_layer2_circle', 2);
 
     // Test 3: Hot triangle (layer 3) if exists
     const hasLayer3 = this.shapes.some((s) => s.layer === 3);
     if (hasLayer3) {
-      await runTest("hot_layer3_triangle", 3);
+      await runTest('hot_layer3_triangle', 3);
     }
 
     // Restore original state
-    this.shapes.forEach(
-      (s, i) => (s.properties.temperature = originalTemps[i])
-    );
+    this.shapes.forEach((s, i) => (s.properties.temperature = originalTemps[i]));
     this.backgroundMode = originalBackground;
     debugCollector.enabled = false;
     this.debugReportInProgress = false; // Allow auto-renders again
@@ -1225,35 +1177,27 @@ export class SpectralDemo implements Demo {
 
     // Generate and download report
     const reportJSON = debugCollector.generateReportJSON();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `layer-debug-report-${timestamp}.json`;
 
     // Download the file
-    const blob = new Blob([reportJSON], { type: "application/json" });
+    const blob = new Blob([reportJSON], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
 
     console.log(`[DEBUG-REPORT] Report saved: ${filename}`);
-    console.log(
-      "[DEBUG-REPORT] Reports generated:",
-      debugCollector.getAllReports().length
-    );
+    console.log('[DEBUG-REPORT] Reports generated:', debugCollector.getAllReports().length);
   }
 
   /**
    * Calculate total quantum yield for a shape based on its material and mole fractions
    */
   private calculateTotalQuantumYield(shape: ShapeConfig): number {
-    const fluorData = shape.material.generateFluorescenceTextures(
-      100,
-      1000,
-      100,
-      shape.properties
-    );
+    const fluorData = shape.material.generateFluorescenceTextures(100, 1000, 100, shape.properties);
     return fluorData.totalQuantumYield;
   }
 
@@ -1262,7 +1206,7 @@ export class SpectralDemo implements Demo {
    *
    * @param resolution - Number of wavelength samples (default 32 for rendering)
    */
-  private generateFluorescenceTextures(resolution: number = 32): {
+  private generateFluorescenceTextures(resolution = 32): {
     excitationSpectra: Float32Array[];
     emissionSpectra: Float32Array[];
   } {
@@ -1289,7 +1233,7 @@ export class SpectralDemo implements Demo {
    *
    * @param resolution - Number of wavelength samples (default 32 for rendering)
    */
-  private generateReflectionTextures(resolution: number = 32): Float32Array[] {
+  private generateReflectionTextures(resolution = 32): Float32Array[] {
     const reflectionSpectra: Float32Array[] = [];
 
     for (const shape of this.shapes) {

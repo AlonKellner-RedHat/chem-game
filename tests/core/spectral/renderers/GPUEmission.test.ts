@@ -8,10 +8,10 @@
  * 4. Emission scales correctly with temperature
  */
 
-import { describe, it, expect } from "vitest";
-import { BlackBodyEmission } from "../../../../src/core/spectral/emission/BlackBodyEmission";
+import { describe, expect, it } from 'vitest';
+import { BlackBodyEmission } from '../../../../src/core/spectral/emission/BlackBodyEmission';
 
-describe("GPU Emission - Planck Law Constants", () => {
+describe('GPU Emission - Planck Law Constants', () => {
   // These constants must match the GLSL shader exactly
   const PLANCK_H = 6.62607015e-34;
   const SPEED_C = 299792458.0;
@@ -21,7 +21,7 @@ describe("GPU Emission - Planck Law Constants", () => {
   const C2 = (PLANCK_H * SPEED_C) / BOLTZMANN_K;
   const DRAPER_POINT = 798.0;
 
-  it("should calculate D65 reference intensity correctly", () => {
+  it('should calculate D65 reference intensity correctly', () => {
     // D65 reference: raw Planck at 550nm, 6500K
     const wavelength = 550; // nm
     const temperature = 6500; // K
@@ -40,7 +40,7 @@ describe("GPU Emission - Planck Law Constants", () => {
     expect(d65RefIntensity).toBeGreaterThan(0);
   });
 
-  it("should match BlackBodyEmission.ts values", () => {
+  it('should match BlackBodyEmission.ts values', () => {
     const blackBody = new BlackBodyEmission();
 
     // Test at various wavelengths and temperatures
@@ -61,7 +61,7 @@ describe("GPU Emission - Planck Law Constants", () => {
     }
   });
 
-  it("should return zero emission below Draper point", () => {
+  it('should return zero emission below Draper point', () => {
     const blackBody = new BlackBodyEmission();
 
     expect(blackBody.isActive(DRAPER_POINT - 1)).toBe(false);
@@ -70,8 +70,8 @@ describe("GPU Emission - Planck Law Constants", () => {
   });
 });
 
-describe("GPU Emission - Kirchhoff Law", () => {
-  it("should calculate Kirchhoff emission correctly", () => {
+describe('GPU Emission - Kirchhoff Law', () => {
+  it('should calculate Kirchhoff emission correctly', () => {
     // Kirchhoff: emission = absorptivity × blackBodyIntensity
     // where absorptivity = 1 - transmission
     const blackBody = new BlackBodyEmission();
@@ -81,10 +81,7 @@ describe("GPU Emission - Kirchhoff Law", () => {
     const temperature = 3000;
 
     const absorptivity = 1 - transmission;
-    const blackBodyIntensity = blackBody.getIntensityAt(
-      wavelength,
-      temperature
-    );
+    const blackBodyIntensity = blackBody.getIntensityAt(wavelength, temperature);
     const expectedEmission = absorptivity * blackBodyIntensity;
 
     expect(absorptivity).toBe(0.7);
@@ -92,7 +89,7 @@ describe("GPU Emission - Kirchhoff Law", () => {
     expect(expectedEmission).toBeLessThan(blackBodyIntensity);
   });
 
-  it("should produce zero emission for fully transparent material", () => {
+  it('should produce zero emission for fully transparent material', () => {
     const blackBody = new BlackBodyEmission();
 
     const transmission = 1.0; // Fully transparent
@@ -100,17 +97,14 @@ describe("GPU Emission - Kirchhoff Law", () => {
     const temperature = 3000;
 
     const absorptivity = 1 - transmission;
-    const blackBodyIntensity = blackBody.getIntensityAt(
-      wavelength,
-      temperature
-    );
+    const blackBodyIntensity = blackBody.getIntensityAt(wavelength, temperature);
     const emission = absorptivity * blackBodyIntensity;
 
     expect(absorptivity).toBe(0);
     expect(emission).toBe(0);
   });
 
-  it("should produce maximum emission for fully opaque material", () => {
+  it('should produce maximum emission for fully opaque material', () => {
     const blackBody = new BlackBodyEmission();
 
     const transmission = 0.0; // Fully opaque
@@ -118,10 +112,7 @@ describe("GPU Emission - Kirchhoff Law", () => {
     const temperature = 3000;
 
     const absorptivity = 1 - transmission;
-    const blackBodyIntensity = blackBody.getIntensityAt(
-      wavelength,
-      temperature
-    );
+    const blackBodyIntensity = blackBody.getIntensityAt(wavelength, temperature);
     const emission = absorptivity * blackBodyIntensity;
 
     expect(absorptivity).toBe(1);
@@ -129,8 +120,8 @@ describe("GPU Emission - Kirchhoff Law", () => {
   });
 });
 
-describe("GPU Emission - Temperature Scaling", () => {
-  it("should increase emission with temperature", () => {
+describe('GPU Emission - Temperature Scaling', () => {
+  it('should increase emission with temperature', () => {
     const blackBody = new BlackBodyEmission();
     const wavelength = 550;
 
@@ -144,7 +135,7 @@ describe("GPU Emission - Temperature Scaling", () => {
     expect(emission10000K).toBeGreaterThan(emission5000K);
   });
 
-  it("should have peak emission in visible range for sun-like temperatures", () => {
+  it('should have peak emission in visible range for sun-like temperatures', () => {
     const blackBody = new BlackBodyEmission();
     const sunTemp = 5778; // Sun's surface temperature
 
@@ -157,7 +148,7 @@ describe("GPU Emission - Temperature Scaling", () => {
     expect(peakEmission).toBeGreaterThan(0.5); // At least 50% of D65 reference
   });
 
-  it("should have peak emission in red/IR for cooler objects", () => {
+  it('should have peak emission in red/IR for cooler objects', () => {
     const blackBody = new BlackBodyEmission();
     const coolTemp = 2000; // Hot iron
 
@@ -172,8 +163,8 @@ describe("GPU Emission - Temperature Scaling", () => {
   });
 });
 
-describe("GPU Emission - Integration with Transmission", () => {
-  it("should add emission to transmitted light", () => {
+describe('GPU Emission - Integration with Transmission', () => {
+  it('should add emission to transmitted light', () => {
     const blackBody = new BlackBodyEmission();
 
     // Simulate integration at one wavelength
@@ -187,19 +178,16 @@ describe("GPU Emission - Integration with Transmission", () => {
 
     // Emitted light from heated material
     const absorptivity = 1 - transmission;
-    const emitted =
-      absorptivity * blackBody.getIntensityAt(wavelength, temperature);
+    const emitted = absorptivity * blackBody.getIntensityAt(wavelength, temperature);
 
     // Total should be sum (not product)
     const total = transmitted + emitted;
 
     expect(total).toBeGreaterThan(transmitted);
-    expect(total).toBeLessThan(
-      transmitted + blackBody.getIntensityAt(wavelength, temperature)
-    );
+    expect(total).toBeLessThan(transmitted + blackBody.getIntensityAt(wavelength, temperature));
   });
 
-  it("should dominate at high temperatures", () => {
+  it('should dominate at high temperatures', () => {
     const blackBody = new BlackBodyEmission();
 
     const wavelength = 550;
@@ -209,15 +197,13 @@ describe("GPU Emission - Integration with Transmission", () => {
     // At 6500K (D65), emission should be comparable to background
     const transmitted = backgroundIntensity * transmission;
     const absorptivity = 1 - transmission;
-    const emitted6500 =
-      absorptivity * blackBody.getIntensityAt(wavelength, 6500);
+    const emitted6500 = absorptivity * blackBody.getIntensityAt(wavelength, 6500);
 
     // Emission at 6500K should be significant relative to transmitted
     expect(emitted6500).toBeGreaterThan(transmitted * 0.5);
 
     // At 10000K, emission should completely dominate
-    const emitted10000 =
-      absorptivity * blackBody.getIntensityAt(wavelength, 10000);
+    const emitted10000 = absorptivity * blackBody.getIntensityAt(wavelength, 10000);
     expect(emitted10000).toBeGreaterThan(emitted6500);
   });
 });

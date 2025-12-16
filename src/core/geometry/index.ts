@@ -5,9 +5,8 @@
  */
 
 export {
-  toPixelRect,
-  toNormalizedRect,
   type NormalizedRect,
   type PixelRect,
-} from "./CoordinateTransformer";
-
+  toNormalizedRect,
+  toPixelRect,
+} from './CoordinateTransformer';

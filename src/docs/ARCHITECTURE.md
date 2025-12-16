@@ -102,7 +102,7 @@ const config: SpectralPhysicsConfig = {
 class PhaserBridge {
   private gpuTexture: GPUTexture;
   private phaserTexture: Phaser.Textures.Texture;
-  
+
   // Copy GPU render result to Phaser texture
   async sync(): Promise<void> {
     // Read from GPU texture
@@ -126,7 +126,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // Normal RGB output for all pixels
   let rgb = computeRGB(id.xy);
   rgbOutput[id.x + id.y * width] = vec4(rgb, 1.0);
-  
+
   // If this is the sample point, output full spectrum
   if (id.xy == samplePoint) {
     for (var i = 0u; i < spectralResolution; i++) {
@@ -184,7 +184,7 @@ slider.bind(temperature);
 interface Demo {
   readonly name: string;
   readonly description?: string;
-  
+
   initialize(scene: GameScene): void;
   update?(scene: GameScene): void;
   cleanup(scene: GameScene): void;
@@ -268,7 +268,3 @@ const advancedConfig: SpectralDemoConfig = {
 - Remove unused code
 - Document differences
 - Performance optimization
-
-
-
-

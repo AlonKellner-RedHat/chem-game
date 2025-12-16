@@ -1,19 +1,19 @@
 /**
  * Mask Loader
- * 
+ *
  * Loads shape mask textures including:
  * - MSDF (Multi-Channel Signed Distance Field) for sharp edges
  * - Alpha (grayscale) for intensity modulation
- * 
+ *
  * Shape files are organized in subdirectories:
  *   /shapes/{shapeName}/msdf.png  - MSDF texture (optional)
  *   /shapes/{shapeName}/alpha.png - Alpha texture (optional)
- * 
+ *
  * Behavior when files are missing:
  * - No MSDF: All pixels are considered inside the shape (coverage = 1.0)
  * - No Alpha: Alpha value is 1.0 everywhere
  * - Neither: Full coverage with alpha 1.0
- * 
+ *
  * Textures are organized into arrays by resolution:
  * - Small array (256x256): Basic shapes like circle, rectangle, triangle
  * - Large array (1280x720): Screen-sized patterns like grids
@@ -53,8 +53,8 @@ export interface LoadedShape {
  */
 export interface MaskIndex {
   // MSDF texture indices
-  msdfArrayIndex: number;  // 0 = small (256x256), 1 = large (1280x720)
-  msdfLayerIndex: number;  // Layer within the array (-1 if no MSDF)
+  msdfArrayIndex: number; // 0 = small (256x256), 1 = large (1280x720)
+  msdfLayerIndex: number; // Layer within the array (-1 if no MSDF)
   // Alpha texture indices
   alphaArrayIndex: number; // 0 = small, 1 = large
   alphaLayerIndex: number; // Layer within the array (-1 if no alpha)
@@ -86,42 +86,35 @@ async function tryLoadImageBitmap(url: string): Promise<ImageBitmap | null> {
 /**
  * Create GPU texture from ImageBitmap
  */
-function createTexture(
-  device: GPUDevice,
-  imageBitmap: ImageBitmap,
-  label: string
-): GPUTexture {
+function createTexture(device: GPUDevice, imageBitmap: ImageBitmap, label: string): GPUTexture {
   const { width, height } = imageBitmap;
-  
+
   // Create texture with rgba8unorm format (standard for images)
   // Include COPY_SRC for copying into texture arrays
   const texture = device.createTexture({
     label,
     size: { width, height, depthOrArrayLayers: 1 },
     format: 'rgba8unorm',
-    usage: GPUTextureUsage.TEXTURE_BINDING | 
-           GPUTextureUsage.COPY_DST | 
-           GPUTextureUsage.COPY_SRC |
-           GPUTextureUsage.RENDER_ATTACHMENT,
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.COPY_SRC |
+      GPUTextureUsage.RENDER_ATTACHMENT,
   });
-  
+
   // Copy image data to texture
-  device.queue.copyExternalImageToTexture(
-    { source: imageBitmap },
-    { texture },
-    { width, height }
-  );
-  
+  device.queue.copyExternalImageToTexture({ source: imageBitmap }, { texture }, { width, height });
+
   return texture;
 }
 
 /**
  * Mask Manager - handles loading and caching shape textures (MSDF + Alpha)
- * 
+ *
  * Organizes textures into arrays by resolution for efficient GPU binding:
  * - Array 0 (small): 256x256 textures for basic shapes
  * - Array 1 (large): 1280x720 textures for screen-sized patterns
- * 
+ *
  * Maintains separate arrays for MSDF and alpha textures.
  */
 export class MaskManager {
@@ -131,20 +124,20 @@ export class MaskManager {
   private basePath: string;
   private metadata: MaskMetadata | null = null;
   private metadataPromise: Promise<MaskMetadata> | null = null;
-  
+
   // Track MSDF textures by resolution category
-  private smallMsdfs: string[] = [];  // Array index 0
-  private largeMsdfs: string[] = [];  // Array index 1
-  
+  private smallMsdfs: string[] = []; // Array index 0
+  private largeMsdfs: string[] = []; // Array index 1
+
   // Track Alpha textures by resolution category
-  private smallAlphas: string[] = [];  // Array index 0
-  private largeAlphas: string[] = [];  // Array index 1
-  
+  private smallAlphas: string[] = []; // Array index 0
+  private largeAlphas: string[] = []; // Array index 1
+
   // Resolution for each array
   private smallResolution = { width: 256, height: 256 };
   private largeResolution = { width: 1280, height: 720 };
 
-  constructor(device: GPUDevice, basePath: string = '/shapes') {
+  constructor(device: GPUDevice, basePath = '/shapes') {
     this.device = device;
     this.basePath = basePath;
   }
@@ -156,12 +149,12 @@ export class MaskManager {
     if (this.metadata) {
       return this.metadata;
     }
-    
+
     // If already loading, return existing promise
     if (this.metadataPromise) {
       return this.metadataPromise;
     }
-    
+
     this.metadataPromise = (async () => {
       const url = `${this.basePath}/metadata.json`;
       const response = await fetch(url);
@@ -171,12 +164,12 @@ export class MaskManager {
         this.metadata = { pxRange: 4.0, shapes: [] };
         return this.metadata;
       }
-      
+
       this.metadata = await response.json();
       console.log(`[MaskManager] Loaded metadata: pxRange=${this.metadata!.pxRange}`);
       return this.metadata!;
     })();
-    
+
     return this.metadataPromise;
   }
 
@@ -196,7 +189,7 @@ export class MaskManager {
     if (cached) {
       return cached;
     }
-    
+
     // Check if already loading
     const loadingPromise = this.loadingPromises.get(name);
     if (loadingPromise) {
@@ -206,7 +199,7 @@ export class MaskManager {
     // Start loading
     const promise = this.doLoadShape(name);
     this.loadingPromises.set(name, promise);
-    
+
     try {
       const result = await promise;
       return result;
@@ -214,13 +207,13 @@ export class MaskManager {
       this.loadingPromises.delete(name);
     }
   }
-  
+
   private async doLoadShape(name: string): Promise<LoadedShape> {
     // Ensure metadata is loaded
     const metadata = await this.loadMetadata();
-    
+
     // Get shape info from metadata
-    const shapeInfo = metadata.shapes.find(s => s.name === name);
+    const shapeInfo = metadata.shapes.find((s) => s.name === name);
     const width = shapeInfo?.width ?? this.smallResolution.width;
     const height = shapeInfo?.height ?? this.smallResolution.height;
     const expectedHasMsdf = shapeInfo?.hasMsdf ?? true;
@@ -229,8 +222,10 @@ export class MaskManager {
     // Load both files in parallel (from subdirectory)
     const msdfUrl = `${this.basePath}/${name}/msdf.png`;
     const alphaUrl = `${this.basePath}/${name}/alpha.png`;
-    
-    console.log(`[MaskManager] Loading shape: ${name} (expected: msdf=${expectedHasMsdf}, alpha=${expectedHasAlpha})`);
+
+    console.log(
+      `[MaskManager] Loading shape: ${name} (expected: msdf=${expectedHasMsdf}, alpha=${expectedHasAlpha})`
+    );
 
     const [msdfBitmap, alphaBitmap] = await Promise.all([
       expectedHasMsdf ? tryLoadImageBitmap(msdfUrl) : Promise.resolve(null),
@@ -240,11 +235,11 @@ export class MaskManager {
     // Create textures if bitmaps loaded
     let msdfTexture: GPUTexture | null = null;
     let alphaTexture: GPUTexture | null = null;
-    
+
     if (msdfBitmap) {
       msdfTexture = createTexture(this.device, msdfBitmap, `MSDF: ${name}`);
     }
-    
+
     if (alphaBitmap) {
       alphaTexture = createTexture(this.device, alphaBitmap, `Alpha: ${name}`);
     }
@@ -259,12 +254,12 @@ export class MaskManager {
       hasMsdf: msdfTexture !== null,
       hasAlpha: alphaTexture !== null,
     };
-    
+
     this.shapes.set(name, loaded);
 
     // Categorize by resolution and texture type
     const isSmall = this.isSmallMask(width, height);
-    
+
     if (loaded.hasMsdf) {
       if (isSmall) {
         if (!this.smallMsdfs.includes(name)) {
@@ -276,7 +271,7 @@ export class MaskManager {
         }
       }
     }
-    
+
     if (loaded.hasAlpha) {
       if (isSmall) {
         if (!this.smallAlphas.includes(name)) {
@@ -291,8 +286,8 @@ export class MaskManager {
 
     console.log(
       `[MaskManager] Loaded shape: ${name} (${width}x${height}, ` +
-      `category=${isSmall ? 'small' : 'large'}, ` +
-      `msdf=${loaded.hasMsdf}, alpha=${loaded.hasAlpha})`
+        `category=${isSmall ? 'small' : 'large'}, ` +
+        `msdf=${loaded.hasMsdf}, alpha=${loaded.hasAlpha})`
     );
     return loaded;
   }
@@ -303,20 +298,20 @@ export class MaskManager {
    */
   async loadMasks(names: string[]): Promise<LoadedShape[]> {
     // Load all shapes in parallel for speed
-    const results = await Promise.all(names.map(name => this.loadShape(name)));
-    
+    const results = await Promise.all(names.map((name) => this.loadShape(name)));
+
     // Rebuild category arrays in deterministic order based on request order
     // This ensures layer indices are predictable regardless of network timing
     this.smallMsdfs = [];
     this.largeMsdfs = [];
     this.smallAlphas = [];
     this.largeAlphas = [];
-    
+
     for (const name of names) {
       const shape = this.shapes.get(name);
       if (shape) {
         const isSmall = this.isSmallMask(shape.width, shape.height);
-        
+
         if (shape.hasMsdf) {
           if (isSmall) {
             if (!this.smallMsdfs.includes(name)) {
@@ -328,7 +323,7 @@ export class MaskManager {
             }
           }
         }
-        
+
         if (shape.hasAlpha) {
           if (isSmall) {
             if (!this.smallAlphas.includes(name)) {
@@ -342,12 +337,12 @@ export class MaskManager {
         }
       }
     }
-    
+
     console.log('[MaskManager] Small MSDFs (ordered):', this.smallMsdfs);
     console.log('[MaskManager] Large MSDFs (ordered):', this.largeMsdfs);
     console.log('[MaskManager] Small Alphas (ordered):', this.smallAlphas);
     console.log('[MaskManager] Large Alphas (ordered):', this.largeAlphas);
-    
+
     return results;
   }
 
@@ -370,7 +365,7 @@ export class MaskManager {
    */
   getSmallMsdfs(): GPUTexture[] {
     return this.smallMsdfs
-      .map(name => this.shapes.get(name)?.msdfTexture)
+      .map((name) => this.shapes.get(name)?.msdfTexture)
       .filter((t): t is GPUTexture => t !== null && t !== undefined);
   }
 
@@ -379,7 +374,7 @@ export class MaskManager {
    */
   getLargeMsdfs(): GPUTexture[] {
     return this.largeMsdfs
-      .map(name => this.shapes.get(name)?.msdfTexture)
+      .map((name) => this.shapes.get(name)?.msdfTexture)
       .filter((t): t is GPUTexture => t !== null && t !== undefined);
   }
 
@@ -388,7 +383,7 @@ export class MaskManager {
    */
   getSmallAlphas(): GPUTexture[] {
     return this.smallAlphas
-      .map(name => this.shapes.get(name)?.alphaTexture)
+      .map((name) => this.shapes.get(name)?.alphaTexture)
       .filter((t): t is GPUTexture => t !== null && t !== undefined);
   }
 
@@ -397,7 +392,7 @@ export class MaskManager {
    */
   getLargeAlphas(): GPUTexture[] {
     return this.largeAlphas
-      .map(name => this.shapes.get(name)?.alphaTexture)
+      .map((name) => this.shapes.get(name)?.alphaTexture)
       .filter((t): t is GPUTexture => t !== null && t !== undefined);
   }
 
@@ -422,9 +417,9 @@ export class MaskManager {
   getMaskIndex(name: string): MaskIndex {
     const shape = this.shapes.get(name);
     const isSmall = shape ? this.isSmallMask(shape.width, shape.height) : true;
-    
+
     // Default values (no textures)
-    let result: MaskIndex = {
+    const result: MaskIndex = {
       msdfArrayIndex: isSmall ? 0 : 1,
       msdfLayerIndex: -1,
       alphaArrayIndex: isSmall ? 0 : 1,
@@ -432,13 +427,13 @@ export class MaskManager {
       hasMsdf: false,
       hasAlpha: false,
     };
-    
+
     if (shape) {
       // Check MSDF indices
       if (shape.hasMsdf) {
         const smallMsdfIndex = this.smallMsdfs.indexOf(name);
         const largeMsdfIndex = this.largeMsdfs.indexOf(name);
-        
+
         if (smallMsdfIndex >= 0) {
           result.msdfArrayIndex = 0;
           result.msdfLayerIndex = smallMsdfIndex;
@@ -449,12 +444,12 @@ export class MaskManager {
           result.hasMsdf = true;
         }
       }
-      
+
       // Check alpha indices
       if (shape.hasAlpha) {
         const smallAlphaIndex = this.smallAlphas.indexOf(name);
         const largeAlphaIndex = this.largeAlphas.indexOf(name);
-        
+
         if (smallAlphaIndex >= 0) {
           result.alphaArrayIndex = 0;
           result.alphaLayerIndex = smallAlphaIndex;
@@ -466,7 +461,7 @@ export class MaskManager {
         }
       }
     }
-    
+
     return result;
   }
 

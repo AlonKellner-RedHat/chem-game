@@ -19,7 +19,7 @@
 ```typescript
 for (const { x, y } of pixelsToProcess) {
   // ... scattering filters ...
-  
+
   // Convert spectrum to RGB - EXPENSIVE!
   const xyz = CIE.spectrumToXYZ(spectrum, illuminant);  // ~1-2ms per pixel
   const rgb = CIE.xyzToSRGB(xyz);                       // ~0.1ms per pixel
@@ -124,4 +124,3 @@ for (const { x, y } of pixelsToProcess) {
 - **GPU rendering**: <50ms per frame (60 FPS achievable)
 - **Optimized CPU**: 200-500ms per frame (2-5 FPS, acceptable for non-real-time)
 - **Current CPU**: 3000-4000ms per frame (0.25 FPS, unacceptable)
-

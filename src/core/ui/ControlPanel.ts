@@ -1,10 +1,10 @@
 /**
  * Control Panel Component
- * 
+ *
  * Container for multiple sliders and controls.
  */
 
-import { SliderComponent, SliderOptions } from './SliderComponent';
+import { SliderComponent, type SliderOptions } from './SliderComponent';
 
 export interface ControlPanelOptions {
   /** Panel title */
@@ -28,14 +28,14 @@ export class ControlPanel {
   private contentArea: HTMLElement;
   private sliders: Map<string, SliderComponent> = new Map();
   private options: Required<ControlPanelOptions>;
-  
+
   constructor(parent: HTMLElement, options: ControlPanelOptions) {
     this.options = {
       title: options.title,
       width: options.width ?? 250,
       background: options.background ?? 'rgba(0, 0, 0, 0.75)',
     };
-    
+
     // Create container
     this.container = document.createElement('div');
     this.container.style.cssText = `
@@ -45,7 +45,7 @@ export class ControlPanel {
       width: ${this.options.width}px;
       font-family: sans-serif;
     `;
-    
+
     // Title
     const title = document.createElement('div');
     title.textContent = this.options.title;
@@ -58,14 +58,14 @@ export class ControlPanel {
       border-bottom: 1px solid #444;
     `;
     this.container.appendChild(title);
-    
+
     // Content area
     this.contentArea = document.createElement('div');
     this.container.appendChild(this.contentArea);
-    
+
     parent.appendChild(this.container);
   }
-  
+
   /**
    * Add a slider to the panel
    */
@@ -74,42 +74,42 @@ export class ControlPanel {
       ...options,
       width: this.options.width - 24, // Account for padding
     });
-    
+
     this.sliders.set(id, slider);
     return slider;
   }
-  
+
   /**
    * Get a slider by id
    */
   getSlider(id: string): SliderComponent | undefined {
     return this.sliders.get(id);
   }
-  
+
   /**
    * Set a slider value by id
    */
-  setSliderValue(id: string, value: number, notify: boolean = false): void {
+  setSliderValue(id: string, value: number, notify = false): void {
     const slider = this.sliders.get(id);
     if (slider) {
       slider.setValue(value, notify);
     }
   }
-  
+
   /**
    * Add a custom element
    */
   addElement(element: HTMLElement): void {
     this.contentArea.appendChild(element);
   }
-  
+
   /**
    * Set panel visibility
    */
   setVisible(visible: boolean): void {
     this.container.style.display = visible ? 'block' : 'none';
   }
-  
+
   /**
    * Destroy the panel
    */
@@ -121,5 +121,3 @@ export class ControlPanel {
     this.container.remove();
   }
 }
-
-

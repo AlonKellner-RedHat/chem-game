@@ -9,7 +9,7 @@ This document describes the available interactivity features in the Chemistry Si
 - **Action**: Toggles the debug view on/off
 - **Default State**: Debug view is **ON** by default
 - **System**: `toggle_debug_view_system`
-- **What it shows**: 
+- **What it shows**:
   - Entity count
   - FPS
   - Container information (type, position, layer count)
@@ -19,7 +19,7 @@ This document describes the available interactivity features in the Chemistry Si
 - **Mouse**: Left-click and drag
 - **Action**: Select and drag containers around the screen
 - **Selection Range**: Entities within 50 pixels of mouse click
-- **Systems**: 
+- **Systems**:
   - `update_input_system` - Tracks mouse position and drag state
   - `drag_drop_system` - Handles entity selection and position updates
 - **How it works**:
@@ -64,11 +64,11 @@ All interactivity features have integration tests:
 - **Debug View Tests**: `tests/integration/core/interaction_test.rs`
   - `f1_key_toggles_debug_view` (now tests D key)
   - `multiple_key_presses_handled`
-  
+
 - **Drag & Drop Tests**: `tests/integration/core/interaction_test.rs`
   - `mouse_drag_detection_logic`
   - `drag_drop_updates_entity_position`
-  
+
 - **WASM Interaction Tests**: `tests/integration/core/wasm_canvas_interaction_test.rs`
   - `wasm_canvas_should_be_interactive`
   - `input_systems_must_be_registered`
@@ -133,4 +133,3 @@ The systems run in this order (in `Update` schedule):
 - Container rotation
 - Snap-to-connection points
 - Undo/redo for container placement
-

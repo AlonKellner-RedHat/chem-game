@@ -1,6 +1,6 @@
 /**
  * WebGPU Context Manager
- * 
+ *
  * Handles WebGPU device/adapter initialization and resource management.
  */
 
@@ -26,31 +26,33 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
     console.warn('[WebGPU] Not supported in this browser');
     return null;
   }
-  
+
   // Request adapter
   const adapter = await navigator.gpu.requestAdapter({
     powerPreference: 'high-performance',
   });
-  
+
   if (!adapter) {
     console.warn('[WebGPU] No adapter available');
     return null;
   }
-  
+
   // Log adapter info (optional, may not be available in all browsers)
   console.log('[WebGPU] Adapter available');
-  
+
   // Check for required/optional features
   const requiredFeatures: GPUFeatureName[] = [];
-  
+
   // Check for float32-filterable support (needed for r32float texture sampling)
   if (adapter.features.has('float32-filterable')) {
     requiredFeatures.push('float32-filterable');
     console.log('[WebGPU] float32-filterable feature available');
   } else {
-    console.warn('[WebGPU] float32-filterable not available - spectral textures may not work correctly');
+    console.warn(
+      '[WebGPU] float32-filterable not available - spectral textures may not work correctly'
+    );
   }
-  
+
   // Check for shader-f16 support (for half-precision floats)
   if (adapter.features.has('shader-f16')) {
     requiredFeatures.push('shader-f16');
@@ -58,7 +60,7 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   } else {
     console.warn('[WebGPU] shader-f16 not available - using full precision');
   }
-  
+
   // Check for timestamp-query support (for GPU profiling)
   if (adapter.features.has('timestamp-query')) {
     requiredFeatures.push('timestamp-query');
@@ -66,7 +68,7 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   } else {
     console.warn('[WebGPU] timestamp-query not available - GPU profiling disabled');
   }
-  
+
   // Check adapter limits for storage buffers
   const adapterLimits = adapter.limits;
   // We need 10 storage buffers for the spectral pipeline (bindings 1-10)
@@ -75,21 +77,28 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   // spectralInput, spectralOutput, scatterSource, emissionAura, blurredTransmitted
   // Note: scatteringSigma was removed (unused - per-pixel sigma replaced by global atmospheric sigma)
   const requiredStorageBuffers = 10;
-  
+
   if (adapterLimits.maxStorageBuffersPerShaderStage < requiredStorageBuffers) {
-    console.warn(`[WebGPU] Adapter only supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers, but we need ${requiredStorageBuffers}`);
+    console.warn(
+      `[WebGPU] Adapter only supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers, but we need ${requiredStorageBuffers}`
+    );
   } else {
-    console.log(`[WebGPU] Adapter supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers per stage (need ${requiredStorageBuffers})`);
+    console.log(
+      `[WebGPU] Adapter supports ${adapterLimits.maxStorageBuffersPerShaderStage} storage buffers per stage (need ${requiredStorageBuffers})`
+    );
   }
-  
+
   // Request device with higher storage buffer limit
   const device = await adapter.requestDevice({
     requiredFeatures,
     requiredLimits: {
-      maxStorageBuffersPerShaderStage: Math.min(requiredStorageBuffers, adapterLimits.maxStorageBuffersPerShaderStage),
+      maxStorageBuffersPerShaderStage: Math.min(
+        requiredStorageBuffers,
+        adapterLimits.maxStorageBuffersPerShaderStage
+      ),
     },
   });
-  
+
   // Handle device loss
   device.lost.then((info) => {
     console.error('[WebGPU] Device lost:', info.message);
@@ -98,13 +107,13 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
       console.log('[WebGPU] Attempting device recovery...');
     }
   });
-  
+
   // Get preferred canvas format
   const format = navigator.gpu.getPreferredCanvasFormat();
-  
+
   console.log('[WebGPU] Initialized with format:', format);
   console.log('[WebGPU] Features enabled:', Array.from(device.features));
-  
+
   return { adapter, device, format };
 }
 
@@ -121,13 +130,13 @@ export function createStorageBuffer(
     usage,
     mappedAtCreation: true,
   });
-  
+
   if (data instanceof Float32Array) {
     new Float32Array(buffer.getMappedRange()).set(data);
   } else {
     new Uint32Array(buffer.getMappedRange()).set(data);
   }
-  
+
   buffer.unmap();
   return buffer;
 }
@@ -135,10 +144,7 @@ export function createStorageBuffer(
 /**
  * Create a uniform buffer
  */
-export function createUniformBuffer(
-  device: GPUDevice,
-  size: number
-): GPUBuffer {
+export function createUniformBuffer(device: GPUDevice, size: number): GPUBuffer {
   return device.createBuffer({
     size,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -148,10 +154,7 @@ export function createUniformBuffer(
 /**
  * Create a read-back buffer for GPU -> CPU transfer
  */
-export function createReadbackBuffer(
-  device: GPUDevice,
-  size: number
-): GPUBuffer {
+export function createReadbackBuffer(device: GPUDevice, size: number): GPUBuffer {
   return device.createBuffer({
     size,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
@@ -167,41 +170,36 @@ export async function readBufferData(
   size: number
 ): Promise<Float32Array> {
   const readbackBuffer = createReadbackBuffer(device, size);
-  
+
   const commandEncoder = device.createCommandEncoder();
   commandEncoder.copyBufferToBuffer(sourceBuffer, 0, readbackBuffer, 0, size);
   device.queue.submit([commandEncoder.finish()]);
-  
+
   await readbackBuffer.mapAsync(GPUMapMode.READ);
   const data = new Float32Array(readbackBuffer.getMappedRange().slice(0));
   readbackBuffer.unmap();
   readbackBuffer.destroy();
-  
+
   return data;
 }
 
 /**
  * Create a 1D texture from Float32Array
  */
-export function create1DTexture(
-  device: GPUDevice,
-  data: Float32Array,
-  label?: string
-): GPUTexture {
+export function create1DTexture(device: GPUDevice, data: Float32Array, label?: string): GPUTexture {
   const texture = device.createTexture({
     label,
     size: [data.length, 1, 1],
     format: 'r32float',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
-  
-  device.queue.writeTexture(
-    { texture },
-    data.buffer,
-    { bytesPerRow: data.length * 4 },
-    [data.length, 1, 1]
-  );
-  
+
+  device.queue.writeTexture({ texture }, data.buffer, { bytesPerRow: data.length * 4 }, [
+    data.length,
+    1,
+    1,
+  ]);
+
   return texture;
 }
 
@@ -223,4 +221,3 @@ export function createRenderTexture(
       GPUTextureUsage.COPY_SRC,
   });
 }
-

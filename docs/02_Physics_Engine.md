@@ -26,16 +26,16 @@ public const double EPSILON = 1e-9;           // Numerical precision threshold
 function PhysicsUpdate(deltaTime):
     // 1. Heat conduction (fast, stable)
     UpdateHeatConduction(deltaTime)
-    
+
     // 2. Pressure calculations (depends on temperature, composition)
     UpdatePressure()
-    
+
     // 3. Convection (depends on temperature gradient)
     UpdateConvection(deltaTime)
-    
+
     // 4. Transport dynamics (layer sorting, mixing)
     UpdateTransportDynamics(deltaTime)
-    
+
     // 5. Phase transitions (depends on P, T)
     UpdatePhaseTransitions(deltaTime)
 ```
@@ -77,7 +77,7 @@ function UpdateHeatConduction(deltaTime):
                 ContactArea(layer.N_OB, layer.N_OS),
                 Thickness(layer.N_OS)
             )
-            
+
             // Heat flow: N_OS → N_Mat
             q_OS_Mat = CalculateHeatFlow(
                 layer.N_OS.Temperature,
@@ -87,7 +87,7 @@ function UpdateHeatConduction(deltaTime):
                 ContactArea(layer.N_OS, layer.N_Mat),
                 layer.N_Mat.Thickness
             )
-            
+
             // Heat flow: N_Mat → N_IS
             q_Mat_IS = CalculateHeatFlow(
                 layer.N_Mat.Temperature,
@@ -97,7 +97,7 @@ function UpdateHeatConduction(deltaTime):
                 ContactArea(layer.N_Mat, layer.N_IS),
                 layer.N_IS.Thickness
             )
-            
+
             // Heat flow: N_IS → N_IB
             q_IS_IB = CalculateHeatFlow(
                 layer.N_IS.Temperature,
@@ -107,7 +107,7 @@ function UpdateHeatConduction(deltaTime):
                 ContactArea(layer.N_IS, layer.N_IB),
                 CalculateEffectiveThickness(layer.N_IS)
             )
-            
+
             // Update temperatures (conserving energy)
             UpdateNodeTemperature(layer.N_OB, -q_OB_OS, deltaTime)
             UpdateNodeTemperature(layer.N_OS, q_OB_OS - q_OS_Mat, deltaTime)
@@ -140,14 +140,14 @@ function CalculateConvection(layer, container):
     // Find temperature at bottom and top of layer
     T_bottom = GetTemperatureAtHeight(layer.BaseHeight)
     T_top = GetTemperatureAtHeight(layer.BaseHeight + layer.Height)
-    
+
     deltaT = T_bottom - T_top
-    
+
     if deltaT > 0:  // Bottom hotter than top
         // Unstable: convection occurs
         // Increase mixing factor (rolling boil)
         rayleighNumber = CalculateRayleighNumber(deltaT, layer.Height, layer.Density, layer.Viscosity)
-        
+
         if rayleighNumber > CRITICAL_RAYLEIGH:
             // Turbulent convection
             layer.MixingFactor = 1.0 + (rayleighNumber / CRITICAL_RAYLEIGH) * 0.5
@@ -186,20 +186,20 @@ Where:
 ```pseudocode
 function CalculateMixingRate(layer, agitation):
     baseRate = 0.0  // No mixing by default
-    
+
     // Agitation contribution
     if agitation > 0:
         baseRate += agitation * AGITATION_COEFFICIENT
-    
+
     // Convection contribution
     if layer.MixingFactor > 1.0:
         baseRate += (layer.MixingFactor - 1.0) * CONVECTION_COEFFICIENT
-    
+
     // Density-driven mixing (for miscible liquids)
     if layer.Type == Gradient:
         densityGradient = CalculateDensityGradient(layer)
         baseRate += densityGradient * DIFFUSION_COEFFICIENT
-    
+
     return Clamp(baseRate, 0.0, MAX_MIXING_RATE)
 ```
 
@@ -235,10 +235,10 @@ function DeterminePhase(composition, pressure, temperature):
     // Check if above critical point
     if temperature > composition.CriticalTemperature AND pressure > composition.CriticalPressure:
         return Phase.Supercritical
-    
+
     // Calculate vapor pressure
     vaporPressure = CalculateAntoine(composition, temperature)
-    
+
     if pressure < vaporPressure:
         return Phase.Gas
     else:
@@ -269,15 +269,15 @@ During phase transitions, temperature plateaus while latent heat is absorbed/rel
 ```pseudocode
 function UpdatePhaseTransition(node, deltaTime):
     currentPhase = DeterminePhase(node.Composition, node.Pressure, node.Temperature)
-    
+
     if currentPhase != node.State:
         // Phase transition occurring
         latentHeat = GetLatentHeat(node.Composition, node.State, currentPhase)
         heatRequired = node.Mass * latentHeat
-        
+
         // Calculate heat available
         heatAvailable = CalculateHeatFlowIntoNode(node) * deltaTime
-        
+
         if heatAvailable >= heatRequired:
             // Complete transition
             node.State = currentPhase
@@ -325,7 +325,7 @@ function HandleSupercritical(node):
         node.Density = InterpolateDensity(node.Temperature, node.Pressure, criticalPoint)
         node.Viscosity = CalculateSupercriticalViscosity(node.Temperature, node.Pressure)
         node.Diffusivity = CalculateSupercriticalDiffusivity(node.Temperature, node.Pressure)
-        
+
         // Enhanced solvent properties
         node.SolventPower = CalculateSolventPower(node.Temperature, node.Pressure)
 ```
@@ -353,16 +353,16 @@ function CalculatePressure(layer, container):
     // Gas pressure at surface
     surfaceLayer = GetSurfaceLayer(container)
     P_gas = CalculateGasPressure(surfaceLayer)
-    
+
     // Hydrostatic pressure
     depth = layer.BaseHeight - surfaceLayer.BaseHeight
     rho = layer.Density
-    
+
     P_hydrostatic = rho * GRAVITY * depth
-    
+
     // Total pressure
     layer.Pressure = P_gas + P_hydrostatic
-    
+
     // Update all nodes in layer
     for each node in [N_IB, N_IS, N_Mat, N_OS, N_OB]:
         node.Pressure = layer.Pressure
@@ -376,10 +376,10 @@ function CalculateGasPressure(layer):
     gasMoles = GetGasMoles(layer.Composition)
     volume = layer.N_IB.Volume  // Gas occupies bulk volume
     temperature = layer.Temperature
-    
+
     R = 8.314  // Gas constant (J/(mol·K))
     P = (gasMoles * R * temperature) / volume
-    
+
     return P
 ```
 
@@ -392,22 +392,22 @@ Solid objects displace fluid, raising the liquid level.
 ```pseudocode
 function CalculateDisplacement(solidObject, container):
     totalDisplacedVolume = 0.0
-    
+
     for each layer in solidObject.IntersectingLayers:
         // Calculate intersection volume
         intersectionHeight = CalculateIntersectionHeight(solidObject, layer)
         objectCrossSection = CalculateCrossSection(solidObject, layer.BaseHeight)
         displacedVolume = objectCrossSection * intersectionHeight
         totalDisplacedVolume += displacedVolume
-        
+
         // Update layer (dilute with "displaced" fluid)
         // This creates a pressure increase
         UpdateLayerForDisplacement(layer, displacedVolume)
-    
+
     // Raise global liquid level
     levelIncrease = totalDisplacedVolume / container.Geometry.CrossSectionalArea(container.CurrentLiquidLevel)
     container.CurrentLiquidLevel += levelIncrease
-    
+
     return totalDisplacedVolume
 ```
 
@@ -418,7 +418,7 @@ function CalculateBuoyantForce(solidObject, container):
     displacedVolume = CalculateDisplacement(solidObject, container)
     fluidDensity = GetAverageDensity(solidObject.IntersectingLayers)
     buoyantForce = displacedVolume * fluidDensity * GRAVITY
-    
+
     return buoyantForce
 ```
 
@@ -438,13 +438,13 @@ Layers attempt to order by density (Gas > Oil > Water > Solid).
 function SortLayersByDensity(container):
     // Sort layers by average density (ascending: lightest on top)
     sortedLayers = Sort(container.Layers, key: layer => layer.Density)
-    
+
     // Recalculate base heights
     currentHeight = 0.0
     for each layer in sortedLayers:
         layer.BaseHeight = currentHeight
         currentHeight += layer.Height
-    
+
     container.Layers = sortedLayers
 ```
 
@@ -455,7 +455,7 @@ function UpdateLayerSorting(container, deltaTime):
     // Only sort if significant density differences exist
     for i in range(0, container.Layers.Count - 1):
         densityDiff = container.Layers[i+1].Density - container.Layers[i].Density
-        
+
         if densityDiff < -DENSITY_THRESHOLD:  // Lower layer is lighter
             // Unstable: trigger sorting
             SortLayersByDensity(container)
@@ -487,9 +487,9 @@ function UpdateMiscibleGradient(layer, deltaTime):
         // Height increases with mixing rate
         baseHeight = MIN_GRADIENT_HEIGHT
         mixingContribution = (layer.MixingRate / layer.DensityDelta) * deltaTime
-        
+
         layer.Height = baseHeight + mixingContribution
-        
+
         // Check merge threshold (TBD: exact value)
         if layer.Height > MERGE_THRESHOLD:
             MergeLayers(layer, adjacentLayers)
@@ -516,13 +516,13 @@ function ApplyAgitation(layer, agitationLevel):
     // Agitation increases mixing rate
     baseMixingRate = layer.MixingRate
     agitationContribution = agitationLevel * AGITATION_MIXING_COEFFICIENT
-    
+
     layer.MixingRate = baseMixingRate + agitationContribution
-    
+
     // For gradient layers, agitation increases height
     if layer.Type == Gradient:
         layer.Height += agitationContribution * deltaTime
-    
+
     // Check for emulsion (full merge)
     if layer.Height > EMULSION_THRESHOLD:
         CreateEmulsion(layer, adjacentLayers)
@@ -535,7 +535,7 @@ function CreateEmulsion(gradientLayer, adjacentLayers):
     // Combine layers into single homogeneous layer
     newComposition = BlendCompositions(gradientLayer, adjacentLayers)
     newLayer = CreatePureLayer(newComposition)
-    
+
     // Replace gradient and adjacent layers with emulsion
     ReplaceLayers([gradientLayer] + adjacentLayers, newLayer)
 ```
@@ -552,7 +552,7 @@ public class PhaseLookupTable
 {
     private Dictionary<CompositionId, CriticalPoint> criticalPoints;
     private Dictionary<CompositionId, AntoineConstants> antoineConstants;
-    
+
     public Phase LookupPhase(CompositionId id, double pressure, double temperature)
     {
         // Fast lookup instead of calculation
@@ -604,4 +604,3 @@ public class PhaseLookupTable
 - **Chemistry Engine** ([03_Chemistry_Engine.md](03_Chemistry_Engine.md)): Temperature and pressure affect reaction rates
 - **Surface Physics** ([04_Surface_Physics.md](04_Surface_Physics.md)): Heat conduction through N_Mat affects N_IS
 - **Visualization** ([06_Visualization.md](06_Visualization.md)): Temperature affects boid velocity
-

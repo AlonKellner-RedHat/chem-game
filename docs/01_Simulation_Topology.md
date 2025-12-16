@@ -47,7 +47,7 @@ public struct Geometry
     public double Height;           // Total height (meters)
     public double WallThickness;    // Material thickness (meters)
     public MaterialType Material;   // Glass, Copper, etc.
-    
+
     // Calculated properties
     public double Volume => CalculateVolume();
     public double SurfaceArea => CalculateSurfaceArea();
@@ -97,11 +97,11 @@ public struct LayerEntity : IComponentData
     public double Density;             // Average density (kg/m³)
     public double Viscosity;           // Dynamic viscosity (Pa·s)
     public double SurfaceTension;      // Surface tension (N/m)
-    
+
     // For gradient layers
     public double MixingRate;          // Rate of mixing (1/s)
     public double DensityDelta;        // Density difference driving separation
-    
+
     // For transient layers
     public double Velocity;            // Vertical velocity (m/s)
     public TransientType TransientType; // Bubble, Precipitate, etc.
@@ -128,17 +128,17 @@ public enum LayerType
 - Transition zone between two immiscible or slowly mixing liquids
 - Height varies based on `MixingRate` vs `DensityDelta`
 - **Height Calculation Formula:**
-  
+
   ```
   GradientHeight = BaseHeight + (MixingRate / DensityDelta) * TimeStep
   ```
-  
+
   Where:
   - `BaseHeight` = minimum interface thickness (typically 1-5 mm)
   - `MixingRate` = rate of mixing (increases with agitation)
   - `DensityDelta` = density difference between layers (kg/m³)
   - `TimeStep` = simulation timestep (seconds)
-  
+
 - For immiscible liquids (Oil/Water): `MixingRate ≈ 0` → Zero-height gradient (sharp line)
 - For miscible liquids (Syrup/Water): `MixingRate > 0` → Tall gradient (slow mixing)
 - When `GradientHeight` exceeds layer merge threshold (TBD), layers combine
@@ -170,10 +170,10 @@ function UpdateLayerHeights(container):
     for each layer in container.Layers:
         layerVolume = CalculateLayerVolume(layer, container.Geometry)
         totalVolume += layerVolume
-    
+
     currentLevel = VolumeToHeight(totalVolume, container.Geometry)
     container.CurrentLiquidLevel = currentLevel
-    
+
     // Adjust gradient layers based on mixing
     for each gradientLayer in container.Layers where Type == Gradient:
         densityDelta = CalculateDensityDelta(gradientLayer, adjacentLayers)
@@ -240,21 +240,21 @@ Volume = WallThickness × SurfaceArea
 function CalculateNodeVolumes(layer, container):
     layerVolume = CalculateLayerVolume(layer, container)
     surfaceArea = CalculateSurfaceArea(layer, container)
-    
+
     // N_IS: Inner surface film
     nIS.Thickness = CalculateSurfaceThickness(layer.Viscosity, layer.SurfaceTension)
     nIS.Volume = surfaceArea * nIS.Thickness
-    
+
     // N_Mat: Material wall
     nMat.Volume = container.Geometry.WallThickness * surfaceArea
-    
+
     // N_OS: Outer surface
     nOS.Thickness = CalculateOuterSurfaceThickness(container, environment)
     nOS.Volume = CalculateOuterSurfaceArea(container) * nOS.Thickness
-    
+
     // N_IB: Inner bulk (remaining volume)
     nIB.Volume = layerVolume - nIS.Volume - nMat.Volume
-    
+
     // N_OB: Outer bulk (environment)
     nOB.Volume = CalculateEnvironmentVolume(container)  // Typically infinite/very large
 ```
@@ -290,7 +290,7 @@ public struct SolidObject : IComponentData
     public double Height;           // Object height
     public MaterialType Material;
     public double ThermalConductivity;
-    
+
     // Calculated: which layers this object intersects
     public List<EntityId> IntersectingLayers;
 }
@@ -305,16 +305,16 @@ function CalculateIntersections(solidObject, container):
     intersectingLayers = []
     objectTop = solidObject.BaseHeight + solidObject.Height
     objectBottom = solidObject.BaseHeight
-    
+
     for each layer in container.Layers:
         layerTop = layer.BaseHeight + layer.Height
         layerBottom = layer.BaseHeight
-        
+
         if (objectBottom < layerTop) AND (objectTop > layerBottom):
             intersectingLayers.Add(layer.Id)
             // Displace fluid in this layer
             DisplaceFluid(layer, solidObject, container)
-    
+
     solidObject.IntersectingLayers = intersectingLayers
 ```
 
@@ -328,10 +328,10 @@ function DisplaceFluid(layer, solidObject, container):
     intersectionHeight = Min(layerTop, objectTop) - Max(layerBottom, objectBottom)
     objectCrossSection = CalculateCrossSection(solidObject, layer.BaseHeight)
     displacedVolume = objectCrossSection * intersectionHeight
-    
+
     // Raise liquid level
     container.CurrentLiquidLevel += displacedVolume / container.Geometry.CrossSectionalArea(layer.BaseHeight)
-    
+
     // Update layer composition (dilute with "displaced" fluid)
     // This is handled by the physics engine
 ```
@@ -344,14 +344,14 @@ Solid objects conduct heat between layers:
 function ApplyThermalBridge(solidObject, container):
     if solidObject.IntersectingLayers.Count < 2:
         return  // No bridge if only one layer
-    
+
     // Calculate heat flow through object
     topLayer = GetTopLayer(solidObject.IntersectingLayers)
     bottomLayer = GetBottomLayer(solidObject.IntersectingLayers)
-    
+
     deltaT = topLayer.Temperature - bottomLayer.Temperature
     heatFlow = solidObject.ThermalConductivity * solidObject.CrossSection * deltaT / solidObject.Height
-    
+
     // Distribute heat (handled by physics engine)
     TransferHeat(topLayer, bottomLayer, heatFlow)
 ```
@@ -434,11 +434,11 @@ function CalculateFlowSplit(sourceContainer, connections):
     for each connection in connections:
         connection.Resistance = CalculateResistance(connection, fluidViscosity)
         totalResistance += 1.0 / connection.Resistance
-    
+
     for each connection in connections:
         conductance = 1.0 / connection.Resistance
         flowFraction = conductance / totalResistance
-        
+
         deltaP = CalculatePressureDifference(sourceContainer, connection.TargetContainer)
         connection.Flow = flowFraction * k * deltaP / connection.Resistance
 ```
@@ -495,4 +495,3 @@ For large numbers of containers, consider spatial partitioning:
 - **Chemistry Engine** ([03_Chemistry_Engine.md](03_Chemistry_Engine.md)): Reactions occur in N_IB or N_IS nodes
 - **Surface Physics** ([04_Surface_Physics.md](04_Surface_Physics.md)): Manages N_IS thickness and properties
 - **Visualization** ([06_Visualization.md](06_Visualization.md)): Renders layers and nodes in 5-layer shader
-

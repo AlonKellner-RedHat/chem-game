@@ -1,6 +1,6 @@
 /**
  * Spectral Graph Component
- * 
+ *
  * Displays a spectrum as a line graph with rainbow color band.
  * Includes zoom/pan controls via a range slider.
  */
@@ -30,8 +30,10 @@ export interface SpectralGraphOptions {
  * Convert wavelength to approximate RGB color
  */
 function wavelengthToRGB(wavelength: number): [number, number, number] {
-  let r = 0, g = 0, b = 0;
-  
+  let r = 0,
+    g = 0,
+    b = 0;
+
   if (wavelength >= 380 && wavelength < 440) {
     r = -(wavelength - 440) / (440 - 380);
     g = 0;
@@ -57,17 +59,17 @@ function wavelengthToRGB(wavelength: number): [number, number, number] {
     g = 0;
     b = 0;
   }
-  
+
   // Intensity correction at edges
   let intensity = 1;
   if (wavelength >= 380 && wavelength < 420) {
-    intensity = 0.3 + 0.7 * (wavelength - 380) / (420 - 380);
+    intensity = 0.3 + (0.7 * (wavelength - 380)) / (420 - 380);
   } else if (wavelength > 700 && wavelength <= 780) {
-    intensity = 0.3 + 0.7 * (780 - wavelength) / (780 - 700);
+    intensity = 0.3 + (0.7 * (780 - wavelength)) / (780 - 700);
   } else if (wavelength > 780 || wavelength < 380) {
     intensity = 0;
   }
-  
+
   return [
     Math.round(r * intensity * 255),
     Math.round(g * intensity * 255),
@@ -86,22 +88,22 @@ export class SpectralGraph {
   private rangeSlider: RangeSlider | null = null;
   private magnitudeSlider: HTMLInputElement | null = null;
   private magnitudeDisplay: HTMLSpanElement | null = null;
-  
+
   private spectrum: Float32Array | null = null;
   private isLocked = false;
   private lockedX: number | null = null;
   private lockedY: number | null = null;
-  
+
   // View range (what's currently displayed, can be different from data range)
   private viewMin: number;
   private viewMax: number;
-  
+
   // Global max for normalization (from renderer)
   private globalMax: number | null = null;
-  
+
   // Magnitude multiplier for Y-axis scaling (logarithmic: 0.1x to 100x)
-  private magnitudeMultiplier: number = 1.0;
-  
+  private magnitudeMultiplier = 1.0;
+
   constructor(parent: HTMLElement, options: SpectralGraphOptions) {
     this.options = {
       width: options.width,
@@ -113,11 +115,11 @@ export class SpectralGraph {
       enableZoom: options.enableZoom ?? true,
       enableMagnitude: options.enableMagnitude ?? true,
     };
-    
+
     // Initialize view range to full data range
     this.viewMin = this.options.wavelengthMin;
     this.viewMax = this.options.wavelengthMax;
-    
+
     // Create container
     this.container = document.createElement('div');
     this.container.style.cssText = `
@@ -125,7 +127,7 @@ export class SpectralGraph {
       border-radius: 8px;
       padding: 8px;
     `;
-    
+
     // Title
     const title = document.createElement('div');
     title.textContent = this.options.title;
@@ -136,11 +138,11 @@ export class SpectralGraph {
       margin-bottom: 4px;
     `;
     this.container.appendChild(title);
-    
+
     // Create canvas row (magnitude slider + canvas)
     const canvasRow = document.createElement('div');
     canvasRow.style.cssText = 'display: flex; align-items: stretch;';
-    
+
     // Add vertical magnitude slider on the left if enabled
     if (this.options.enableMagnitude) {
       const magContainer = document.createElement('div');
@@ -152,13 +154,13 @@ export class SpectralGraph {
         padding-right: 4px;
         width: 24px;
       `;
-      
+
       // Magnitude display at top
       this.magnitudeDisplay = document.createElement('span');
       this.magnitudeDisplay.textContent = '1×';
       this.magnitudeDisplay.style.cssText = 'color: #fff; font-size: 9px; margin-bottom: 2px;';
       magContainer.appendChild(this.magnitudeDisplay);
-      
+
       // Vertical slider (rotated)
       // Logarithmic slider: -2 to 4 maps to 0.01x to 10,000x
       this.magnitudeSlider = document.createElement('input');
@@ -176,39 +178,39 @@ export class SpectralGraph {
         accent-color: #4a90e2;
         margin: 0;
       `;
-      
+
       this.magnitudeSlider.addEventListener('input', () => {
-        const logValue = parseFloat(this.magnitudeSlider!.value);
+        const logValue = Number.parseFloat(this.magnitudeSlider!.value);
         this.magnitudeMultiplier = Math.pow(10, logValue);
         this.updateMagnitudeDisplay();
         this.render();
       });
-      
+
       magContainer.appendChild(this.magnitudeSlider);
       canvasRow.appendChild(magContainer);
     }
-    
+
     // Create canvas
     this.canvas = document.createElement('canvas');
     this.canvas.width = this.options.width;
     this.canvas.height = this.options.height;
     this.canvas.style.display = 'block';
-    
+
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
       throw new Error('Failed to get canvas context');
     }
     this.ctx = ctx;
-    
+
     canvasRow.appendChild(this.canvas);
     this.container.appendChild(canvasRow);
-    
+
     // Add range slider for zoom/pan if enabled
     if (this.options.enableZoom) {
       const sliderContainer = document.createElement('div');
       sliderContainer.style.cssText = 'margin-top: 4px;';
       this.container.appendChild(sliderContainer);
-      
+
       this.rangeSlider = new RangeSlider(sliderContainer, {
         min: this.options.wavelengthMin,
         max: this.options.wavelengthMax,
@@ -225,7 +227,7 @@ export class SpectralGraph {
         },
       });
     }
-    
+
     // Add control buttons
     const buttonRow = document.createElement('div');
     buttonRow.style.cssText = `
@@ -233,7 +235,7 @@ export class SpectralGraph {
       gap: 8px;
       margin-top: 6px;
     `;
-    
+
     const buttonStyle = `
       padding: 4px 10px;
       font-size: 11px;
@@ -244,7 +246,7 @@ export class SpectralGraph {
       cursor: pointer;
       transition: background 0.15s;
     `;
-    
+
     // "Zoom Visible" button - sets wavelength range to visible spectrum
     const zoomVisibleBtn = document.createElement('button');
     zoomVisibleBtn.textContent = 'Zoom Visible';
@@ -259,7 +261,7 @@ export class SpectralGraph {
       this.zoomToVisible();
     });
     buttonRow.appendChild(zoomVisibleBtn);
-    
+
     // "Normalize" button - adjusts magnitude to fit max value in view
     const normalizeBtn = document.createElement('button');
     normalizeBtn.textContent = 'Normalize';
@@ -274,7 +276,7 @@ export class SpectralGraph {
       this.normalizeToView();
     });
     buttonRow.appendChild(normalizeBtn);
-    
+
     // "Reset" button - resets wavelength range and magnitude to defaults
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'Reset';
@@ -289,15 +291,15 @@ export class SpectralGraph {
       this.resetAll();
     });
     buttonRow.appendChild(resetBtn);
-    
+
     this.container.appendChild(buttonRow);
-    
+
     parent.appendChild(this.container);
-    
+
     // Initial render
     this.render();
   }
-  
+
   /**
    * Update spectrum data
    */
@@ -305,7 +307,7 @@ export class SpectralGraph {
     this.spectrum = spectrum;
     this.render();
   }
-  
+
   /**
    * Set the data wavelength range (updates slider bounds)
    */
@@ -314,42 +316,42 @@ export class SpectralGraph {
     this.options.wavelengthMax = max;
     this.viewMin = min;
     this.viewMax = max;
-    
+
     if (this.rangeSlider) {
       this.rangeSlider.setRange(min, max, false);
     }
-    
+
     this.render();
   }
-  
+
   /**
    * Set the view range (zoom level)
    */
   setViewRange(min: number, max: number): void {
     this.viewMin = Math.max(this.options.wavelengthMin, min);
     this.viewMax = Math.min(this.options.wavelengthMax, max);
-    
+
     if (this.rangeSlider) {
       this.rangeSlider.setRange(this.viewMin, this.viewMax, false);
     }
-    
+
     this.render();
   }
-  
+
   /**
    * Reset zoom to full range
    */
   resetZoom(): void {
     this.viewMin = this.options.wavelengthMin;
     this.viewMax = this.options.wavelengthMax;
-    
+
     if (this.rangeSlider) {
       this.rangeSlider.reset();
     }
-    
+
     this.render();
   }
-  
+
   /**
    * Reset all controls to initial values (wavelength range and magnitude)
    */
@@ -357,38 +359,38 @@ export class SpectralGraph {
     // Reset wavelength range to full data range
     this.viewMin = this.options.wavelengthMin;
     this.viewMax = this.options.wavelengthMax;
-    
+
     if (this.rangeSlider) {
       this.rangeSlider.reset();
     }
-    
+
     // Reset magnitude to 1x
     this.magnitudeMultiplier = 1.0;
     if (this.magnitudeSlider) {
       this.magnitudeSlider.value = '0'; // 10^0 = 1x
     }
     this.updateMagnitudeDisplay();
-    
+
     this.render();
   }
-  
+
   /**
    * Zoom to visible spectrum range (380-700nm)
    */
   zoomToVisible(): void {
     const visMin = Math.max(380, this.options.wavelengthMin);
     const visMax = Math.min(700, this.options.wavelengthMax);
-    
+
     this.viewMin = visMin;
     this.viewMax = visMax;
-    
+
     if (this.rangeSlider) {
       this.rangeSlider.setRange(visMin, visMax, true);
     }
-    
+
     this.render();
   }
-  
+
   /**
    * Normalize magnitude so the max value in current view fills the plot
    */
@@ -396,10 +398,10 @@ export class SpectralGraph {
     if (!this.spectrum || this.spectrum.length === 0) {
       return;
     }
-    
+
     const { wavelengthMin, wavelengthMax } = this.options;
     const dataStep = (wavelengthMax - wavelengthMin) / (this.spectrum.length - 1);
-    
+
     // Find max value in current view range
     let maxVal = 0;
     for (let i = 0; i < this.spectrum.length; i++) {
@@ -408,25 +410,23 @@ export class SpectralGraph {
         maxVal = Math.max(maxVal, this.spectrum[i]);
       }
     }
-    
+
     if (maxVal <= 0) {
       return; // No data to normalize
     }
-    
+
     // Calculate the normalization factor
     // If using globalMax, we need to account for that
-    const normFactor = this.globalMax !== null && this.globalMax > 0 
-      ? this.globalMax 
-      : maxVal;
-    
+    const normFactor = this.globalMax !== null && this.globalMax > 0 ? this.globalMax : maxVal;
+
     // Calculate multiplier needed to make maxVal reach the top (with small margin)
     const targetHeight = 0.95; // 95% of graph height
-    const newMultiplier = (targetHeight / (maxVal / normFactor));
-    
+    const newMultiplier = targetHeight / (maxVal / normFactor);
+
     // Clamp to valid range and set
     this.setMagnitude(newMultiplier);
   }
-  
+
   /**
    * Set locked position indicator
    */
@@ -436,7 +436,7 @@ export class SpectralGraph {
     this.isLocked = x !== null && y !== null;
     this.render();
   }
-  
+
   /**
    * Set global max for normalization
    * When set, the plot will normalize to this value with 10% top margin
@@ -446,7 +446,7 @@ export class SpectralGraph {
     this.globalMax = max;
     this.render();
   }
-  
+
   /**
    * Set magnitude multiplier programmatically
    */
@@ -458,7 +458,7 @@ export class SpectralGraph {
     this.updateMagnitudeDisplay();
     this.render();
   }
-  
+
   /**
    * Update the magnitude display text
    */
@@ -477,7 +477,7 @@ export class SpectralGraph {
       }
     }
   }
-  
+
   /**
    * Format Y-axis label based on value
    */
@@ -492,7 +492,7 @@ export class SpectralGraph {
       return value.toExponential(1);
     }
   }
-  
+
   /**
    * Destroy the component
    */
@@ -500,28 +500,28 @@ export class SpectralGraph {
     this.rangeSlider?.destroy();
     this.container.remove();
   }
-  
+
   /**
    * Render the graph
    */
   private render(): void {
     const { width, height, wavelengthMin, wavelengthMax, showRainbow } = this.options;
     const ctx = this.ctx;
-    
+
     // Use view range for display
     const displayMin = this.viewMin;
     const displayMax = this.viewMax;
-    
+
     // Clear
     ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, width, height);
-    
+
     // Rainbow band
     if (showRainbow) {
       const bandHeight = 20;
       const visMin = Math.max(380, displayMin);
       const visMax = Math.min(700, displayMax);
-      
+
       for (let x = 0; x < width; x++) {
         const wavelength = displayMin + (x / width) * (displayMax - displayMin);
         if (wavelength >= visMin && wavelength <= visMax) {
@@ -531,36 +531,36 @@ export class SpectralGraph {
         }
       }
     }
-    
+
     // Axes
     ctx.strokeStyle = '#666';
     ctx.lineWidth = 1;
-    
+
     // X axis
     const graphBottom = height - 20;
     ctx.beginPath();
     ctx.moveTo(30, graphBottom);
     ctx.lineTo(width - 10, graphBottom);
     ctx.stroke();
-    
+
     // Y axis
     ctx.beginPath();
     ctx.moveTo(30, 25);
     ctx.lineTo(30, graphBottom);
     ctx.stroke();
-    
+
     // X axis labels
     ctx.fillStyle = '#888';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'center';
-    
+
     const xLabels = 5;
     for (let i = 0; i <= xLabels; i++) {
       const x = 30 + (i / xLabels) * (width - 40);
       const wavelength = displayMin + (i / xLabels) * (displayMax - displayMin);
       ctx.fillText(`${Math.round(wavelength)}`, x, height - 5);
     }
-    
+
     // Y axis labels (adjusted for magnitude)
     ctx.textAlign = 'right';
     const yMax = 1.0 / this.magnitudeMultiplier;
@@ -568,26 +568,26 @@ export class SpectralGraph {
     ctx.fillText(this.formatYLabel(yMax), 25, 30);
     ctx.fillText(this.formatYLabel(yMid), 25, (25 + graphBottom) / 2);
     ctx.fillText('0', 25, graphBottom);
-    
+
     // Draw spectrum
     if (this.spectrum && this.spectrum.length > 0) {
       ctx.strokeStyle = '#4a90e2';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      
+
       const graphTop = 25;
       const graphHeight = graphBottom - graphTop;
       const graphLeft = 30;
       const graphWidth = width - 40;
-      
+
       // Data range from spectrum
       const dataRange = wavelengthMax - wavelengthMin;
       const dataStep = dataRange / (this.spectrum.length - 1);
-      
+
       // Use global max if set, otherwise find local max in visible range
       let normFactor: number;
       let heightScale: number;
-      
+
       if (this.globalMax !== null && this.globalMax > 0) {
         // Use global max with 10% top margin (global max at 90% height)
         normFactor = this.globalMax;
@@ -604,11 +604,11 @@ export class SpectralGraph {
         normFactor = maxVal || 1;
         heightScale = 1.0;
       }
-      
+
       let started = false;
       for (let i = 0; i < this.spectrum.length; i++) {
         const wavelength = wavelengthMin + i * dataStep;
-        
+
         // Only draw points within view range
         if (wavelength >= displayMin && wavelength <= displayMax) {
           // Map wavelength to x position
@@ -616,10 +616,11 @@ export class SpectralGraph {
           const x = graphLeft + xNorm * graphWidth;
           // Normalize value, apply height scale and magnitude multiplier
           // Clamp to graph bounds to prevent drawing outside
-          const scaledValue = (this.spectrum[i] / normFactor) * heightScale * this.magnitudeMultiplier;
+          const scaledValue =
+            (this.spectrum[i] / normFactor) * heightScale * this.magnitudeMultiplier;
           const clampedValue = Math.min(1.0, scaledValue); // Clip at top of graph
           const y = graphBottom - clampedValue * graphHeight;
-          
+
           if (!started) {
             ctx.moveTo(x, y);
             started = true;
@@ -628,17 +629,17 @@ export class SpectralGraph {
           }
         }
       }
-      
+
       ctx.stroke();
     }
-    
+
     // Lock indicator
     if (this.isLocked) {
       ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
       ctx.beginPath();
       ctx.arc(width - 20, 35, 8, 0, Math.PI * 2);
       ctx.fill();
-      
+
       ctx.fillStyle = '#ff0';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
@@ -646,5 +647,3 @@ export class SpectralGraph {
     }
   }
 }
-
-

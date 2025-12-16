@@ -35,10 +35,10 @@ void RenderOuterBulk(float2 uv, float depth)
         float2 distortion = CalculateWaterDistortion(uv, time);
         uv += distortion * DISTORTION_STRENGTH;
     }
-    
+
     // Environment color (water = blue, air = transparent, vacuum = dark)
     float3 color = GetEnvironmentColor(EnvironmentType);
-    
+
     // Render with depth
     RenderWithDepth(color, depth);
 }
@@ -59,15 +59,15 @@ void RenderOuterSurface(float2 uv, Composition composition)
     // Soot accumulation
     float sootAmount = GetSootAmount(composition);
     float3 sootColor = float3(0.1, 0.1, 0.1);  // Dark gray/black
-    
+
     // Condensation (water droplets)
     float condensation = GetCondensation(composition, temperature);
     float3 condensationColor = float3(0.8, 0.9, 1.0);  // Light blue
-    
+
     // Blend
     float3 color = lerp(glassColor, sootColor, sootAmount);
     color = lerp(color, condensationColor, condensation);
-    
+
     RenderWithOpacity(color, opacity);
 }
 ```
@@ -86,18 +86,18 @@ void RenderMaterial(float2 uv, MaterialType material)
 {
     // Base material color
     float3 baseColor = GetMaterialColor(material);
-    
+
     // Glass tint (slight blue/green)
     if (material == MaterialType.Glass)
     {
         baseColor = lerp(baseColor, float3(0.9, 0.95, 1.0), 0.1);
     }
-    
+
     // Thickness effect (thicker = darker)
     float thickness = GetWallThickness(uv);
     float darkness = 1.0 - (thickness / MAX_THICKNESS) * 0.2;
     baseColor *= darkness;
-    
+
     // Render with transparency
     RenderWithTransparency(baseColor, materialOpacity);
 }
@@ -117,22 +117,22 @@ void RenderInnerSurface(float2 uv, Composition composition, float thickness)
 {
     // Residue color (from composition)
     float3 residueColor = GetResidueColor(composition);
-    
+
     // Crystal sparkle (if crystals present)
     float crystalAmount = GetCrystalAmount(composition);
     float sparkle = CalculateSparkle(uv, time, crystalAmount);
-    
+
     // Carbon tar (dark, opaque)
     float tarAmount = GetTarAmount(composition);
     float3 tarColor = float3(0.05, 0.05, 0.05);  // Very dark
-    
+
     // Blend
     float3 color = lerp(residueColor, tarColor, tarAmount);
     color += sparkle * CRYSTAL_SPARKLE_STRENGTH;
-    
+
     // Thickness affects opacity
     float opacity = CalculateOpacityFromThickness(thickness);
-    
+
     RenderWithOpacity(color, opacity);
 }
 ```
@@ -152,17 +152,17 @@ void RenderInnerBulk(float2 uv, Composition composition, Phase phase)
 {
     // Base color from composition
     float3 baseColor = GetCompositionColor(composition);
-    
+
     // Beer-Lambert color calculation
     float3 absorbanceColor = CalculateBeerLambertColor(composition, uv);
-    
+
     // Phase effects
     float3 phaseColor = ApplyPhaseEffects(baseColor, phase);
-    
+
     // Blend
     float3 finalColor = lerp(baseColor, absorbanceColor, ABSORBANCE_STRENGTH);
     finalColor = ApplyPhaseVisualization(finalColor, phase);
-    
+
     RenderWithDepth(finalColor, depth);
 }
 ```
@@ -187,23 +187,23 @@ Where:
 float3 CalculateBeerLambertColor(Composition composition, float2 uv)
 {
     float3 totalAbsorbance = float3(0.0, 0.0, 0.0);
-    
+
     // Sum absorbance from all colored compounds
     for each chemical in composition:
         float concentration = GetConcentration(composition, chemical);
         float3 epsilon = GetMolarAbsorptivity(chemical);  // RGB per wavelength
         float pathLength = CalculatePathLength(uv);  // Distance through fluid
-        
+
         float3 absorbance = epsilon * concentration * pathLength;
         totalAbsorbance += absorbance;
-    
+
     // Convert absorbance to transmittance
     float3 transmittance = exp(-totalAbsorbance);
-    
+
     // Apply to white light (or ambient light)
     float3 lightColor = GetAmbientLight();
     float3 color = lightColor * transmittance;
-    
+
     return color;
 }
 ```
@@ -225,11 +225,11 @@ float3 ApplyLiquidEffects(float3 color, float2 uv, float time)
     // Wobble effect (surface waves)
     float2 wobble = CalculateWobble(uv, time);
     uv += wobble * WOBBLE_STRENGTH;
-    
+
     // Refraction (slight distortion)
     float refraction = CalculateRefraction(uv);
     color = SampleWithRefraction(color, uv, refraction);
-    
+
     return color;
 }
 ```
@@ -246,11 +246,11 @@ float3 ApplyGasEffects(float3 color, float2 uv, float time)
     // Fog effect (particles)
     float fog = CalculateFog(uv, time, density);
     color = lerp(color, fogColor, fog);
-    
+
     // Turbulence (convection)
     float2 turbulence = CalculateTurbulence(uv, time);
     uv += turbulence * TURBULENCE_STRENGTH;
-    
+
     return color;
 }
 ```
@@ -267,11 +267,11 @@ float3 ApplySupercriticalEffects(float3 color, float2 uv, float time)
     // Distortion (high density, no meniscus)
     float2 distortion = CalculateSupercriticalDistortion(uv, time, density);
     uv += distortion * DISTORTION_STRENGTH;
-    
+
     // High-density shimmer
     float shimmer = CalculateShimmer(uv, time);
     color += shimmer * SHIMMER_STRENGTH;
-    
+
     return color;
 }
 ```
@@ -289,18 +289,18 @@ float3 RenderGradientLayer(float2 uv, GradientLayer gradient)
 {
     // Calculate position in gradient (0 = bottom, 1 = top)
     float gradientPosition = CalculateGradientPosition(uv, gradient);
-    
+
     // Dithering (reduces banding)
     float dither = CalculateDither(uv);
     gradientPosition += dither * DITHER_STRENGTH;
-    
+
     // Sample bottom and top compositions
     float3 bottomColor = GetCompositionColor(gradient.BottomComposition);
     float3 topColor = GetCompositionColor(gradient.TopComposition);
-    
+
     // Interpolate
     float3 color = lerp(bottomColor, topColor, gradientPosition);
-    
+
     return color;
 }
 ```
@@ -370,13 +370,13 @@ pub fn calculate_boid_count(molar_ratio: f64, total_moles: f64) -> usize {
     if total_moles == 0.0 {
         return 0;
     }
-    
+
     let ratio = molar_ratio / total_moles;
-    
+
     // Logarithmic scaling
     let log_ratio = (ratio + LOG_OFFSET).log10();
     let boid_count = (BOID_SCALE * log_ratio + BASE_BOID_COUNT).floor() as usize;
-    
+
     // Clamp to reasonable range
     boid_count.min(MAX_BOIDS_PER_CHEMICAL).max(0)
 }
@@ -409,12 +409,12 @@ pub fn update_boid_velocities(
 ) {
     // Base velocity from temperature
     let base_speed = (temperature / REFERENCE_TEMPERATURE) as f32 * BASE_SPEED;
-    
+
     for mut boid in boids.iter_mut() {
         // Random direction with temperature-based speed
         let angle = rng.gen_range(0.0..(2.0 * std::f32::consts::PI));
         let speed = base_speed * rng.gen_range(0.8..1.2);  // Some variation
-        
+
         boid.velocity = Vec2::new(
             angle.cos() * speed,
             angle.sin() * speed
@@ -439,12 +439,12 @@ pub fn visualize_bonding(
 ) {
     // Find nearest pairs
     let pairs = find_nearest_pairs(&reactant_a_boids, &reactant_b_boids);
-    
+
     for pair in pairs {
         // Magnetic attraction
         let direction = (pair.b.position - pair.a.position).normalize();
         let attraction = calculate_attraction(&pair.a, &pair.b);
-        
+
         if let Ok(mut a) = reactant_a_boids.get_mut(pair.a_entity) {
             a.velocity += direction * attraction * ATTRACTION_STRENGTH;
         }
@@ -473,9 +473,9 @@ pub fn visualize_collision(
     } else {
         Color::BLUE // Endothermic (cold)
     };
-    
+
     create_flash(commands, position, flash_color, FLASH_DURATION);
-    
+
     // Merge into product
     let product = create_product_boid(commands, reaction.product, position);
     commands.entity(reactant_a).despawn();
@@ -500,15 +500,15 @@ pub fn visualize_decomposition(
         strength: VIBRATION_STRENGTH,
         duration: VIBRATION_DURATION,
     });
-    
+
     // Split into products
     let split_direction = Vec2::from_angle(rng.gen_range(0.0..(2.0 * std::f32::consts::PI)));
     let product1_pos = position + split_direction * SPLIT_DISTANCE;
     let product2_pos = position - split_direction * SPLIT_DISTANCE;
-    
+
     let product1 = create_product_boid(commands, reaction.product1, product1_pos);
     let product2 = create_product_boid(commands, reaction.product2, product2_pos);
-    
+
     commands.entity(reactant).despawn();
 }
 ```
@@ -526,13 +526,13 @@ pub fn visualize_solid_phase(
     for mut boid in boids.iter_mut() {
         // Grid position
         let grid_position = snap_to_grid(boid.position, GRID_SIZE);
-        
+
         // Vibrate around grid position
         let angle = rng.gen_range(0.0..(2.0 * std::f32::consts::PI));
         let distance = rng.gen_range(0.0..VIBRATION_AMPLITUDE);
         let vibration = Vec2::from_angle(angle) * distance;
         boid.position = grid_position + vibration;
-        
+
         // Low velocity (vibration only)
         boid.velocity = vibration * VIBRATION_SPEED;
     }
@@ -554,18 +554,18 @@ pub fn visualize_liquid_phase(
     for mut boid in boids.iter_mut() {
         // Cohesion: attract to nearby boids of same type
         let cohesion = calculate_cohesion(&boid, &boids);
-        
+
         // Separation: avoid too close
         let separation = calculate_separation(&boid, &boids);
-        
+
         // Alignment: match velocity with neighbors
         let alignment = calculate_alignment(&boid, &boids);
-        
+
         // Combine forces
-        let force = cohesion * COHESION_WEIGHT + 
-                   separation * SEPARATION_WEIGHT + 
+        let force = cohesion * COHESION_WEIGHT +
+                   separation * SEPARATION_WEIGHT +
                    alignment * ALIGNMENT_WEIGHT;
-        
+
         boid.velocity += force * time.delta_secs();
     }
 }
@@ -587,13 +587,13 @@ pub fn visualize_gas_phase(
     for mut boid in boids.iter_mut() {
         // Update position
         boid.position += boid.velocity * time.delta_secs();
-        
+
         // Bounce off walls
         if boid.position.x < 0.0 || boid.position.x > 1.0 {
             boid.velocity.x *= -1.0;
             boid.position.x = boid.position.x.clamp(0.0, 1.0);
         }
-        
+
         if boid.position.y < 0.0 || boid.position.y > 1.0 {
             boid.velocity.y *= -1.0;
             boid.position.y = boid.position.y.clamp(0.0, 1.0);
@@ -630,4 +630,3 @@ pub fn visualize_gas_phase(
 - **Chemistry Engine** ([03_Chemistry_Engine.md](03_Chemistry_Engine.md)): Reactions trigger boid animations
 - **Surface Physics** ([04_Surface_Physics.md](04_Surface_Physics.md)): N_IS renders as residue layer
 - **Knowledge Analysis** ([05_Knowledge_Analysis.md](05_Knowledge_Analysis.md)): Displays analysis results in UI
-

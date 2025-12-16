@@ -1,60 +1,56 @@
 /**
  * Rendering Module
- * 
+ *
  * WebGPU-based spectral rendering with MSDF shape support.
  */
 
 export {
-  initWebGPU,
-  createStorageBuffer,
-  createUniformBuffer,
-  createReadbackBuffer,
-  readBufferData,
-  create1DTexture,
-  createRenderTexture,
-  type WebGPUContext,
-} from './WebGPUContext';
-
-export {
-  SpectralComputePipeline,
-  type GPUShape,
-  type ComputeParams,
-  type ComputeResult,
-  type TransmissionSpectrum,
-} from './SpectralCompute';
-
-export {
-  MaskManager,
-  type MSDFMetadata,
-  type LoadedMSDF,
-  type MaskData,
-  type LoadedMask,
-  type MaskIndex,
-} from './MaskLoader';
-
-export {
-  createRenderer,
-  WebGPURenderer,
-  CPURenderer,
-  type Renderer,
-} from './PhaserBridge';
-
-export {
+  type BottleneckAnalysis,
+  type BottleneckType,
+  type BufferProfile,
+  type DispatchProfile,
   GPUProfiler,
+  type LayerProfile,
+  type MemoryProfile,
+  type PassProfile,
   type ProfilingReport,
   type ProfilingSession,
-  type PassProfile,
-  type LayerProfile,
-  type DispatchProfile,
-  type BottleneckAnalysis,
   type Recommendation,
-  type MemoryProfile,
-  type BufferProfile,
-  type BottleneckType,
 } from './GPUProfiler';
-
+export {
+  type LoadedMask,
+  type LoadedMSDF,
+  type MaskData,
+  type MaskIndex,
+  MaskManager,
+  type MSDFMetadata,
+} from './MaskLoader';
 export {
   OptimizationConfig,
   type OptimizationFlags,
   OptimizationPreset,
 } from './OptimizationConfig';
+
+export {
+  CPURenderer,
+  createRenderer,
+  type Renderer,
+  WebGPURenderer,
+} from './PhaserBridge';
+export {
+  type ComputeParams,
+  type ComputeResult,
+  type GPUShape,
+  SpectralComputePipeline,
+  type TransmissionSpectrum,
+} from './SpectralCompute';
+export {
+  create1DTexture,
+  createReadbackBuffer,
+  createRenderTexture,
+  createStorageBuffer,
+  createUniformBuffer,
+  initWebGPU,
+  readBufferData,
+  type WebGPUContext,
+} from './WebGPUContext';

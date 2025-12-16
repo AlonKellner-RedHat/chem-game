@@ -6,10 +6,10 @@
  * spectral plot and visual output are always synchronized.
  */
 
-import { describe, it, expect } from "vitest";
-import { CIE, SpectrumPoint } from "../../../../src/core/spectral/CIE";
+import { describe, expect, it } from 'vitest';
+import { CIE, type SpectrumPoint } from '../../../../src/core/spectral/CIE';
 
-describe("GPU Spectrum Synchronization", () => {
+describe('GPU Spectrum Synchronization', () => {
   /**
    * The GLSL shader calculates XYZ using:
    *   intensity = bgSpectrum * totalTransmission + totalEmission
@@ -25,7 +25,7 @@ describe("GPU Spectrum Synchronization", () => {
    * same color as the GPU produces.
    */
 
-  it("should produce spectrum that converts to same XYZ when integrated", () => {
+  it('should produce spectrum that converts to same XYZ when integrated', () => {
     // Simulate what the shader does for a uniform background
     const numSamples = 16;
     const visibleStart = 0.225; // 380nm normalized
@@ -52,7 +52,7 @@ describe("GPU Spectrum Synchronization", () => {
     // (This is a sanity check, not an exact assertion due to different integration methods)
   });
 
-  it("should produce consistent results between integration methods", () => {
+  it('should produce consistent results between integration methods', () => {
     // Test that the Riemann sum approach used in shader matches CIE.spectrumToRawXYZ
 
     // Create a spectrum with varying values
@@ -75,7 +75,7 @@ describe("GPU Spectrum Synchronization", () => {
     expect(rgb.g).toBeGreaterThan(rgb.b);
   });
 
-  it("should correctly add emission to transmitted light", () => {
+  it('should correctly add emission to transmitted light', () => {
     // Simulate what happens with emission
     // The shader does: intensity = bgSpectrum * transmission + emission
 
@@ -100,8 +100,8 @@ describe("GPU Spectrum Synchronization", () => {
     // (This would be tested with actual GPU in integration tests)
   });
 
-  describe("Background Mode Calculations", () => {
-    it("should calculate normal mode correctly", () => {
+  describe('Background Mode Calculations', () => {
+    it('should calculate normal mode correctly', () => {
       // Normal mode: 1.0 in visible range (380-700nm), fade outside
       const testCases = [
         { wavelength: 550, expected: 1.0 }, // Peak visible
@@ -122,8 +122,7 @@ describe("GPU Spectrum Synchronization", () => {
         if (wavelength >= VISIBLE_MIN && wavelength <= VISIBLE_MAX) {
           intensity = 1.0;
         } else if (wavelength < VISIBLE_MIN) {
-          const t =
-            (wavelength - UV_FADE_START) / (VISIBLE_MIN - UV_FADE_START);
+          const t = (wavelength - UV_FADE_START) / (VISIBLE_MIN - UV_FADE_START);
           intensity = Math.max(0, t);
         } else if (wavelength > VISIBLE_MAX) {
           const t = (wavelength - VISIBLE_MAX) / (IR_FADE_END - VISIBLE_MAX);
@@ -134,7 +133,7 @@ describe("GPU Spectrum Synchronization", () => {
       }
     });
 
-    it("should calculate UV mode correctly", () => {
+    it('should calculate UV mode correctly', () => {
       // UV mode: peak at UV (250-350nm), fade into visible
       const testCases = [
         { wavelength: 300, expected: 1.0 }, // Peak UV
@@ -167,7 +166,7 @@ describe("GPU Spectrum Synchronization", () => {
       }
     });
 
-    it("should calculate dark mode correctly", () => {
+    it('should calculate dark mode correctly', () => {
       // Dark mode: always 0
       const wavelengths = [300, 400, 500, 600, 700, 800];
 
@@ -178,8 +177,8 @@ describe("GPU Spectrum Synchronization", () => {
     });
   });
 
-  describe("Grid Line Detection", () => {
-    it("should detect horizontal and vertical grid lines", () => {
+  describe('Grid Line Detection', () => {
+    it('should detect horizontal and vertical grid lines', () => {
       const cellSize = 50;
       const lineWidth = 1.0; // 2 pixels wide (±1)
 
@@ -197,16 +196,9 @@ describe("GPU Spectrum Synchronization", () => {
         // Simulate shader grid detection
         const gridX = Math.floor(x / cellSize) * cellSize;
         const gridY = Math.floor(y / cellSize) * cellSize;
-        const distToVertical = Math.min(
-          Math.abs(x - gridX),
-          Math.abs(x - (gridX + cellSize))
-        );
-        const distToHorizontal = Math.min(
-          Math.abs(y - gridY),
-          Math.abs(y - (gridY + cellSize))
-        );
-        const isOnGridLine =
-          distToVertical <= lineWidth || distToHorizontal <= lineWidth;
+        const distToVertical = Math.min(Math.abs(x - gridX), Math.abs(x - (gridX + cellSize)));
+        const distToHorizontal = Math.min(Math.abs(y - gridY), Math.abs(y - (gridY + cellSize)));
+        const isOnGridLine = distToVertical <= lineWidth || distToHorizontal <= lineWidth;
 
         expect(isOnGridLine).toBe(onLine);
       }
@@ -214,7 +206,7 @@ describe("GPU Spectrum Synchronization", () => {
   });
 });
 
-describe("Spectrum-RGB Synchronization Contract", () => {
+describe('Spectrum-RGB Synchronization Contract', () => {
   /**
    * The key contract for synchronization:
    *
@@ -231,26 +223,26 @@ describe("Spectrum-RGB Synchronization Contract", () => {
    * Therefore: if we integrate the spectrum output, we get the RGB color.
    */
 
-  it("should document the shared code contract", () => {
+  it('should document the shared code contract', () => {
     // This is a documentation test - verifying the contract is understood
     const sharedFunctions = [
-      "sample1DTexture",
-      "planckRadiance",
-      "getNormalizedPlanck",
-      "kirchhoffEmission",
-      "getBackgroundIntensity",
-      "getSpectrumIntensityAt",
-      "inRectangle",
-      "inCircle",
-      "inTriangle",
-      "isOnGridLine",
+      'sample1DTexture',
+      'planckRadiance',
+      'getNormalizedPlanck',
+      'kirchhoffEmission',
+      'getBackgroundIntensity',
+      'getSpectrumIntensityAt',
+      'inRectangle',
+      'inCircle',
+      'inTriangle',
+      'isOnGridLine',
     ];
 
     // All these functions are shared between RGB and spectrum paths
     expect(sharedFunctions.length).toBe(10);
   });
 
-  it("should verify output mode separation", () => {
+  it('should verify output mode separation', () => {
     // u_outputMode == 0: RGB path
     //   - Calls integrateSpectrumToXYZ() which loops over wavelengths
     //   - Each wavelength calls getSpectrumIntensityAt() internally

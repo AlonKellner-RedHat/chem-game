@@ -1,11 +1,11 @@
 /**
  * Fluorescence Physics Tests
- * 
+ *
  * Tests for fluorescence emission calculations.
  * Fluorescence: UV absorption → visible light emission
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('Fluorescence Physics', () => {
   describe('Quantum Yield', () => {
@@ -14,7 +14,7 @@ describe('Fluorescence Physics', () => {
       // Can never exceed 1 (energy conservation)
       const minYield = 0;
       const maxYield = 1;
-      
+
       expect(minYield).toBeGreaterThanOrEqual(0);
       expect(maxYield).toBeLessThanOrEqual(1);
     });
@@ -23,7 +23,7 @@ describe('Fluorescence Physics', () => {
       const quantumYield = 0;
       const absorbedLight = 100;
       const emitted = absorbedLight * quantumYield;
-      
+
       expect(emitted).toBe(0);
     });
   });
@@ -34,7 +34,7 @@ describe('Fluorescence Physics', () => {
       const excitationFromUV1 = 0.3;
       const excitationFromUV2 = 0.2;
       const totalExcitation = excitationFromUV1 + excitationFromUV2;
-      
+
       expect(totalExcitation).toBe(0.5);
     });
 
@@ -45,10 +45,10 @@ describe('Fluorescence Physics', () => {
       const emissionAtPeak = 1.0; // Peak of emission spectrum
       const emissionAtOffPeak = 0.1; // Away from peak
       const quantumYield = 0.8;
-      
+
       const emittedAtPeak = totalExcitation * emissionAtPeak * quantumYield;
       const emittedAtOffPeak = totalExcitation * emissionAtOffPeak * quantumYield;
-      
+
       expect(emittedAtPeak).toBeCloseTo(0.8, 10);
       expect(emittedAtOffPeak).toBeCloseTo(0.08, 10);
     });
@@ -59,7 +59,7 @@ describe('Fluorescence Physics', () => {
       const absorbedEnergy = 100;
       const quantumYield = 0.9; // 90% efficient
       const stokesShift = 0.9; // Emitted photons have ~90% of absorbed energy
-      
+
       const emittedEnergy = absorbedEnergy * quantumYield * stokesShift;
       expect(emittedEnergy).toBeLessThan(absorbedEnergy);
     });
@@ -67,10 +67,9 @@ describe('Fluorescence Physics', () => {
     it('Stokes shift: emitted wavelength > absorbed wavelength', () => {
       // Fluorescence always emits at longer wavelengths (lower energy)
       const absorbedWavelength = 350; // UV
-      const emittedWavelength = 589;  // Visible (sodium D-line)
-      
+      const emittedWavelength = 589; // Visible (sodium D-line)
+
       expect(emittedWavelength).toBeGreaterThan(absorbedWavelength);
     });
   });
 });
-

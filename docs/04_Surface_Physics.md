@@ -26,24 +26,24 @@ Where:
 ```pseudocode
 function CalculateNISThickness(layer):
     baseThickness = 50e-6  // 50 μm base thickness
-    
+
     // Viscosity contribution (higher viscosity = thicker film)
     viscosity = layer.N_IB.Viscosity
     viscosityTerm = (viscosity / REFERENCE_VISCOSITY) * VISCOSITY_THICKNESS_COEFFICIENT
-    
+
     // Surface tension contribution (lower surface tension = thicker film)
     surfaceTension = layer.N_IB.SurfaceTension
     surfaceTensionTerm = (1.0 - surfaceTension / REFERENCE_SURFACE_TENSION) * SURFACE_TENSION_COEFFICIENT
-    
+
     // Wetting angle effect (better wetting = thinner film)
     wettingAngle = CalculateWettingAngle(layer.N_IB.Composition, layer.N_Mat.Material)
     wettingTerm = (wettingAngle / 180.0) * WETTING_THICKNESS_COEFFICIENT
-    
+
     thickness = baseThickness + viscosityTerm - surfaceTensionTerm + wettingTerm
-    
+
     // Clamp to reasonable range
     thickness = Clamp(thickness, MIN_NIS_THICKNESS, MAX_NIS_THICKNESS)
-    
+
     return thickness
 ```
 
@@ -75,12 +75,12 @@ function CalculateWettingAngle(composition, material):
     gamma_sv = GetSolidVaporTension(material)
     gamma_sl = GetSolidLiquidTension(material, composition)
     gamma_lv = GetLiquidVaporTension(composition)
-    
+
     // Calculate contact angle
     cos_theta = (gamma_sv - gamma_sl) / gamma_lv
     cos_theta = Clamp(cos_theta, -1.0, 1.0)
     theta = acos(cos_theta)
-    
+
     return theta  // In degrees
 ```
 
@@ -99,30 +99,30 @@ Cleaning requires **Serial Dilution**. Solvent in N_IB diffuses into N_IS to dil
 function ApplySerialDilution(layer, deltaTime):
     // Check if solvent is present in N_IB
     solventConcentration = GetSolventConcentration(layer.N_IB.Composition)
-    
+
     if solventConcentration < MIN_SOLVENT_CONCENTRATION:
         return  // No cleaning
-    
+
     // Residue in N_IS
     residueMass = GetResidueMass(layer.N_IS.Composition)
-    
+
     if residueMass < MIN_RESIDUE_MASS:
         return  // Already clean
-    
+
     // Diffusion of solvent into N_IS
     diffusionRate = CalculateDiffusion(layer.N_IB, layer.N_IS, solvent)
-    
+
     // Dilution rate (TBD: exact formula)
     // Simplified: solvent diffuses in, dilutes residue
     dilutionRate = diffusionRate * DILUTION_COEFFICIENT
-    
+
     // Remove residue (diluted away)
     residueRemoved = Min(dilutionRate * deltaTime, residueMass)
     RemoveFromComposition(layer.N_IS.Composition, residue, residueRemoved)
-    
+
     // Add solvent to N_IS (dilution)
     AddToComposition(layer.N_IS.Composition, solvent, residueRemoved)
-    
+
     // Update thickness (residue removal reduces thickness)
     thicknessReduction = residueRemoved / (RESIDUE_DENSITY * layer.N_IS.SurfaceArea)
     layer.N_IS.Thickness -= thicknessReduction
@@ -143,16 +143,16 @@ function PerformSerialDilution(layer, numCycles):
     for cycle in range(0, numCycles):
         // Add fresh solvent to N_IB
         AddSolvent(layer.N_IB, CLEANING_SOLVENT_VOLUME)
-        
+
         // Wait for diffusion (simulate time)
         for step in range(0, DIFFUSION_STEPS):
             ApplySerialDilution(layer, DIFFUSION_TIMESTEP)
-        
+
         // Check if clean
         residueMass = GetResidueMass(layer.N_IS.Composition)
         if residueMass < CLEAN_THRESHOLD:
             return true  // Clean
-    
+
     return false  // Still dirty
 ```
 
@@ -167,11 +167,11 @@ function CheckSupersaturation(node):
     for each solute in node.Composition:
         currentConcentration = GetConcentration(node.Composition, solute)
         solubility = CalculateSolubility(solute, node.Temperature, node.Pressure)
-        
+
         if currentConcentration > solubility:
             supersaturationRatio = currentConcentration / solubility
             return (true, solute, supersaturationRatio)
-    
+
     return (false, null, 0.0)
 ```
 
@@ -196,22 +196,22 @@ Where:
 function CheckNucleation(layer):
     // Check N_IS first (preferential)
     (isSupersaturated, solute, ratio) = CheckSupersaturation(layer.N_IS)
-    
+
     if isSupersaturated:
         // Nucleation probability increases with supersaturation
         nucleationProbability = CalculateNucleationProbability(ratio, layer.Temperature)
-        
+
         if Random() < nucleationProbability:
             CreateCrystal(layer.N_IS, solute)
             return
-    
+
     // Check N_IB (bulk nucleation, less likely)
     (isSupersaturated, solute, ratio) = CheckSupersaturation(layer.N_IB)
-    
+
     if isSupersaturated:
         // Lower probability for bulk nucleation
         nucleationProbability = CalculateNucleationProbability(ratio, layer.Temperature) * BULK_NUCLEATION_FACTOR
-        
+
         if Random() < nucleationProbability:
             CreateCrystal(layer.N_IB, solute)
 ```
@@ -235,12 +235,12 @@ function GrowCrystals(layer, deltaTime):
     for each crystal in layer.Crystals:
         // Growth rate depends on supersaturation
         supersaturation = CalculateSupersaturation(crystal.Solute, layer)
-        
+
         if supersaturation > 1.0:
             growthRate = CalculateGrowthRate(crystal, supersaturation, layer.Temperature)
             crystal.Mass += growthRate * deltaTime
             crystal.Size = CalculateSize(crystal.Mass, crystal.Density)
-            
+
             // Consume solute
             soluteConsumed = growthRate * deltaTime
             RemoveFromComposition(layer.Composition, crystal.Solute, soluteConsumed)
@@ -281,7 +281,7 @@ function CheckCrustingConditions(layer):
     // - Composition is primarily solid (tar, crystals)
     // - Time since last cleaning
     // - Pressure conditions
-    
+
     // Placeholder: always true if thickness exceeded
     return true
 ```
@@ -292,26 +292,26 @@ function CheckCrustingConditions(layer):
 function DetachCrust(layer):
     // Create hollow solid object
     crust = CreateHollowSolidObject(layer.N_IS)
-    
+
     // Transfer composition
     crust.Composition = layer.N_IS.Composition.Copy()
-    
+
     // Set geometry (hollow cylinder/sphere)
     crust.InnerRadius = layer.Container.BaseRadius
     crust.OuterRadius = layer.Container.BaseRadius + layer.N_IS.Thickness
     crust.Height = layer.Height
-    
+
     // Position (inside container, at layer position)
     crust.Position = layer.BaseHeight
     crust.ContainerId = layer.ContainerId
-    
+
     // Remove N_IS content (now empty)
     layer.N_IS.Composition.Clear()
     layer.N_IS.Thickness = MIN_NIS_THICKNESS
-    
+
     // Add crust to container's anchored objects
     layer.Container.AnchoredObjects.Add(crust)
-    
+
     // Check for pressure sealing
     CheckPressureSealing(crust, layer.Container)
 ```
@@ -348,19 +348,19 @@ function CheckPressureSealing(crust, container):
     // Check if crust forms a seal
     if IsSealed(crust, container):
         crust.IsSealed = true
-        
+
         // Calculate sealed volume
         sealedVolume = CalculateSealedVolume(crust, container)
-        
+
         // Gas in sealed volume
         sealedGas = GetGasInVolume(container, sealedVolume)
-        
+
         // Pressure in sealed volume (TBD: exact calculation)
         sealedPressure = CalculateSealedPressure(sealedGas, sealedVolume, container.Temperature)
-        
+
         // Check explosion risk
         explosionRisk = CalculateExplosionRisk(crust, sealedPressure)
-        
+
         if explosionRisk > EXPLOSION_THRESHOLD:
             TriggerExplosionWarning(crust, container)
 ```
@@ -373,7 +373,7 @@ function IsSealed(crust, container):
     // - Must contact container walls
     // - Must have no gaps
     // - Must be structurally sound
-    
+
     // TBD: Exact conditions
     return CheckContact(crust, container) && CheckNoGaps(crust, container)
 ```
@@ -406,18 +406,18 @@ Where:
 function TriggerExplosion(crust, container):
     // Release pressure
     ReleasePressure(container, sealedVolume)
-    
+
     // Destroy crust
     RemoveObject(crust)
-    
+
     // Damage container (if pressure was high)
     if sealedPressure > CONTAINER_RUPTURE_PRESSURE:
         DamageContainer(container)
-    
+
     // Eject contents (if container ruptured)
     if container.IsRuptured:
         EjectContents(container)
-    
+
     // Update visualization
     TriggerExplosionVisualization(crust, container)
 ```
@@ -488,4 +488,3 @@ public struct Residue
 - **Physics Engine** ([02_Physics_Engine.md](02_Physics_Engine.md)): Temperature affects nucleation and crusting
 - **Chemistry Engine** ([03_Chemistry_Engine.md](03_Chemistry_Engine.md)): Carbon tar adsorbs to N_IS, reactions occur in N_IS
 - **Visualization** ([06_Visualization.md](06_Visualization.md)): Crusts render as solid objects, N_IS renders as residue layer
-

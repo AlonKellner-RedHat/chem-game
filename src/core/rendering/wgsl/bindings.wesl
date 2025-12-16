@@ -1,6 +1,6 @@
 /**
  * Buffer and Texture Bindings
- * 
+ *
  * This module declares all GPU resource bindings used by the spectral pipeline.
  * Organized into 4 bind groups to stay within WebGPU limits.
  */
@@ -112,4 +112,3 @@ import package::wgsl::constants::SPECTRAL_SAMPLES;
 /// Shared memory for tiled blur operations
 /// Size: BLUR_SHARED_WIDTH * SPECTRAL_SAMPLES = 96 * 16 = 1536 f16 values
 var<workgroup> blurTile: array<f16, 1536u>;
-

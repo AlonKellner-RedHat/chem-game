@@ -1,46 +1,44 @@
 /**
  * Materials Module
- * 
+ *
  * Mole fraction-based material system for spectral calculations.
  */
 
 export {
-  createMaterial,
-  createDefaultProperties,
-  validateFluorescenceBand,
-  type Material,
-  type MaterialProperties,
-  type Molecule,
-  type AbsorptionPeak,
-  type FluorescenceBand,
-  type FluorescenceValidationResult,
-} from './Material';
+  type AbsorptionDataPoint,
+  AIR_ABSORPTION,
+  MATERIAL_CONSTANTS,
+  PURE_CORUNDUM_ABSORPTION,
+  PURE_WATER_ABSORPTION,
+} from './AbsorptionData';
 
 export {
   type AbsorptionModel,
   BaseMaterialAbsorption,
-  MoleculeAbsorption,
   CompositeAbsorption,
+  MoleculeAbsorption,
 } from './AbsorptionModel';
-
-export {
-  type AbsorptionDataPoint,
-  PURE_WATER_ABSORPTION,
-  PURE_CORUNDUM_ABSORPTION,
-  AIR_ABSORPTION,
-  MATERIAL_CONSTANTS,
-} from './AbsorptionData';
-
-export { createWaterMaterial, CopperSulfate, MethyleneBlue } from './WaterMaterial';
-export { createCrystalMaterial, ChromiumIon, PotassiumPermanganate } from './CrystalMaterial';
-export { createGasMaterial, SodiumAtom, NeonAtom, MercuryAtom } from './GasMaterial';
+export { ChromiumIon, createCrystalMaterial, PotassiumPermanganate } from './CrystalMaterial';
+export { createGasMaterial, MercuryAtom, NeonAtom, SodiumAtom } from './GasMaterial';
 export { createGoldMaterial } from './GoldMaterial';
+export {
+  type AbsorptionPeak,
+  createDefaultProperties,
+  createMaterial,
+  type FluorescenceBand,
+  type FluorescenceValidationResult,
+  type Material,
+  type MaterialProperties,
+  type Molecule,
+  validateFluorescenceBand,
+} from './Material';
+export { CopperSulfate, createWaterMaterial, MethyleneBlue } from './WaterMaterial';
 
-import { createWaterMaterial } from './WaterMaterial';
 import { createCrystalMaterial } from './CrystalMaterial';
 import { createGasMaterial } from './GasMaterial';
 import { createGoldMaterial } from './GoldMaterial';
-import { Material } from './Material';
+import type { Material } from './Material';
+import { createWaterMaterial } from './WaterMaterial';
 
 /**
  * Get all available materials
@@ -58,5 +56,5 @@ export function getAllMaterials(): Material[] {
  * Get material by ID
  */
 export function getMaterialById(id: string): Material | undefined {
-  return getAllMaterials().find(m => m.id === id);
+  return getAllMaterials().find((m) => m.id === id);
 }

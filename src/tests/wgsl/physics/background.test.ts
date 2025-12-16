@@ -1,11 +1,10 @@
 /**
  * Background Illumination Tests
- * 
+ *
  * Tests for different background illumination modes.
  */
 
-import { describe, it, expect } from 'vitest';
-import { PHYSICAL_CONSTANTS } from '../testHelpers';
+import { describe, expect, it } from 'vitest';
 
 describe('Background Illumination', () => {
   describe('Normal Mode', () => {
@@ -20,7 +19,7 @@ describe('Background Illumination', () => {
       const wavelength = 315; // Middle of UV range
       const t = (wavelength - 250) / (380 - 250);
       const intensity = 1 - (1 - t) * (1 - t);
-      
+
       expect(intensity).toBeGreaterThan(0);
       expect(intensity).toBeLessThan(1);
     });
@@ -34,7 +33,7 @@ describe('Background Illumination', () => {
       const wavelength = 775; // Middle of IR falloff
       const t = (wavelength - 700) / (850 - 700);
       const intensity = 1 - t * t;
-      
+
       expect(intensity).toBeGreaterThan(0);
       expect(intensity).toBeLessThan(1);
     });
@@ -63,7 +62,7 @@ describe('Background Illumination', () => {
       const wavelength = 125;
       const t = (wavelength - 100) / 50;
       const intensity = 1 - (1 - t) * (1 - t);
-      
+
       expect(intensity).toBeGreaterThan(0);
       expect(intensity).toBeLessThan(1);
     });
@@ -72,7 +71,7 @@ describe('Background Illumination', () => {
       const wavelength = 365;
       const t = (wavelength - 350) / (380 - 350);
       const intensity = 1 - t * t;
-      
+
       expect(intensity).toBeGreaterThan(0);
       expect(intensity).toBeLessThan(1);
     });
@@ -90,7 +89,7 @@ describe('Background Illumination', () => {
       const backgroundContribution = 0;
       const emissionContribution = 0.5;
       const totalVisible = backgroundContribution + emissionContribution;
-      
+
       expect(totalVisible).toBe(0.5);
     });
   });
@@ -101,14 +100,13 @@ describe('Background Illumination', () => {
       // This ensures consistent illumination from all directions
       const backgroundMode = 'normal';
       const wavelength = 550;
-      
+
       // Both should have same intensity at this wavelength
       // (implementation detail - both call same function)
       const bgIntensity = 1.0; // In normal mode at 550nm
       const ambientIntensity = 1.0;
-      
+
       expect(ambientIntensity).toBe(bgIntensity);
     });
   });
 });
-

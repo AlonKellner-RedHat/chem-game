@@ -1,11 +1,11 @@
 /**
  * Scattering Physics Tests
- * 
+ *
  * Tests for Rayleigh and Mie scattering implementations in WGSL.
  * Validates wavelength dependence and physical relationships.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PHYSICAL_CONSTANTS } from '../testHelpers';
 
 describe('Scattering Physics', () => {
@@ -16,17 +16,17 @@ describe('Scattering Physics', () => {
       // - 50nm particles
       // - 1cm path length
       // - 500nm wavelength
-      
+
       // σ ∝ n × d⁶ / λ⁴
       const coeff = PHYSICAL_CONSTANTS.RAYLEIGH_COEFF;
       const density = 1e12;
       const particleSize = 50;
       const wavelength = 500;
-      
+
       const d6 = Math.pow(particleSize, 6);
       const lambda4 = Math.pow(wavelength, 4);
-      const scatterCoeff = density * d6 * coeff / lambda4;
-      
+      const scatterCoeff = (density * d6 * coeff) / lambda4;
+
       // Should be small but measurable
       expect(scatterCoeff).toBeGreaterThan(0.001);
       expect(scatterCoeff).toBeLessThan(1.0);
@@ -36,7 +36,7 @@ describe('Scattering Physics', () => {
       // Rayleigh scattering: I ∝ 1/λ⁴
       const blueWavelength = 450;
       const redWavelength = 650;
-      
+
       // Blue should scatter (650/450)^4 ≈ 4.35 times more than red
       const expectedRatio = Math.pow(redWavelength / blueWavelength, 4);
       expect(expectedRatio).toBeCloseTo(4.35, 1);
@@ -44,9 +44,9 @@ describe('Scattering Physics', () => {
 
     it('scales as d⁶ (larger particles scatter more)', () => {
       // For small particles, scattering scales as diameter^6
-      const d1 = 30;  // nm
-      const d2 = 60;  // nm
-      
+      const d1 = 30; // nm
+      const d2 = 60; // nm
+
       // Doubling diameter → 2^6 = 64x more scattering
       const expectedRatio = Math.pow(d2 / d1, 6);
       expect(expectedRatio).toBe(64);
@@ -56,7 +56,7 @@ describe('Scattering Physics', () => {
       // More particles = more scattering
       const density1 = 1e12;
       const density2 = 2e12;
-      
+
       expect(density2 / density1).toBe(2);
     });
   });
@@ -71,16 +71,18 @@ describe('Scattering Physics', () => {
 
     it('particle size should be comparable to visible light', () => {
       // Mie regime: particle size ~ wavelength
-      expect(PHYSICAL_CONSTANTS.LARGE_PARTICLE_SIZE).toBeGreaterThan(PHYSICAL_CONSTANTS.VISIBLE_MIN);
+      expect(PHYSICAL_CONSTANTS.LARGE_PARTICLE_SIZE).toBeGreaterThan(
+        PHYSICAL_CONSTANTS.VISIBLE_MIN
+      );
     });
 
     it('should be roughly wavelength-independent for large particles', () => {
       // For large particles (x = πd/λ >> 1), Q_sca approaches 2
       // This means scattering is independent of wavelength
       const particleSize = 1000; // nm
-      const xBlue = Math.PI * particleSize / 450;
-      const xRed = Math.PI * particleSize / 650;
-      
+      const xBlue = (Math.PI * particleSize) / 450;
+      const xRed = (Math.PI * particleSize) / 650;
+
       // Both should be in the geometric regime (x > 2)
       expect(xBlue).toBeGreaterThan(2);
       expect(xRed).toBeGreaterThan(2);
@@ -93,7 +95,7 @@ describe('Scattering Physics', () => {
       // For small σL, transmission ≈ 1 - σL
       const sigma = 0.1; // per cm
       const pathLength = 1; // cm
-      
+
       const transmission = Math.exp(-sigma * pathLength);
       expect(transmission).toBeCloseTo(0.905, 2); // exp(-0.1) ≈ 0.905
     });
@@ -110,7 +112,7 @@ describe('Scattering Physics', () => {
       const sigmaRayleigh = 0.05;
       const sigmaMie = 0.03;
       const sigmaTotal = sigmaRayleigh + sigmaMie;
-      
+
       // Combined transmission is exp(-(σR + σM) × L)
       const pathLength = 1;
       const transmission = Math.exp(-sigmaTotal * pathLength);
@@ -130,9 +132,8 @@ describe('Scattering Physics', () => {
       const wavelengthRange = 1000 - 100;
       const lutSize = 64;
       const nmPerSample = wavelengthRange / (lutSize - 1);
-      
+
       expect(nmPerSample).toBeCloseTo(14.3, 1);
     });
   });
 });
-

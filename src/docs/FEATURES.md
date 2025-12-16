@@ -206,7 +206,3 @@ interface SharedPhysicsConfig {
 2. **Feature Parity**: All controls and interactions work identically
 3. **Performance**: GPU rendering maintains 60fps at 1280x720
 4. **Spectrum Alignment**: Plot values match rendered colors at same position
-
-
-
-

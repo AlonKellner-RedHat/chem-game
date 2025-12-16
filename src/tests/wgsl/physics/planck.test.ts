@@ -1,11 +1,11 @@
 /**
  * Planck Radiation Tests
- * 
+ *
  * Tests for blackbody radiation calculations in WGSL.
  * Validates that GPU implementation matches expected physics.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PHYSICAL_CONSTANTS } from '../testHelpers';
 
 describe('Planck Radiation Physics', () => {
@@ -31,15 +31,15 @@ describe('Planck Radiation Physics', () => {
     it('Wien displacement law: peak wavelength inversely proportional to temperature', () => {
       // λ_max = b/T where b ≈ 2898 μm·K = 2.898e6 nm·K
       const wienConstant = 2.898e6; // nm·K
-      
+
       // At 6500K (D65), peak should be around 446nm (blue-violet)
       const peakAt6500K = wienConstant / 6500;
       expect(peakAt6500K).toBeCloseTo(446, 0);
-      
+
       // At 3000K (warm white), peak should be around 966nm (infrared)
       const peakAt3000K = wienConstant / 3000;
       expect(peakAt3000K).toBeCloseTo(966, 0);
-      
+
       // At 10000K (hot star), peak should be around 290nm (UV)
       const peakAt10000K = wienConstant / 10000;
       expect(peakAt10000K).toBeCloseTo(290, 0);
@@ -49,7 +49,7 @@ describe('Planck Radiation Physics', () => {
       // Just verify the relationship holds
       const T1 = 3000;
       const T2 = 6000;
-      
+
       // Power ratio should be (T2/T1)^4 = 2^4 = 16
       const powerRatio = Math.pow(T2 / T1, 4);
       expect(powerRatio).toBe(16);
@@ -62,7 +62,7 @@ describe('Planck Radiation Physics', () => {
       const transmission = 0.8;
       const absorptivity = 1 - transmission;
       const emissivity = absorptivity; // Kirchhoff's law
-      
+
       expect(emissivity).toBeCloseTo(0.2, 10);
     });
 
@@ -88,4 +88,3 @@ describe('Planck Radiation Physics', () => {
     });
   });
 });
-

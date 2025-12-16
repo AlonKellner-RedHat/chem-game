@@ -79,4 +79,3 @@ export function toNormalizedRect(
     nh: pixels.height / baseHeight,
   };
 }
-

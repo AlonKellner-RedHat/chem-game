@@ -8,17 +8,17 @@
  * - Dark: No illumination (emission only)
  */
 
+import type { BackgroundMode } from './config';
 import {
-  VISIBLE_MIN,
-  VISIBLE_MAX,
-  NORMAL_UV_FADE_START,
   NORMAL_IR_FADE_END,
-  UV_SHORT_FADE_START,
-  UV_SHORT_FADE_END,
-  UV_LONG_FADE_START,
+  NORMAL_UV_FADE_START,
   UV_LONG_FADE_END,
-} from "./constants";
-import { BackgroundMode } from "./config";
+  UV_LONG_FADE_START,
+  UV_SHORT_FADE_END,
+  UV_SHORT_FADE_START,
+  VISIBLE_MAX,
+  VISIBLE_MIN,
+} from './constants';
 
 /**
  * Get normal (D65) background intensity at a wavelength
@@ -42,9 +42,7 @@ export function getNormalBackgroundIntensity(wavelengthNm: number): number {
       return 0;
     }
     // Fade from 250nm (0) to 380nm (1)
-    const t =
-      (wavelengthNm - NORMAL_UV_FADE_START) /
-      (VISIBLE_MIN - NORMAL_UV_FADE_START);
+    const t = (wavelengthNm - NORMAL_UV_FADE_START) / (VISIBLE_MIN - NORMAL_UV_FADE_START);
     // Quadratic rise: 1 - (1-t)²
     return Math.max(0, 1 - (1 - t) * (1 - t));
   }
@@ -80,9 +78,7 @@ export function getUVBackgroundIntensity(wavelengthNm: number): number {
 
   // Short wavelength fade-in (200-250nm)
   if (wavelengthNm < UV_SHORT_FADE_END) {
-    const t =
-      (wavelengthNm - UV_SHORT_FADE_START) /
-      (UV_SHORT_FADE_END - UV_SHORT_FADE_START);
+    const t = (wavelengthNm - UV_SHORT_FADE_START) / (UV_SHORT_FADE_END - UV_SHORT_FADE_START);
     // Reverse quadratic: 1 - (1-t)² (fast start, slow finish - matches normal mode)
     return 1 - (1 - t) * (1 - t);
   }
@@ -94,9 +90,7 @@ export function getUVBackgroundIntensity(wavelengthNm: number): number {
 
   // Sharp cutoff before visible (350-380nm)
   if (wavelengthNm < UV_LONG_FADE_END) {
-    const t =
-      (wavelengthNm - UV_LONG_FADE_START) /
-      (UV_LONG_FADE_END - UV_LONG_FADE_START);
+    const t = (wavelengthNm - UV_LONG_FADE_START) / (UV_LONG_FADE_END - UV_LONG_FADE_START);
     // Quadratic decay to zero at visible boundary
     return 1 - t * t;
   }
@@ -122,16 +116,13 @@ export function getDarkBackgroundIntensity(_wavelengthNm: number): number {
  * @param mode - Background mode ('normal', 'uv', or 'dark')
  * @returns Intensity (0-1)
  */
-export function getBackgroundIntensity(
-  wavelengthNm: number,
-  mode: BackgroundMode
-): number {
+export function getBackgroundIntensity(wavelengthNm: number, mode: BackgroundMode): number {
   switch (mode) {
-    case "normal":
+    case 'normal':
       return getNormalBackgroundIntensity(wavelengthNm);
-    case "uv":
+    case 'uv':
       return getUVBackgroundIntensity(wavelengthNm);
-    case "dark":
+    case 'dark':
       return getDarkBackgroundIntensity(wavelengthNm);
     default:
       return getNormalBackgroundIntensity(wavelengthNm);
@@ -163,6 +154,3 @@ export function generateBackgroundSpectrum(
 
   return spectrum;
 }
-
-
-

@@ -1,6 +1,6 @@
 /**
  * GPU Profiler for SpectralCompute Pipeline
- * 
+ *
  * Provides comprehensive profiling of WebGPU compute operations including:
  * - Per-dispatch GPU timestamp queries (when available)
  * - Wall-clock timing fallback
@@ -56,7 +56,7 @@ export interface LayerProfile {
   startTimeMs: number;
   endTimeMs: number;
   durationMs: number;
-  passes: string[];  // Names of passes executed for this layer
+  passes: string[]; // Names of passes executed for this layer
   hasScattering: boolean;
   scatterSigma: number;
 }
@@ -120,10 +120,10 @@ export interface BottleneckAnalysis {
   memoryBoundPasses: string[];
   latencyBoundPasses: string[];
   details: {
-    avgComputeIntensity: number;  // Operations per byte
-    avgBandwidthUtilization: number;  // GB/s achieved vs theoretical
-    dispatchOverhead: number;  // Time spent in small dispatches
-    asyncWaitTime: number;  // Time spent waiting for GPU
+    avgComputeIntensity: number; // Operations per byte
+    avgBandwidthUtilization: number; // GB/s achieved vs theoretical
+    dispatchOverhead: number; // Time spent in small dispatches
+    asyncWaitTime: number; // Time spent waiting for GPU
   };
 }
 
@@ -145,19 +145,19 @@ export interface ProfilingSession {
   startTime: number;
   endTime: number;
   totalDurationMs: number;
-  
+
   // Detailed profiles
   passes: PassProfile[];
   layers: LayerProfile[];
   dispatches: DispatchProfile[];
-  
+
   // Resource tracking
   memory: MemoryProfile;
-  
+
   // Optimization metrics
   mergeMetrics: PassMergeMetrics;
   precisionMetrics: PrecisionMetrics;
-  
+
   // Analysis results
   bottlenecks: BottleneckAnalysis;
   recommendations: Recommendation[];
@@ -188,14 +188,14 @@ export interface ProfilingReport {
   passes: PassProfile[];
   layers: LayerProfile[];
   memory: MemoryProfile;
-  
+
   // Optimization metrics
   mergeMetrics: PassMergeMetrics;
   precisionMetrics: PrecisionMetrics;
-  
+
   bottlenecks: BottleneckAnalysis;
   recommendations: Recommendation[];
-  rawSessions?: ProfilingSession[];  // Optional: include raw data for deep analysis
+  rawSessions?: ProfilingSession[]; // Optional: include raw data for deep analysis
 }
 
 // ============================================================================
@@ -204,17 +204,17 @@ export interface ProfilingReport {
 
 /**
  * GPU Profiler for WebGPU compute pipelines
- * 
+ *
  * Usage:
  * ```typescript
  * const profiler = new GPUProfiler(device);
  * profiler.startSession(frameId);
- * 
+ *
  * // Before each dispatch:
  * profiler.beginDispatch('applyLayerAbsorption', 'applyLayerAbsorption', { layer: 0 });
  * pass.dispatchWorkgroups(x, y, z);
  * profiler.endDispatch([x, y, z], [8, 8, 1], bytesRead, bytesWritten);
- * 
+ *
  * profiler.endSession();
  * const report = profiler.generateReport();
  * ```
@@ -222,59 +222,61 @@ export interface ProfilingReport {
 export class GPUProfiler {
   private device: GPUDevice;
   private hasTimestampSupport: boolean;
-  
+
   // Timestamp query resources
   private timestampQuerySet: GPUQuerySet | null = null;
   private timestampBuffer: GPUBuffer | null = null;
   private timestampReadBuffer: GPUBuffer | null = null;
-  private timestampCapacity: number = 256;  // Max timestamps per session
-  private timestampIndex: number = 0;
-  
+  private timestampCapacity = 256; // Max timestamps per session
+  private timestampIndex = 0;
+
   // Session state
   private currentSession: ProfilingSession | null = null;
   private sessions: ProfilingSession[] = [];
   private currentDispatch: Partial<DispatchProfile> | null = null;
   private currentPass: Partial<PassProfile> | null = null;
   private currentLayer: Partial<LayerProfile> | null = null;
-  
+
   // Buffer tracking
   private trackedBuffers: Map<GPUBuffer, BufferProfile> = new Map();
-  private peakMemoryUsage: number = 0;
-  
+  private peakMemoryUsage = 0;
+
   // Precision tracking (f16 vs f32)
-  private f16BufferBytes: number = 0;
-  private f32BufferBytes: number = 0;
-  
+  private f16BufferBytes = 0;
+  private f32BufferBytes = 0;
+
   // Merge optimization tracking
-  private dispatchesSaved: number = 0;
-  private msdfSamplesSaved: number = 0;
-  private bandwidthSavedBytes: number = 0;
+  private dispatchesSaved = 0;
+  private msdfSamplesSaved = 0;
+  private bandwidthSavedBytes = 0;
   private mergedPasses: string[] = [];
-  
+
   // Configuration
-  private enabled: boolean = true;
-  private includeRawSessions: boolean = false;
-  private maxSessionsToKeep: number = 60;  // ~1 second at 60fps
-  
+  private enabled = true;
+  private includeRawSessions = false;
+  private maxSessionsToKeep = 60; // ~1 second at 60fps
+
   // Device info cache
   private deviceInfo: { name: string; features: string[] } | null = null;
-  
+
   constructor(device: GPUDevice) {
     this.device = device;
     this.hasTimestampSupport = device.features.has('timestamp-query');
-    
+
     // Cache device info
     this.deviceInfo = {
-      name: (device as unknown as { adapterInfo?: { description?: string } }).adapterInfo?.description || 'Unknown GPU',
+      name:
+        (device as unknown as { adapterInfo?: { description?: string } }).adapterInfo
+          ?.description || 'Unknown GPU',
       features: Array.from(device.features),
     };
-    
+
     // Initialize timestamp queries if supported
     if (this.hasTimestampSupport) {
       this.initTimestampQueries();
     }
   }
-  
+
   /**
    * Initialize timestamp query resources
    */
@@ -284,63 +286,63 @@ export class GPUProfiler {
         type: 'timestamp',
         count: this.timestampCapacity,
       });
-      
+
       this.timestampBuffer = this.device.createBuffer({
         label: 'Profiler Timestamp Buffer',
-        size: this.timestampCapacity * 8,  // u64 per timestamp
+        size: this.timestampCapacity * 8, // u64 per timestamp
         usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
       });
-      
+
       this.timestampReadBuffer = this.device.createBuffer({
         label: 'Profiler Timestamp Read Buffer',
         size: this.timestampCapacity * 8,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
       });
-      
+
       console.log('[GPUProfiler] Timestamp queries initialized');
     } catch (e) {
       console.warn('[GPUProfiler] Failed to initialize timestamp queries:', e);
       this.hasTimestampSupport = false;
     }
   }
-  
+
   /**
    * Enable or disable profiling
    */
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
   }
-  
+
   /**
    * Check if profiling is enabled
    */
   isEnabled(): boolean {
     return this.enabled;
   }
-  
+
   /**
    * Set whether to include raw session data in reports
    */
   setIncludeRawSessions(include: boolean): void {
     this.includeRawSessions = include;
   }
-  
+
   /**
    * Track a buffer allocation
    * @param format - Buffer element format: 'f16', 'f32', 'u32', 'vec4<f32>', etc.
    */
   trackBuffer(buffer: GPUBuffer, name: string, usage: string, format?: string): void {
     if (!this.enabled) return;
-    
+
     const profile: BufferProfile = {
       name,
       size: buffer.size,
       usage,
       format,
     };
-    
+
     this.trackedBuffers.set(buffer, profile);
-    
+
     // Track precision for f16/f32 buffers
     if (format) {
       if (format.includes('f16') || format === 'f16') {
@@ -349,13 +351,12 @@ export class GPUProfiler {
         this.f32BufferBytes += buffer.size;
       }
     }
-    
+
     // Update peak usage
-    const totalUsage = Array.from(this.trackedBuffers.values())
-      .reduce((sum, b) => sum + b.size, 0);
+    const totalUsage = Array.from(this.trackedBuffers.values()).reduce((sum, b) => sum + b.size, 0);
     this.peakMemoryUsage = Math.max(this.peakMemoryUsage, totalUsage);
   }
-  
+
   /**
    * Untrack a destroyed buffer
    */
@@ -371,11 +372,11 @@ export class GPUProfiler {
     }
     this.trackedBuffers.delete(buffer);
   }
-  
+
   /**
    * Record merge optimization metrics
    * Call this after each merged dispatch to track savings
-   * 
+   *
    * @param dispatchesSaved - Number of dispatches avoided by merging
    * @param msdfSamplesSaved - Number of MSDF texture samples avoided by mask caching
    * @param bandwidthSavedBytes - Bytes of intermediate buffer writes avoided
@@ -388,31 +389,30 @@ export class GPUProfiler {
     mergedPassName?: string
   ): void {
     if (!this.enabled) return;
-    
+
     this.dispatchesSaved += dispatchesSaved;
     this.msdfSamplesSaved += msdfSamplesSaved;
     this.bandwidthSavedBytes += bandwidthSavedBytes;
-    
+
     if (mergedPassName && !this.mergedPasses.includes(mergedPassName)) {
       this.mergedPasses.push(mergedPassName);
     }
   }
-  
+
   /**
    * Get current precision metrics
    */
   getPrecisionMetrics(): PrecisionMetrics {
     const totalBytes = this.f16BufferBytes + this.f32BufferBytes;
     const f16Percentage = totalBytes > 0 ? (this.f16BufferBytes / totalBytes) * 100 : 0;
-    
+
     // Bandwidth savings: f16 uses half the bandwidth of f32 for same data
     // If everything were f32, bandwidth would be 2x for the f16 portion
     const potentialF32Bytes = this.f16BufferBytes * 2;
     const actualSavings = potentialF32Bytes - this.f16BufferBytes;
-    const bandwidthSavingsPercent = totalBytes > 0 
-      ? (actualSavings / (this.f32BufferBytes + potentialF32Bytes)) * 100 
-      : 0;
-    
+    const bandwidthSavingsPercent =
+      totalBytes > 0 ? (actualSavings / (this.f32BufferBytes + potentialF32Bytes)) * 100 : 0;
+
     return {
       f16BufferBytes: this.f16BufferBytes,
       f32BufferBytes: this.f32BufferBytes,
@@ -420,7 +420,7 @@ export class GPUProfiler {
       bandwidthSavingsPercent,
     };
   }
-  
+
   /**
    * Get current merge metrics
    */
@@ -432,19 +432,19 @@ export class GPUProfiler {
       mergedPasses: [...this.mergedPasses],
     };
   }
-  
+
   /**
    * Start a new profiling session (typically per frame)
    */
   startSession(frameId: number): void {
     if (!this.enabled) return;
-    
+
     // Reset per-session merge metrics
     this.dispatchesSaved = 0;
     this.msdfSamplesSaved = 0;
     this.bandwidthSavedBytes = 0;
     this.mergedPasses = [];
-    
+
     this.currentSession = {
       frameId,
       startTime: performance.now(),
@@ -459,55 +459,55 @@ export class GPUProfiler {
       bottlenecks: this.createEmptyBottleneckAnalysis(),
       recommendations: [],
     };
-    
+
     this.timestampIndex = 0;
   }
-  
+
   /**
    * End the current profiling session
    */
   endSession(): void {
     if (!this.enabled || !this.currentSession) return;
-    
+
     this.currentSession.endTime = performance.now();
-    this.currentSession.totalDurationMs = 
+    this.currentSession.totalDurationMs =
       this.currentSession.endTime - this.currentSession.startTime;
-    
+
     // Update memory profile with current state
     this.currentSession.memory = this.getMemoryProfile();
-    
+
     // Update optimization metrics
     this.currentSession.mergeMetrics = this.getMergeMetrics();
     this.currentSession.precisionMetrics = this.getPrecisionMetrics();
-    
+
     // Analyze bottlenecks
     this.currentSession.bottlenecks = this.analyzeBottlenecks(this.currentSession);
-    
+
     // Generate recommendations
     this.currentSession.recommendations = this.generateRecommendations(this.currentSession);
-    
+
     // Store session
     this.sessions.push(this.currentSession);
-    
+
     // Trim old sessions
     while (this.sessions.length > this.maxSessionsToKeep) {
       this.sessions.shift();
     }
-    
+
     this.currentSession = null;
   }
-  
+
   /**
    * Begin a logical pass (group of related dispatches)
    */
   beginPass(name: string): void {
     if (!this.enabled || !this.currentSession) return;
-    
+
     // End any current pass
     if (this.currentPass) {
       this.endPass();
     }
-    
+
     this.currentPass = {
       name,
       startTimeMs: performance.now() - this.currentSession.startTime,
@@ -517,37 +517,42 @@ export class GPUProfiler {
       totalBytesWritten: 0,
     };
   }
-  
+
   /**
    * End the current pass
    */
   endPass(): void {
     if (!this.enabled || !this.currentSession || !this.currentPass) return;
-    
+
     const pass = this.currentPass as PassProfile;
     pass.endTimeMs = performance.now() - this.currentSession.startTime;
     pass.durationMs = pass.endTimeMs - pass.startTimeMs;
-    
+
     // Aggregate stats from dispatches
     pass.totalInvocations = pass.dispatches.reduce((sum, d) => sum + d.totalInvocations, 0);
     pass.totalBytesRead = pass.dispatches.reduce((sum, d) => sum + d.estimatedBytesRead, 0);
     pass.totalBytesWritten = pass.dispatches.reduce((sum, d) => sum + d.estimatedBytesWritten, 0);
-    
+
     this.currentSession.passes.push(pass);
     this.currentPass = null;
   }
-  
+
   /**
    * Begin a layer iteration
    */
-  beginLayer(layerIndex: number, shapeCount: number, hasScattering: boolean, scatterSigma: number): void {
+  beginLayer(
+    layerIndex: number,
+    shapeCount: number,
+    hasScattering: boolean,
+    scatterSigma: number
+  ): void {
     if (!this.enabled || !this.currentSession) return;
-    
+
     // End any current layer
     if (this.currentLayer) {
       this.endLayer();
     }
-    
+
     this.currentLayer = {
       layerIndex,
       shapeCount,
@@ -557,38 +562,34 @@ export class GPUProfiler {
       scatterSigma,
     };
   }
-  
+
   /**
    * End the current layer
    */
   endLayer(): void {
     if (!this.enabled || !this.currentSession || !this.currentLayer) return;
-    
+
     const layer = this.currentLayer as LayerProfile;
     layer.endTimeMs = performance.now() - this.currentSession.startTime;
     layer.durationMs = layer.endTimeMs - layer.startTimeMs;
-    
+
     this.currentSession.layers.push(layer);
     this.currentLayer = null;
   }
-  
+
   /**
    * Begin timing a dispatch
    */
-  beginDispatch(
-    name: string, 
-    entryPoint: string, 
-    options?: { layer?: number }
-  ): void {
+  beginDispatch(name: string, entryPoint: string, options?: { layer?: number }): void {
     if (!this.enabled || !this.currentSession) return;
-    
+
     this.currentDispatch = {
       name,
       entryPoint,
       layer: options?.layer,
       startTimeMs: performance.now() - this.currentSession.startTime,
     };
-    
+
     // Record layer pass association
     if (this.currentLayer) {
       if (!this.currentLayer.passes) {
@@ -599,7 +600,7 @@ export class GPUProfiler {
       }
     }
   }
-  
+
   /**
    * End timing a dispatch and record metrics
    */
@@ -610,34 +611,38 @@ export class GPUProfiler {
     estimatedBytesWritten: number
   ): void {
     if (!this.enabled || !this.currentSession || !this.currentDispatch) return;
-    
+
     const dispatch = this.currentDispatch as DispatchProfile;
     dispatch.endTimeMs = performance.now() - this.currentSession.startTime;
     dispatch.durationMs = dispatch.endTimeMs - dispatch.startTimeMs;
     dispatch.workgroups = workgroups;
     dispatch.workgroupSize = workgroupSize;
-    dispatch.totalInvocations = 
-      workgroups[0] * workgroups[1] * workgroups[2] *
-      workgroupSize[0] * workgroupSize[1] * workgroupSize[2];
+    dispatch.totalInvocations =
+      workgroups[0] *
+      workgroups[1] *
+      workgroups[2] *
+      workgroupSize[0] *
+      workgroupSize[1] *
+      workgroupSize[2];
     dispatch.estimatedBytesRead = estimatedBytesRead;
     dispatch.estimatedBytesWritten = estimatedBytesWritten;
-    
+
     // Calculate bandwidth if duration is meaningful
     if (dispatch.durationMs > 0.001) {
       const totalBytes = estimatedBytesRead + estimatedBytesWritten;
-      dispatch.estimatedBandwidthGBs = totalBytes / (dispatch.durationMs * 1e6);  // GB/s
+      dispatch.estimatedBandwidthGBs = totalBytes / (dispatch.durationMs * 1e6); // GB/s
     }
-    
+
     this.currentSession.dispatches.push(dispatch);
-    
+
     // Add to current pass if active
     if (this.currentPass) {
       this.currentPass.dispatches!.push(dispatch);
     }
-    
+
     this.currentDispatch = null;
   }
-  
+
   /**
    * Write timestamp to query set (for GPU timing)
    * Call this in the compute pass encoder
@@ -646,33 +651,33 @@ export class GPUProfiler {
     if (!this.hasTimestampSupport || !this.timestampQuerySet) {
       return -1;
     }
-    
+
     if (this.timestampIndex >= this.timestampCapacity) {
       console.warn('[GPUProfiler] Timestamp capacity exceeded');
       return -1;
     }
-    
+
     // Note: writeTimestamp on compute pass is not standard WebGPU
     // This is a placeholder for when the API supports it
     // Currently we rely on wall-clock timing
-    
+
     return this.timestampIndex++;
   }
-  
+
   /**
    * Get current memory profile
    */
   private getMemoryProfile(): MemoryProfile {
     const buffers = Array.from(this.trackedBuffers.values());
     const totalAllocated = buffers.reduce((sum, b) => sum + b.size, 0);
-    
+
     return {
       totalAllocated,
       buffers,
       peakUsage: this.peakMemoryUsage,
     };
   }
-  
+
   /**
    * Create empty bottleneck analysis
    */
@@ -692,29 +697,29 @@ export class GPUProfiler {
       },
     };
   }
-  
+
   /**
    * Analyze bottlenecks from session data
    */
   private analyzeBottlenecks(session: ProfilingSession): BottleneckAnalysis {
     const analysis = this.createEmptyBottleneckAnalysis();
-    
+
     if (session.dispatches.length === 0) {
       return analysis;
     }
-    
+
     // Analyze each dispatch
-    const dispatchAnalysis = session.dispatches.map(dispatch => {
+    const dispatchAnalysis = session.dispatches.map((dispatch) => {
       const bytesTotal = dispatch.estimatedBytesRead + dispatch.estimatedBytesWritten;
       const opsPerByte = dispatch.totalInvocations / Math.max(bytesTotal, 1);
       const bandwidth = dispatch.estimatedBandwidthGBs || 0;
-      
+
       // Heuristic: high ops/byte = compute bound, high bandwidth = memory bound
       // Small duration with many dispatches = latency bound
       const isComputeBound = opsPerByte > 10 && dispatch.durationMs > 0.5;
-      const isMemoryBound = bandwidth > 50 && opsPerByte < 5;  // 50 GB/s threshold
+      const isMemoryBound = bandwidth > 50 && opsPerByte < 5; // 50 GB/s threshold
       const isLatencyBound = dispatch.durationMs < 0.1 && dispatch.totalInvocations < 10000;
-      
+
       return {
         name: dispatch.name,
         isComputeBound,
@@ -725,19 +730,18 @@ export class GPUProfiler {
         duration: dispatch.durationMs,
       };
     });
-    
+
     // Classify passes
     const passDurations = new Map<string, number>();
     for (const dispatch of session.dispatches) {
       const current = passDurations.get(dispatch.name) || 0;
       passDurations.set(dispatch.name, current + dispatch.durationMs);
     }
-    
+
     // Find hotspots (top 3 by duration)
-    const sortedPasses = Array.from(passDurations.entries())
-      .sort((a, b) => b[1] - a[1]);
+    const sortedPasses = Array.from(passDurations.entries()).sort((a, b) => b[1] - a[1]);
     analysis.hotspots = sortedPasses.slice(0, 3).map(([name]) => name);
-    
+
     // Classify each pass
     for (const da of dispatchAnalysis) {
       if (da.isComputeBound && !analysis.computeBoundPasses.includes(da.name)) {
@@ -750,19 +754,19 @@ export class GPUProfiler {
         analysis.latencyBoundPasses.push(da.name);
       }
     }
-    
+
     // Determine primary bottleneck
     const computeTime = dispatchAnalysis
-      .filter(d => d.isComputeBound)
+      .filter((d) => d.isComputeBound)
       .reduce((sum, d) => sum + d.duration, 0);
     const memoryTime = dispatchAnalysis
-      .filter(d => d.isMemoryBound)
+      .filter((d) => d.isMemoryBound)
       .reduce((sum, d) => sum + d.duration, 0);
     const latencyTime = dispatchAnalysis
-      .filter(d => d.isLatencyBound)
+      .filter((d) => d.isLatencyBound)
       .reduce((sum, d) => sum + d.duration, 0);
     const totalTime = session.totalDurationMs;
-    
+
     if (computeTime > memoryTime && computeTime > latencyTime) {
       analysis.primaryBottleneck = 'compute';
       analysis.confidence = computeTime / totalTime;
@@ -776,28 +780,29 @@ export class GPUProfiler {
       analysis.primaryBottleneck = 'balanced';
       analysis.confidence = 0.5;
     }
-    
+
     // Calculate aggregate metrics
     const totalOps = session.dispatches.reduce((sum, d) => sum + d.totalInvocations, 0);
     const totalBytes = session.dispatches.reduce(
-      (sum, d) => sum + d.estimatedBytesRead + d.estimatedBytesWritten, 0
+      (sum, d) => sum + d.estimatedBytesRead + d.estimatedBytesWritten,
+      0
     );
-    
+
     analysis.details.avgComputeIntensity = totalOps / Math.max(totalBytes, 1);
-    analysis.details.avgBandwidthUtilization = dispatchAnalysis
-      .reduce((sum, d) => sum + d.bandwidth, 0) / dispatchAnalysis.length;
+    analysis.details.avgBandwidthUtilization =
+      dispatchAnalysis.reduce((sum, d) => sum + d.bandwidth, 0) / dispatchAnalysis.length;
     analysis.details.dispatchOverhead = latencyTime / totalTime;
-    
+
     return analysis;
   }
-  
+
   /**
    * Generate optimization recommendations based on analysis
    */
   private generateRecommendations(session: ProfilingSession): Recommendation[] {
     const recommendations: Recommendation[] = [];
     const analysis = session.bottlenecks;
-    
+
     // Check for excessive dispatch overhead
     if (analysis.details.dispatchOverhead > 0.2) {
       recommendations.push({
@@ -807,11 +812,11 @@ export class GPUProfiler {
         affectedPasses: analysis.latencyBoundPasses,
       });
     }
-    
+
     // Check for memory-bound passes that could benefit from caching
     if (analysis.memoryBoundPasses.length > 0) {
-      const blurPasses = analysis.memoryBoundPasses.filter(p => 
-        p.includes('blur') || p.includes('Blur')
+      const blurPasses = analysis.memoryBoundPasses.filter(
+        (p) => p.includes('blur') || p.includes('Blur')
       );
       if (blurPasses.length > 0) {
         recommendations.push({
@@ -822,7 +827,7 @@ export class GPUProfiler {
         });
       }
     }
-    
+
     // Check for compute-bound complex physics
     if (analysis.computeBoundPasses.includes('applyLayerAbsorption')) {
       recommendations.push({
@@ -832,7 +837,7 @@ export class GPUProfiler {
         affectedPasses: ['applyLayerAbsorption'],
       });
     }
-    
+
     // Check memory usage
     const memoryMB = session.memory.totalAllocated / (1024 * 1024);
     if (memoryMB > 100) {
@@ -842,7 +847,7 @@ export class GPUProfiler {
         suggestion: 'Consider reducing spectral resolution or buffer sizes for low-end devices',
       });
     }
-    
+
     // Check for many layer iterations
     if (session.layers.length > 5) {
       const layerTime = session.layers.reduce((sum, l) => sum + l.durationMs, 0);
@@ -855,10 +860,10 @@ export class GPUProfiler {
         });
       }
     }
-    
+
     return recommendations;
   }
-  
+
   /**
    * Generate a comprehensive profiling report
    */
@@ -870,22 +875,25 @@ export class GPUProfiler {
     if (this.sessions.length === 0) {
       throw new Error('No profiling sessions recorded');
     }
-    
+
     // Calculate summary statistics
-    const frameTimes = this.sessions.map(s => s.totalDurationMs);
+    const frameTimes = this.sessions.map((s) => s.totalDurationMs);
     const avgFrameTime = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
     const minFrameTime = Math.min(...frameTimes);
     const maxFrameTime = Math.max(...frameTimes);
-    
+
     // Aggregate pass data across sessions
-    const passAggregates = new Map<string, { 
-      totalDuration: number; 
-      count: number;
-      totalInvocations: number;
-      totalBytesRead: number;
-      totalBytesWritten: number;
-    }>();
-    
+    const passAggregates = new Map<
+      string,
+      {
+        totalDuration: number;
+        count: number;
+        totalInvocations: number;
+        totalBytesRead: number;
+        totalBytesWritten: number;
+      }
+    >();
+
     for (const session of this.sessions) {
       for (const pass of session.passes) {
         const existing = passAggregates.get(pass.name) || {
@@ -903,7 +911,7 @@ export class GPUProfiler {
         passAggregates.set(pass.name, existing);
       }
     }
-    
+
     // Create averaged pass profiles
     const avgPasses: PassProfile[] = Array.from(passAggregates.entries()).map(([name, agg]) => ({
       name,
@@ -915,21 +923,22 @@ export class GPUProfiler {
       totalBytesRead: agg.totalBytesRead / agg.count,
       totalBytesWritten: agg.totalBytesWritten / agg.count,
     }));
-    
+
     // Sort by duration descending
     avgPasses.sort((a, b) => b.durationMs - a.durationMs);
-    
+
     // Use the most recent session for detailed analysis
     const latestSession = this.sessions[this.sessions.length - 1];
-    
+
     // Aggregate bottleneck analysis
     const bottleneckCounts = { compute: 0, memory: 0, latency: 0, balanced: 0 };
     for (const session of this.sessions) {
       bottleneckCounts[session.bottlenecks.primaryBottleneck]++;
     }
-    const primaryBottleneck = (Object.entries(bottleneckCounts)
-      .sort((a, b) => b[1] - a[1])[0][0]) as BottleneckType;
-    
+    const primaryBottleneck = Object.entries(bottleneckCounts).sort(
+      (a, b) => b[1] - a[1]
+    )[0][0] as BottleneckType;
+
     // Collect all hotspots
     const hotspotCounts = new Map<string, number>();
     for (const session of this.sessions) {
@@ -941,7 +950,7 @@ export class GPUProfiler {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name]) => name);
-    
+
     // Merge recommendations (deduplicate)
     const seenIssues = new Set<string>();
     const allRecommendations: Recommendation[] = [];
@@ -953,15 +962,21 @@ export class GPUProfiler {
         }
       }
     }
-    
+
     // Aggregate merge metrics across sessions
     const avgMergeMetrics: PassMergeMetrics = {
-      dispatchesSaved: this.sessions.reduce((sum, s) => sum + s.mergeMetrics.dispatchesSaved, 0) / this.sessions.length,
-      msdfSamplesSaved: this.sessions.reduce((sum, s) => sum + s.mergeMetrics.msdfSamplesSaved, 0) / this.sessions.length,
-      bandwidthSavedGB: this.sessions.reduce((sum, s) => sum + s.mergeMetrics.bandwidthSavedGB, 0) / this.sessions.length,
+      dispatchesSaved:
+        this.sessions.reduce((sum, s) => sum + s.mergeMetrics.dispatchesSaved, 0) /
+        this.sessions.length,
+      msdfSamplesSaved:
+        this.sessions.reduce((sum, s) => sum + s.mergeMetrics.msdfSamplesSaved, 0) /
+        this.sessions.length,
+      bandwidthSavedGB:
+        this.sessions.reduce((sum, s) => sum + s.mergeMetrics.bandwidthSavedGB, 0) /
+        this.sessions.length,
       mergedPasses: latestSession.mergeMetrics.mergedPasses,
     };
-    
+
     // Build report
     const report: ProfilingReport = {
       metadata: {
@@ -977,19 +992,19 @@ export class GPUProfiler {
         avgFrameTimeMs: avgFrameTime,
         minFrameTimeMs: minFrameTime,
         maxFrameTimeMs: maxFrameTime,
-        avgGpuTimeMs: avgFrameTime * 0.8,  // Estimate: 80% GPU time
-        avgCpuOverheadMs: avgFrameTime * 0.2,  // Estimate: 20% CPU overhead
+        avgGpuTimeMs: avgFrameTime * 0.8, // Estimate: 80% GPU time
+        avgCpuOverheadMs: avgFrameTime * 0.2, // Estimate: 20% CPU overhead
         primaryBottleneck,
         hotspots: topHotspots,
       },
       passes: avgPasses,
       layers: latestSession.layers,
       memory: latestSession.memory,
-      
+
       // Optimization metrics
       mergeMetrics: avgMergeMetrics,
       precisionMetrics: latestSession.precisionMetrics,
-      
+
       bottlenecks: {
         ...latestSession.bottlenecks,
         primaryBottleneck,
@@ -1000,43 +1015,43 @@ export class GPUProfiler {
         return impactOrder[a.impact] - impactOrder[b.impact];
       }),
     };
-    
+
     // Optionally include raw sessions
     if (this.includeRawSessions) {
       report.rawSessions = this.sessions;
     }
-    
+
     return report;
   }
-  
+
   /**
    * Clear all recorded sessions
    */
   clearSessions(): void {
     this.sessions = [];
   }
-  
+
   /**
    * Get the number of recorded sessions
    */
   getSessionCount(): number {
     return this.sessions.length;
   }
-  
+
   /**
    * Get the latest session (if any)
    */
   getLatestSession(): ProfilingSession | null {
     return this.sessions.length > 0 ? this.sessions[this.sessions.length - 1] : null;
   }
-  
+
   /**
    * Check if timestamp queries are supported
    */
   hasTimestampQuerySupport(): boolean {
     return this.hasTimestampSupport;
   }
-  
+
   /**
    * Destroy profiler resources
    */
@@ -1048,4 +1063,3 @@ export class GPUProfiler {
     this.trackedBuffers.clear();
   }
 }
-

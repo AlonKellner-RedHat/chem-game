@@ -24,7 +24,7 @@ fn input_state_resource_works() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.init_resource::<InputState>();
-    
+
     // Test input state updates
     let mut input_state = app.world.resource_mut::<InputState>();
     input_state.left_button_pressed = true;
@@ -168,7 +168,7 @@ Add debug output to verify input state:
 
 ```rust
 fn debug_input_system(input_state: Res<InputState>) {
-    println!("Mouse: {:?}, Left: {}", 
+    println!("Mouse: {:?}, Left: {}",
         input_state.mouse_world_position,
         input_state.left_button_pressed
     );
@@ -199,4 +199,3 @@ fn debug_input_system(input_state: Res<InputState>) {
 - [Bevy Input Documentation](https://bevyengine.org/learn/book/getting-started/input/)
 - [WASM Input Handling](https://rustwasm.github.io/wasm-bindgen/examples/web-sys.html)
 - [Bevy Testing Guide](https://bevyengine.org/learn/book/getting-started/tests/)
-

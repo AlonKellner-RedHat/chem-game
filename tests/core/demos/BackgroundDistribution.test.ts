@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { SpectralDemo } from "../../../src/core/demos/SpectralDemo";
+import { beforeEach, describe, expect, it } from 'vitest';
+import { SpectralDemo } from '../../../src/core/demos/SpectralDemo';
 
-describe("Background Distribution Fadeout", () => {
+describe('Background Distribution Fadeout', () => {
   let demo: SpectralDemo;
 
   beforeEach(() => {
     demo = new SpectralDemo();
   });
 
-  describe("visible mode background distribution", () => {
-    it("should have full transmission in visible range (380-700nm)", () => {
+  describe('visible mode background distribution', () => {
+    it('should have full transmission in visible range (380-700nm)', () => {
       // Access the background spectrum through calculateNormalizedColors
       // We'll test the fade factor function behavior indirectly
       const spectrum = (demo as any).calculateUniformBackgroundSpectrum();
@@ -35,24 +35,14 @@ describe("Background Distribution Fadeout", () => {
       expect(visible700!.transmission).toBeCloseTo(1.0, 2);
     });
 
-    it("should fade from 1.0 at 700nm to near 0 at 850nm (IR fadeout)", () => {
+    it('should fade from 1.0 at 700nm to near 0 at 850nm (IR fadeout)', () => {
       const spectrum = (demo as any).calculateUniformBackgroundSpectrum();
 
-      const at700 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 700) < 1
-      );
-      const at750 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 750) < 1
-      );
-      const at800 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 800) < 1
-      );
-      const at850 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 850) < 1
-      );
-      const at900 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 900) < 1
-      );
+      const at700 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 700) < 1);
+      const at750 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 750) < 1);
+      const at800 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 800) < 1);
+      const at850 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 850) < 1);
+      const at900 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 900) < 1);
 
       expect(at700).toBeDefined();
       expect(at750).toBeDefined();
@@ -75,24 +65,14 @@ describe("Background Distribution Fadeout", () => {
       expect(at900!.transmission).toBe(0);
     });
 
-    it("should fade from 1.0 at 380nm to near 0 at 250nm (UV fadeout)", () => {
+    it('should fade from 1.0 at 380nm to near 0 at 250nm (UV fadeout)', () => {
       const spectrum = (demo as any).calculateUniformBackgroundSpectrum();
 
-      const at250 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 250) < 1
-      );
-      const at300 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 300) < 1
-      );
-      const at350 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 350) < 1
-      );
-      const at380 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 380) < 1
-      );
-      const at200 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 200) < 1
-      );
+      const at250 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 250) < 1);
+      const at300 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 300) < 1);
+      const at350 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 350) < 1);
+      const at380 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 380) < 1);
+      const at200 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 200) < 1);
 
       expect(at250).toBeDefined();
       expect(at300).toBeDefined();
@@ -116,7 +96,7 @@ describe("Background Distribution Fadeout", () => {
     });
   });
 
-  describe("UV mode background distribution", () => {
+  describe('UV mode background distribution', () => {
     beforeEach(() => {
       // Enable UV mode
       (demo as any).uvMode = true;
@@ -126,19 +106,13 @@ describe("Background Distribution Fadeout", () => {
       (demo as any).uvMode = false;
     });
 
-    it("should have full transmission in peak UV range (250-350nm)", () => {
+    it('should have full transmission in peak UV range (250-350nm)', () => {
       const spectrum = (demo as any).calculateUVBackgroundSpectrum();
 
       // UV spectrum: peak at 250-350nm, fades on both ends
-      const at280 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 280) < 1
-      );
-      const at300 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 300) < 1
-      );
-      const at320 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 320) < 1
-      );
+      const at280 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 280) < 1);
+      const at300 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 300) < 1);
+      const at320 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 320) < 1);
 
       expect(at280).toBeDefined();
       expect(at300).toBeDefined();
@@ -150,25 +124,15 @@ describe("Background Distribution Fadeout", () => {
       expect(at320!.transmission).toBeCloseTo(1.0, 2);
     });
 
-    it("should fade from 1.0 at 350nm to near 0 at 450nm (UV background fadeout)", () => {
+    it('should fade from 1.0 at 350nm to near 0 at 450nm (UV background fadeout)', () => {
       const spectrum = (demo as any).calculateUVBackgroundSpectrum();
 
       // UV fade-out is from 350nm to 450nm
-      const at350 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 350) < 1
-      );
-      const at380 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 380) < 1
-      );
-      const at410 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 410) < 1
-      );
-      const at450 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 450) < 1
-      );
-      const at500 = spectrum.find(
-        (p: { wavelength: number }) => Math.abs(p.wavelength - 500) < 1
-      );
+      const at350 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 350) < 1);
+      const at380 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 380) < 1);
+      const at410 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 410) < 1);
+      const at450 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 450) < 1);
+      const at500 = spectrum.find((p: { wavelength: number }) => Math.abs(p.wavelength - 500) < 1);
 
       expect(at350).toBeDefined();
       expect(at380).toBeDefined();

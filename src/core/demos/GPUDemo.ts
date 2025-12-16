@@ -1,12 +1,12 @@
 /**
  * GPU Demo
- * 
+ *
  * Diagnostic demo for testing GPU rendering pipeline.
  */
 
-import { Demo } from './Demo';
-import { GameScene } from '../../scenes/GameScene';
+import type { GameScene } from '../../scenes/GameScene';
 import { ToggleButton } from '../ui';
+import type { Demo } from './Demo';
 
 type DiagnosticMode = 'pattern' | 'gradient' | 'spectrum' | 'shapes';
 
@@ -17,56 +17,56 @@ const BASE_HEIGHT = 720;
 export class GPUDemo implements Demo {
   readonly name = 'GPU Demo';
   readonly description = 'GPU rendering pipeline diagnostics';
-  
+
   private mode: DiagnosticMode = 'pattern';
   private uiContainer: HTMLElement | null = null;
   private uiScaleWrapper: HTMLElement | null = null;
   private modeButtons: ToggleButton[] = [];
-  
+
   initialize(scene: GameScene): void {
     console.log('[GPUDemo] Initialized');
-    
+
     this.createUI(scene);
     this.render(scene);
   }
-  
+
   update(scene: GameScene): void {
     this.render(scene);
   }
-  
+
   cleanup(scene: GameScene): void {
     console.log('[GPUDemo] Cleaned up');
-    
+
     for (const button of this.modeButtons) {
       button.destroy();
     }
     this.modeButtons = [];
-    
+
     this.uiScaleWrapper?.remove();
     this.uiScaleWrapper = null;
     this.uiContainer?.remove();
     this.uiContainer = null;
   }
-  
+
   resize(scene: GameScene, width: number, height: number): void {
     this.updateUIScale(scene);
   }
-  
+
   private updateUIScale(scene: GameScene): void {
     if (!this.uiContainer || !this.uiScaleWrapper) return;
-    
+
     const { width, height } = scene.getDimensions();
     const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
-    
+
     this.uiContainer.style.width = `${width}px`;
     this.uiContainer.style.height = `${height}px`;
     this.uiScaleWrapper.style.transform = `scale(${scale})`;
   }
-  
+
   private createUI(scene: GameScene): void {
     const canvas = scene.getCanvas();
     const parent = canvas.parentElement!;
-    
+
     // Create container that matches canvas size
     this.uiContainer = document.createElement('div');
     this.uiContainer.style.cssText = `
@@ -80,7 +80,7 @@ export class GPUDemo implements Demo {
     `;
     parent.style.position = 'relative';
     parent.appendChild(this.uiContainer);
-    
+
     // Create scaled wrapper
     this.uiScaleWrapper = document.createElement('div');
     this.uiScaleWrapper.style.cssText = `
@@ -93,12 +93,12 @@ export class GPUDemo implements Demo {
       pointer-events: auto;
     `;
     this.uiContainer.appendChild(this.uiScaleWrapper);
-    
+
     // Apply initial scale
     this.updateUIScale(scene);
-    
+
     const modes: DiagnosticMode[] = ['pattern', 'gradient', 'spectrum', 'shapes'];
-    
+
     for (const mode of modes) {
       const button = new ToggleButton(this.uiScaleWrapper, {
         enabled: mode === this.mode,
@@ -115,11 +115,11 @@ export class GPUDemo implements Demo {
       this.modeButtons.push(button);
     }
   }
-  
+
   private render(scene: GameScene): void {
     const ctx = scene.getContext();
     const { width, height } = scene.getDimensions();
-    
+
     switch (this.mode) {
       case 'pattern':
         this.renderPattern(ctx, width, height);
@@ -134,7 +134,7 @@ export class GPUDemo implements Demo {
         this.renderShapes(ctx, width, height);
         break;
     }
-    
+
     // Mode label
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(10, height - 40, 200, 30);
@@ -143,20 +143,20 @@ export class GPUDemo implements Demo {
     ctx.textAlign = 'left';
     ctx.fillText(`Mode: ${this.mode}`, 20, height - 20);
   }
-  
+
   private renderPattern(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     // Checkerboard pattern
     const size = 50;
-    
+
     for (let x = 0; x < width; x += size) {
       for (let y = 0; y < height; y += size) {
-        const isWhite = ((x / size) + (y / size)) % 2 === 0;
+        const isWhite = (x / size + y / size) % 2 === 0;
         ctx.fillStyle = isWhite ? '#fff' : '#000';
         ctx.fillRect(x, y, size, size);
       }
     }
   }
-  
+
   private renderGradient(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     // RGB gradient
     for (let x = 0; x < width; x++) {
@@ -165,7 +165,7 @@ export class GPUDemo implements Demo {
       ctx.fillRect(x, 0, 1, height);
     }
   }
-  
+
   private renderSpectrum(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     // Visible spectrum approximation
     for (let x = 0; x < width; x++) {
@@ -175,22 +175,22 @@ export class GPUDemo implements Demo {
       ctx.fillRect(x, 0, 1, height);
     }
   }
-  
+
   private renderShapes(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     // Background
     ctx.fillStyle = '#e5e5e5';
     ctx.fillRect(0, 0, width, height);
-    
+
     // Square
     ctx.fillStyle = 'rgba(0, 100, 200, 0.7)';
     ctx.fillRect(100, 200, 200, 200);
-    
+
     // Circle
     ctx.fillStyle = 'rgba(200, 0, 100, 0.7)';
     ctx.beginPath();
     ctx.arc(500, 300, 100, 0, Math.PI * 2);
     ctx.fill();
-    
+
     // Triangle
     ctx.fillStyle = 'rgba(200, 200, 0, 0.7)';
     ctx.beginPath();
@@ -200,10 +200,12 @@ export class GPUDemo implements Demo {
     ctx.closePath();
     ctx.fill();
   }
-  
+
   private wavelengthToRGB(wavelength: number): [number, number, number] {
-    let r = 0, g = 0, b = 0;
-    
+    let r = 0,
+      g = 0,
+      b = 0;
+
     if (wavelength >= 380 && wavelength < 440) {
       r = -(wavelength - 440) / (440 - 380);
       g = 0;
@@ -229,13 +231,7 @@ export class GPUDemo implements Demo {
       g = 0;
       b = 0;
     }
-    
-    return [
-      Math.round(r * 255),
-      Math.round(g * 255),
-      Math.round(b * 255),
-    ];
+
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 }
-
-

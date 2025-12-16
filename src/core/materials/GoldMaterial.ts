@@ -13,7 +13,7 @@
  * - Olmon et al. (2012) updated measurements
  */
 
-import { Material, MaterialProperties, createDefaultProperties } from "./Material";
+import type { Material, MaterialProperties } from './Material';
 
 /**
  * Gold reflectivity data points (wavelength in nm, reflectivity 0-1)
@@ -22,7 +22,7 @@ import { Material, MaterialProperties, createDefaultProperties } from "./Materia
 const GOLD_REFLECTIVITY_DATA: Array<{ wavelength: number; reflectivity: number }> = [
   // UV region - lower reflectivity
   { wavelength: 200, reflectivity: 0.27 },
-  { wavelength: 250, reflectivity: 0.30 },
+  { wavelength: 250, reflectivity: 0.3 },
   { wavelength: 300, reflectivity: 0.35 },
   { wavelength: 350, reflectivity: 0.37 },
   // Visible - blue/violet absorbed (interband transitions)
@@ -61,9 +61,7 @@ function interpolateGoldReflectivity(wavelengthNm: number): number {
   for (let i = 0; i < data.length - 1; i++) {
     if (wavelengthNm >= data[i].wavelength && wavelengthNm <= data[i + 1].wavelength) {
       // Linear interpolation
-      const t =
-        (wavelengthNm - data[i].wavelength) /
-        (data[i + 1].wavelength - data[i].wavelength);
+      const t = (wavelengthNm - data[i].wavelength) / (data[i + 1].wavelength - data[i].wavelength);
       return data[i].reflectivity + t * (data[i + 1].reflectivity - data[i].reflectivity);
     }
   }
@@ -105,12 +103,12 @@ export function createGoldMaterial(): Material {
   const molecules: never[] = [];
 
   return {
-    id: "gold",
-    name: "Gold",
+    id: 'gold',
+    name: 'Gold',
     molecules,
     bandGap: 0, // Metals have no band gap (continuous conduction band)
     uvCutoff: 0,
-    baseAbsorption: { id: "gold-base", getExtinction: () => Infinity }, // Infinite absorption
+    baseAbsorption: { id: 'gold-base', getExtinction: () => Number.POSITIVE_INFINITY }, // Infinite absorption
     baseMolarConcentration: 1,
     reflectionRatio: 1.0, // Full reflection magnitude (not scaled down)
 
@@ -169,4 +167,3 @@ export function createGoldDefaultProperties(): MaterialProperties {
     pressure: 1.0,
   };
 }
-

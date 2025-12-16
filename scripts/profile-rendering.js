@@ -1,18 +1,6 @@
 #!/usr/bin/env node
-
-/**
- * Standalone profiling script for rendering performance
- * 
- * This script can be used to automate performance testing.
- * It opens the app with profiling enabled and collects results.
- * 
- * Usage: npm run profile
- */
-
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync, writeFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -52,4 +40,3 @@ console.log('The profiler will output:');
 console.log('- Structured console reports after each render');
 console.log('- JSON file export (performance-profile.json)');
 console.log('- Browser DevTools User Timing entries\n');
-

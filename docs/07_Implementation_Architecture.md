@@ -156,29 +156,29 @@ Scene update methods execute in a specific order to ensure data dependencies are
 ```
 1. updateTopology()
    └─ Updates layer heights, node volumes, solid intersections
-   
+
 2. updatePhysics()
    ├─ updateHeatConduction() (depends on topology)
    ├─ updatePressureCalculation() (depends on topology, temperature)
    ├─ ConvectionSystem (depends on temperature)
    └─ TransportDynamicsSystem (depends on density, mixing)
-   
+
 3. ChemistryUpdateSystem
    ├─ ReactionMatchingSystem (depends on composition, temperature)
    ├─ ReactionExecutionSystem (depends on reactions, inhibition)
    └─ ProductPropagationSystem (depends on reactions)
-   
+
 4. SurfacePhysicsSystem
    ├─ ThicknessUpdateSystem (depends on viscosity, surface tension)
    ├─ CleaningSystem (depends on solvent, residue)
    ├─ NucleationSystem (depends on supersaturation)
    └─ CrustingSystem (depends on thickness, composition)
-   
+
 5. KnowledgeAnalysisSystem
    ├─ PurityCalculationSystem (depends on composition)
    ├─ PropagationSystem (depends on identification)
    └─ ToolAnalysisSystem (depends on node data)
-   
+
 6. VisualizationSystem
    ├─ MacroRenderSystem (depends on all node data)
    └─ MicroRenderSystem (depends on composition, temperature)
@@ -473,7 +473,7 @@ impl SpatialGrid {
         let cell = self.get_cell(position);
         self.grid.entry(cell).or_insert_with(Vec::new).push(entity);
     }
-    
+
     fn get_cell(&self, position: Vec2) -> (i32, i32) {
         (
             (position.x / self.cell_size) as i32,
@@ -607,7 +607,7 @@ fn load_container(
         geometry: data.geometry.clone(),
         // ... other fields
     }).id();
-    
+
     // Add layers, connections, etc.
 }
 ```
@@ -652,9 +652,9 @@ mod tests {
             temperature: 50.0,
             ..default()
         };
-        
+
         heat_conduction_calculate(&mut node1, &mut node2, 1.0);
-        
+
         assert!(node1.temperature < 100.0);
         assert!(node2.temperature > 50.0);
     }
@@ -673,16 +673,16 @@ mod tests {
     fn test_physics_system() {
         let mut app = App::new();
         app.add_systems(Update, physics_update_system);
-        
+
         // Setup test world
         let entity = app.world.spawn((
             ContainerNode::default(),
             LayerEntity::default(),
         )).id();
-        
+
         // Run systems
         app.update();
-        
+
         // Assert results
         let node = app.world.entity(entity).get::<ContainerNode>().unwrap();
         assert!(node.current_liquid_level > 0.0);
@@ -696,14 +696,14 @@ mod tests {
 #[test]
 fn test_performance() {
     use std::time::Instant;
-    
+
     let start = Instant::now();
-    
+
     // Run simulation for 1000 frames
     for _ in 0..1000 {
         update_simulation();
     }
-    
+
     let duration = start.elapsed();
     assert!(duration.as_millis() < 16000); // < 16ms per frame
 }

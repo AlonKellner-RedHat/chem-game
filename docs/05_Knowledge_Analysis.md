@@ -22,10 +22,10 @@ Purity = (Moles of Target Chemical) / (Total Moles in Sample)
 function CalculatePurity(sample, targetChemical):
     targetMoles = GetMoles(sample.Composition, targetChemical)
     totalMoles = GetTotalMoles(sample.Composition)
-    
+
     if totalMoles == 0:
         return 0.0
-    
+
     purity = targetMoles / totalMoles
     return purity
 ```
@@ -51,7 +51,7 @@ public enum PurityLevel
 ```pseudocode
 function GetDisplayName(sample, targetChemical):
     purity = CalculatePurity(sample, targetChemical)
-    
+
     if purity < 0.66:
         return "Unknown Sludge"
     elif purity < 0.99:
@@ -72,7 +72,7 @@ For samples with multiple significant components:
 ```pseudocode
 function IdentifySample(sample):
     components = GetSignificantComponents(sample, threshold=0.05)  // >5% each
-    
+
     if components.Count == 0:
         return "Unknown Sludge"
     elif components.Count == 1:
@@ -84,7 +84,7 @@ function IdentifySample(sample):
             purity = CalculatePurity(sample, component)
             if purity >= 0.66:
                 names.Add(component.Name)
-        
+
         if names.Count > 0:
             return Join(names, " + ")
         else:
@@ -101,14 +101,14 @@ function IdentifySample(sample):
 function PropagateForward(sample, sourceContainer):
     // Identify sample
     sampleIdentity = IdentifySample(sample)
-    
+
     // Find source (container where sample came from)
     sourceComposition = GetComposition(sourceContainer, sample.Location)
-    
+
     // Calculate purity in source
     for each chemical in sampleIdentity.IdentifiedChemicals:
         sourcePurity = CalculatePurity(sourceComposition, chemical)
-        
+
         // If source has significant amount, identify it
         if sourcePurity >= PROPAGATION_THRESHOLD:
             IdentifyChemical(sourceContainer, chemical, sourcePurity)
@@ -122,21 +122,21 @@ function PropagateForward(sample, sourceContainer):
 function PropagateForwardChain(identifiedSample, maxDepth=10):
     queue = [(identifiedSample, 0)]  // (sample, depth)
     identified = Set()
-    
+
     while queue.Count > 0:
         (sample, depth) = queue.Pop()
-        
+
         if depth > maxDepth:
             continue
-        
+
         // Find sources
         sources = FindSources(sample)
-        
+
         for source in sources:
             if source not in identified:
                 PropagateForward(sample, source)
                 identified.Add(source)
-                
+
                 // Continue propagation
                 sourceSample = GetSample(source)
                 queue.Push((sourceSample, depth + 1))
@@ -159,16 +159,16 @@ function PropagateForwardChain(identifiedSample, maxDepth=10):
 function PropagateBackward(products, reactionDatabase):
     // Find reactions that produce these products
     possibleReactions = FindReactionsProducing(products, reactionDatabase)
-    
+
     // For each possible reaction, identify reactants
     for reaction in possibleReactions:
         for reactant in reaction.Reactants:
             // Check if reactant is present in source containers
             sources = FindSourceContainers(products)
-            
+
             for source in sources:
                 reactantPurity = CalculatePurity(source.Composition, reactant.ChemicalId)
-                
+
                 if reactantPurity >= PROPAGATION_THRESHOLD:
                     IdentifyChemical(source, reactant.ChemicalId, reactantPurity)
 ```
@@ -178,20 +178,20 @@ function PropagateBackward(products, reactionDatabase):
 ```pseudocode
 function FindReactionsProducing(products, reactionDatabase):
     matchingReactions = []
-    
+
     for reaction in reactionDatabase:
         // Check if reaction produces any of the identified products
         reactionProducts = GetProductChemicals(reaction)
-        
+
         matchCount = 0
         for product in products:
             if product in reactionProducts:
                 matchCount += 1
-        
+
         // If significant match, include reaction
         if matchCount >= MIN_PRODUCT_MATCHES:
             matchingReactions.Add(reaction)
-    
+
     return matchingReactions
 ```
 
@@ -231,7 +231,7 @@ public class Thermometer : IAnalysisTool
             DisplayValue = FormatTemperature(layer.Temperature)
         };
     }
-    
+
     public bool CanAnalyze(NodeType nodeType)
     {
         return nodeType == NodeType.InnerBulk || nodeType == NodeType.InnerSurface;
@@ -258,7 +258,7 @@ public class Manometer : IAnalysisTool
             DisplayValue = FormatPressure(layer.Pressure)
         };
     }
-    
+
     public bool CanAnalyze(NodeType nodeType)
     {
         return nodeType == NodeType.InnerBulk;
@@ -275,12 +275,12 @@ public class Manometer : IAnalysisTool
 ```pseudocode
 function CalculateConductivity(composition, temperature):
     totalConductivity = 0.0
-    
+
     for each ion in composition:
         ionConcentration = GetConcentration(composition, ion)
         ionConductivity = GetIonConductivity(ion, temperature)
         totalConductivity += ionConcentration * ionConductivity
-    
+
     return totalConductivity
 ```
 
@@ -304,7 +304,7 @@ public class ConductivityMeter : IAnalysisTool
     public AnalysisResult Analyze(Node node, Layer layer)
     {
         double conductivity = CalculateConductivity(layer.N_IB.Composition, layer.Temperature);
-        
+
         return new AnalysisResult
         {
             ToolName = "Conductivity Meter",
@@ -328,10 +328,10 @@ public class ConductivityMeter : IAnalysisTool
 function CalculatepH(composition, temperature):
     // Find H⁺ concentration
     hPlusConcentration = GetConcentration(composition, H_PLUS_ION)
-    
+
     // pH = -log₁₀([H⁺])
     pH = -log10(hPlusConcentration)
-    
+
     return pH
 ```
 
@@ -343,7 +343,7 @@ public class pHMeter : IAnalysisTool
     public AnalysisResult Analyze(Node node, Layer layer)
     {
         double pH = CalculatepH(layer.N_IB.Composition, layer.Temperature);
-        
+
         return new AnalysisResult
         {
             ToolName = "pH Meter",
@@ -384,7 +384,7 @@ public class Refractometer : IAnalysisTool
     public AnalysisResult Analyze(Node node, Layer layer)
     {
         double refractiveIndex = CalculateRefractiveIndex(layer.N_IB.Composition, layer.Temperature);
-        
+
         return new AnalysisResult
         {
             ToolName = "Refractometer",
@@ -422,13 +422,13 @@ public struct AnalysisResult
 ```pseudocode
 function DisplayAnalysisResults(node, layer):
     results = []
-    
+
     // Run all applicable tools
     for tool in availableTools:
         if tool.CanAnalyze(node.Type):
             result = tool.Analyze(node, layer)
             results.Add(result)
-    
+
     // Display results
     for result in results:
         Display(result.ToolName + ": " + result.DisplayValue + " " + result.Unit)
@@ -440,15 +440,15 @@ function DisplayAnalysisResults(node, layer):
 public class AnalysisHistory
 {
     private List<AnalysisResult> history;
-    
+
     public void AddResult(AnalysisResult result)
     {
         history.Add(result);
     }
-    
+
     public List<AnalysisResult> GetHistory(EntityId nodeId, TimeSpan duration)
     {
-        return history.Where(r => r.NodeId == nodeId && 
+        return history.Where(r => r.NodeId == nodeId &&
                                   r.Timestamp > DateTime.Now - duration).ToList();
     }
 }
@@ -483,10 +483,10 @@ function CalibrateTool(tool, reference):
     // Measure reference value
     measuredValue = tool.Analyze(reference.Node, reference.Layer)
     trueValue = reference.TrueValue
-    
+
     // Calculate error
     error = measuredValue - trueValue
-    
+
     // Apply calibration
     tool.CalibrationOffset = -error
 ```
@@ -527,4 +527,3 @@ function CalibrateTool(tool, reference):
 - **Physics Engine** ([02_Physics_Engine.md](02_Physics_Engine.md)): Temperature and pressure from physics
 - **Chemistry Engine** ([03_Chemistry_Engine.md](03_Chemistry_Engine.md)): Reaction database for backward propagation
 - **Visualization** ([06_Visualization.md](06_Visualization.md)): Display analysis results in UI
-

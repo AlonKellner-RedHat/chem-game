@@ -1,11 +1,10 @@
 /**
  * Material Texture Sampling Tests
- * 
+ *
  * Tests for material property sampling from GPU texture palettes.
  */
 
-import { describe, it, expect } from 'vitest';
-import { PHYSICAL_CONSTANTS } from '../testHelpers';
+import { describe, expect, it } from 'vitest';
 
 describe('Material Texture Sampling', () => {
   describe('UV Coordinate Calculation', () => {
@@ -14,14 +13,14 @@ describe('Material Texture Sampling', () => {
       const wavelengthMin = 100;
       const wavelengthMax = 1000;
       const range = wavelengthMax - wavelengthMin;
-      
+
       // Test boundary cases
       const uAtMin = (100 - wavelengthMin) / range;
       expect(uAtMin).toBe(0);
-      
+
       const uAtMax = (1000 - wavelengthMin) / range;
       expect(uAtMax).toBe(1);
-      
+
       // Test middle value (550nm visible)
       const uAt550 = (550 - wavelengthMin) / range;
       expect(uAt550).toBe(0.5);
@@ -30,13 +29,13 @@ describe('Material Texture Sampling', () => {
     it('should map material index to V coordinate correctly', () => {
       // V = (materialIndex + 0.5) / numMaterials (center of row)
       const numMaterials = 4;
-      
+
       const v0 = (0 + 0.5) / numMaterials;
       expect(v0).toBe(0.125);
-      
+
       const v1 = (1 + 0.5) / numMaterials;
       expect(v1).toBe(0.375);
-      
+
       const v3 = (3 + 0.5) / numMaterials;
       expect(v3).toBe(0.875);
     });
@@ -48,7 +47,7 @@ describe('Material Texture Sampling', () => {
       // 0 = fully opaque, 1 = fully transparent
       const minTrans = 0;
       const maxTrans = 1;
-      
+
       expect(minTrans).toBeGreaterThanOrEqual(0);
       expect(maxTrans).toBeLessThanOrEqual(1);
     });
@@ -73,7 +72,7 @@ describe('Material Texture Sampling', () => {
       const reflectionAtSurface = 0.04; // e.g., glass
       const pathLength1 = 1; // cm
       const pathLength10 = 10; // cm
-      
+
       // Reflection same regardless of path length
       expect(reflectionAtSurface).toBe(reflectionAtSurface);
     });
@@ -95,4 +94,3 @@ describe('Material Texture Sampling', () => {
     });
   });
 });
-

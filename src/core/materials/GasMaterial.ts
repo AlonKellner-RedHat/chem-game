@@ -1,19 +1,19 @@
 /**
  * Gas Material
- * 
+ *
  * Air (N2/O2) with optional atomic/molecular species.
  * Uses mole fraction composition where air fills the remainder.
  */
 
-import { createMaterial, Material, Molecule } from './Material';
 import { AIR_ABSORPTION, MATERIAL_CONSTANTS } from './AbsorptionData';
+import { createMaterial, type Material, type Molecule } from './Material';
 
 /**
  * Sodium Atom (Na)
- * 
+ *
  * Produces characteristic yellow D-line doublet at 589.0 and 589.6 nm.
  * Used in sodium vapor lamps.
- * 
+ *
  * Fluorescence: UV excitation (3²S → 3²P transition) causes D-line emission.
  * Excitation peaks around 330nm (3²S → 4²P) with relaxation to 3²P → D-lines.
  */
@@ -51,9 +51,9 @@ export const SodiumAtom: Molecule = {
 
 /**
  * Neon Atom (Ne)
- * 
+ *
  * Produces characteristic orange-red emission in neon signs.
- * 
+ *
  * Fluorescence: VUV excitation (resonance lines 73.6nm, 74.4nm) followed by
  * cascade relaxation produces visible emission. We model UV excitation
  * at accessible wavelengths (100-150nm range).
@@ -94,17 +94,17 @@ export const NeonAtom: Molecule = {
       excitationPeak: 147,
       emissionWavelength: 703.2,
       emissionWidth: 0.1,
-      quantumYield: 0.60,
+      quantumYield: 0.6,
     },
   ],
 };
 
 /**
  * Mercury Atom (Hg)
- * 
+ *
  * Produces multiple spectral lines from UV to visible.
  * Used in fluorescent lamps and UV sources.
- * 
+ *
  * Fluorescence: Strong resonance fluorescence at 253.7nm (UV-C).
  * VUV excitation (184.9nm) leads to cascade emission at visible wavelengths.
  */
@@ -128,7 +128,7 @@ export const MercuryAtom: Molecule = {
       excitationPeak: 185,
       emissionWavelength: 253.7,
       emissionWidth: 0.1,
-      quantumYield: 0.90,
+      quantumYield: 0.9,
     },
     // UV excitation → 435.8nm blue emission
     {
@@ -137,7 +137,7 @@ export const MercuryAtom: Molecule = {
       excitationPeak: 254,
       emissionWavelength: 435.8,
       emissionWidth: 0.1,
-      quantumYield: 0.70,
+      quantumYield: 0.7,
     },
     // UV excitation → 546.1nm green emission
     {
@@ -162,10 +162,10 @@ export const MercuryAtom: Molecule = {
 
 /**
  * Create Gas material with air base
- * 
+ *
  * Air is essentially transparent in the visible spectrum.
  * Absorption comes from added atomic/molecular species.
- * 
+ *
  * Note: Rayleigh scattering (blue sky effect) is handled separately
  * from absorption and is not included in this base material.
  */
@@ -174,8 +174,8 @@ export function createGasMaterial(): Material {
     'gas',
     'Gas',
     [SodiumAtom, NeonAtom, MercuryAtom],
-    10.0,  // bandGap eV (air is transparent)
-    100,   // uvCutoff nm
+    10.0, // bandGap eV (air is transparent)
+    100, // uvCutoff nm
     AIR_ABSORPTION,
     MATERIAL_CONSTANTS.AIR_MOLAR_CONCENTRATION
   );

@@ -62,4 +62,3 @@ else
     # Don't fail the script - the container should still work without GPU tests
     exit 0
 fi
-

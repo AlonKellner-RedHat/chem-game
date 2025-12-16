@@ -1,10 +1,10 @@
 /**
  * ScatteringLUT - Pre-computed scattering coefficient lookup tables
- * 
+ *
  * Generates lookup tables for Rayleigh and Mie scattering factors,
  * allowing GPU shaders to sample pre-computed values instead of
  * computing expensive pow() operations per wavelength.
- * 
+ *
  * This follows OCP (Open-Closed Principle) - the LUT generation is
  * configurable without modifying the core algorithm.
  */
@@ -34,7 +34,7 @@ export class ScatteringLUT {
   /**
    * Calculate the Rayleigh scattering factor for a given wavelength.
    * Rayleigh scattering scales as (λ_ref/λ)^4 - blue scatters more than red.
-   * 
+   *
    * @param wavelengthNm - Wavelength in nanometers
    * @returns Rayleigh factor normalized to 1.0 at 550nm
    */
@@ -42,7 +42,7 @@ export class ScatteringLUT {
     if (wavelengthNm <= 0) {
       return 0;
     }
-    
+
     // Rayleigh: factor = (550/λ)^4
     const ratio = REFERENCE_WAVELENGTH / wavelengthNm;
     return Math.pow(ratio, 4);
@@ -51,10 +51,10 @@ export class ScatteringLUT {
   /**
    * Calculate the Mie scattering factor for a given wavelength.
    * Mie scattering is roughly wavelength-independent for large particles.
-   * 
+   *
    * For particles much larger than the wavelength (geometric regime),
    * the scattering efficiency Q_sca ≈ 2, independent of wavelength.
-   * 
+   *
    * @param wavelengthNm - Wavelength in nanometers
    * @returns Mie factor normalized to 1.0 at 550nm
    */
@@ -62,7 +62,7 @@ export class ScatteringLUT {
     if (wavelengthNm <= 0) {
       return 0;
     }
-    
+
     // Mie is approximately wavelength-independent for large particles
     // We normalize to 1.0 at the reference wavelength
     // Small wavelength dependence: ~(λ_ref/λ)^0.2 for aerosols
@@ -72,10 +72,10 @@ export class ScatteringLUT {
 
   /**
    * Generate a lookup table of Rayleigh scattering factors.
-   * 
+   *
    * The LUT maps normalized position [0, 1] to Rayleigh factor,
    * where 0 = wavelengthMin and 1 = wavelengthMax.
-   * 
+   *
    * @param config - LUT generation configuration
    * @returns Float32Array of Rayleigh factors
    * @throws Error if config is invalid
@@ -98,7 +98,7 @@ export class ScatteringLUT {
       // Map index to wavelength
       const t = i / (config.samples - 1);
       const wavelength = config.wavelengthMin + t * wavelengthRange;
-      
+
       // Store Rayleigh factor (primary use case for LUT)
       lut[i] = this.getRayleighFactor(wavelength);
     }
@@ -108,7 +108,7 @@ export class ScatteringLUT {
 
   /**
    * Interpolate a value from a LUT given a normalized position.
-   * 
+   *
    * @param lut - The lookup table
    * @param t - Normalized position [0, 1] where 0 = first sample, 1 = last sample
    * @returns Interpolated value
@@ -123,7 +123,7 @@ export class ScatteringLUT {
 
     // Clamp t to [0, 1]
     const tClamped = Math.max(0, Math.min(1, t));
-    
+
     // Map t to LUT index
     const indexFloat = tClamped * (lut.length - 1);
     const indexLow = Math.floor(indexFloat);
@@ -136,7 +136,7 @@ export class ScatteringLUT {
 
   /**
    * Generate a combined Rayleigh + Mie LUT for a specific particle configuration.
-   * 
+   *
    * @param config - LUT generation configuration
    * @param rayleighWeight - Weight for Rayleigh component (0-1)
    * @param mieWeight - Weight for Mie component (0-1)
@@ -144,8 +144,8 @@ export class ScatteringLUT {
    */
   static generateCombined(
     config: ScatteringLUTConfig,
-    rayleighWeight: number = 0.5,
-    mieWeight: number = 0.5
+    rayleighWeight = 0.5,
+    mieWeight = 0.5
   ): Float32Array {
     const lut = new Float32Array(config.samples);
     const wavelengthRange = config.wavelengthMax - config.wavelengthMin;
@@ -153,14 +153,13 @@ export class ScatteringLUT {
     for (let i = 0; i < config.samples; i++) {
       const t = i / (config.samples - 1);
       const wavelength = config.wavelengthMin + t * wavelengthRange;
-      
+
       const rayleigh = this.getRayleighFactor(wavelength) * rayleighWeight;
       const mie = this.getMieFactor(wavelength) * mieWeight;
-      
+
       lut[i] = rayleigh + mie;
     }
 
     return lut;
   }
 }
-

@@ -1,0 +1,37 @@
+# Pre-commit configuration
+# See https://pre-commit.com for more information
+# Run `pre-commit install` to set up git hooks
+
+repos:
+  # Biome for linting and formatting
+  - repo: https://github.com/biomejs/pre-commit
+    rev: "v2.3.9"
+    hooks:
+      - id: biome-check
+        additional_dependencies: ["@biomejs/biome@2.3.9"]
+
+  # Local hooks for project-specific checks
+  - repo: local
+    hooks:
+      - id: npm-test
+        name: Run Tests
+        entry: npm test
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.png$|\.svg$|\.wesl$|\.wgsl$'
+      - id: end-of-file-fixer
+        exclude: '\.png$|\.svg$|\.wesl$|\.wgsl$'
+      - id: check-yaml
+      - id: check-json
+        exclude: 'devcontainer\.json$'
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict

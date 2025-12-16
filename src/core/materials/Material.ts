@@ -7,22 +7,12 @@
  * The base material fills the remainder to maintain 100% total.
  */
 
-import { getBandGapTransmission } from "../physics/bandgap";
-import { voigtProfile, voigtFWHM } from "../physics/voigt";
-import {
-  getExcitationEfficiency,
-  getEmissionLineShape,
-} from "../physics/fluorescence";
-import {
-  integrateVoigtOverBin,
-  integrateGaussianOverBin,
-} from "../physics/integration";
-import {
-  AbsorptionModel,
-  BaseMaterialAbsorption,
-  MoleculeAbsorption,
-} from "./AbsorptionModel";
-import { AbsorptionDataPoint } from "./AbsorptionData";
+import { getBandGapTransmission } from '../physics/bandgap';
+import { getEmissionLineShape } from '../physics/fluorescence';
+import { integrateGaussianOverBin, integrateVoigtOverBin } from '../physics/integration';
+import { voigtProfile } from '../physics/voigt';
+import type { AbsorptionDataPoint } from './AbsorptionData';
+import { type AbsorptionModel, BaseMaterialAbsorption } from './AbsorptionModel';
 
 /**
  * Absorption peak definition
@@ -71,14 +61,12 @@ export interface FluorescenceValidationResult {
  * @param band - The fluorescence band to validate
  * @returns Validation result with error message if invalid
  */
-export function validateFluorescenceBand(
-  band: FluorescenceBand
-): FluorescenceValidationResult {
+export function validateFluorescenceBand(band: FluorescenceBand): FluorescenceValidationResult {
   // Quantum yield must be in [0, 1]
   if (band.quantumYield < 0 || band.quantumYield > 1) {
     return {
       valid: false,
-      error: "Invalid quantum yield: must be in range [0, 1]",
+      error: 'Invalid quantum yield: must be in range [0, 1]',
     };
   }
 
@@ -86,18 +74,15 @@ export function validateFluorescenceBand(
   if (band.excitationMin > band.excitationMax) {
     return {
       valid: false,
-      error: "Invalid excitation range: min must be <= max",
+      error: 'Invalid excitation range: min must be <= max',
     };
   }
 
   // Excitation peak must be within excitation range
-  if (
-    band.excitationPeak < band.excitationMin ||
-    band.excitationPeak > band.excitationMax
-  ) {
+  if (band.excitationPeak < band.excitationMin || band.excitationPeak > band.excitationMax) {
     return {
       valid: false,
-      error: "Invalid excitation peak: must be within excitation range",
+      error: 'Invalid excitation peak: must be within excitation range',
     };
   }
 
@@ -105,14 +90,13 @@ export function validateFluorescenceBand(
   if (band.emissionWavelength < band.excitationPeak) {
     return {
       valid: false,
-      error:
-        "Stokes shift violation: emission wavelength must be >= excitation peak",
+      error: 'Stokes shift violation: emission wavelength must be >= excitation peak',
     };
   }
 
   // Emission width must be positive
   if (band.emissionWidth <= 0) {
-    return { valid: false, error: "Invalid emission width: must be positive" };
+    return { valid: false, error: 'Invalid emission width: must be positive' };
   }
 
   return { valid: true };
@@ -168,10 +152,7 @@ function calculateDopplerWidth(
 /**
  * Calculate pressure-broadened linewidth
  */
-function calculatePressureWidth(
-  pressureAtm: number,
-  coefficient: number
-): number {
+function calculatePressureWidth(pressureAtm: number, coefficient: number): number {
   if (pressureAtm <= 0 || coefficient <= 0) {
     return 0;
   }
@@ -353,11 +334,7 @@ function beerLambertNatural(
  * T = 10^(-ε × c × l)
  * Used for molecular extinction coefficients
  */
-function beerLambert(
-  extinction: number,
-  concentration: number,
-  pathLength: number
-): number {
+function beerLambert(extinction: number, concentration: number, pathLength: number): number {
   if (extinction <= 0 || concentration <= 0 || pathLength <= 0) {
     return 1.0;
   }
@@ -471,8 +448,8 @@ export function createMaterial(
   bandGap: number,
   uvCutoff: number,
   baseAbsorptionData: AbsorptionDataPoint[] = [],
-  baseMolarConcentration: number = 1.0,
-  reflectionRatio: number = 0.15,
+  baseMolarConcentration = 1.0,
+  reflectionRatio = 0.15,
   customReflectionSpectrum?: (
     wavelengthMin: number,
     wavelengthMax: number,
@@ -480,10 +457,7 @@ export function createMaterial(
     properties: MaterialProperties
   ) => Float32Array
 ): Material {
-  const baseAbsorption = new BaseMaterialAbsorption(
-    `pure-${id}`,
-    baseAbsorptionData
-  );
+  const baseAbsorption = new BaseMaterialAbsorption(`pure-${id}`, baseAbsorptionData);
 
   return {
     id,
@@ -501,10 +475,7 @@ export function createMaterial(
       const fractions = properties.moleFractions || {};
 
       // Sum all additive mole fractions
-      const totalAdditiveFraction = Object.values(fractions).reduce(
-        (sum, f) => sum + (f || 0),
-        0
-      );
+      const totalAdditiveFraction = Object.values(fractions).reduce((sum, f) => sum + (f || 0), 0);
 
       // Validate total doesn't exceed 1.0
       if (totalAdditiveFraction > 1.0 + 1e-10) {
@@ -551,10 +522,7 @@ export function createMaterial(
           );
           // Weight by base mole fraction
           const weightedExtinction = baseFraction * baseExtinction;
-          transmission *= beerLambertNatural(
-            weightedExtinction,
-            properties.pathLength
-          );
+          transmission *= beerLambertNatural(weightedExtinction, properties.pathLength);
         }
 
         // Additive molecule absorption (mole fraction weighted)
@@ -581,18 +549,10 @@ export function createMaterial(
               // New system: mole fraction weighted
               // Convert mole fraction to effective concentration
               const effectiveConc = moleFraction * baseMolarConcentration;
-              transmission *= beerLambert(
-                extinction,
-                effectiveConc,
-                properties.pathLength
-              );
+              transmission *= beerLambert(extinction, effectiveConc, properties.pathLength);
             } else if (legacyConc > 0) {
               // Legacy system: direct concentration
-              transmission *= beerLambert(
-                extinction,
-                legacyConc,
-                properties.pathLength
-              );
+              transmission *= beerLambert(extinction, legacyConc, properties.pathLength);
             }
           }
         }
@@ -716,12 +676,7 @@ export function createMaterial(
     ): Float32Array {
       // If custom reflection spectrum is provided, use it
       if (customReflectionSpectrum) {
-        return customReflectionSpectrum(
-          wavelengthMin,
-          wavelengthMax,
-          resolution,
-          properties
-        );
+        return customReflectionSpectrum(wavelengthMin, wavelengthMax, resolution, properties);
       }
 
       // Calculate reflection from extinction coefficients directly.
@@ -768,8 +723,7 @@ export function createMaterial(
 
             if (moleFraction > 0) {
               // Weight by mole fraction and base concentration
-              totalWeightedExtinction +=
-                extinction * moleFraction * baseMolarConcentration;
+              totalWeightedExtinction += extinction * moleFraction * baseMolarConcentration;
             } else if (legacyConc > 0) {
               totalWeightedExtinction += extinction * legacyConc;
             }
@@ -799,8 +753,7 @@ export function createMaterial(
       // Normalize and apply reflection ratio
       const ratio = reflectionRatio;
       for (let i = 0; i < resolution; i++) {
-        const normalized =
-          maxReflectivity > 0 ? spectrum[i] / maxReflectivity : 1.0;
+        const normalized = maxReflectivity > 0 ? spectrum[i] / maxReflectivity : 1.0;
         spectrum[i] = Math.max(0, Math.min(1, normalized * ratio));
       }
 
@@ -820,10 +773,10 @@ export function createMaterial(
  */
 export function createDefaultProperties(
   material: Material,
-  defaultMoleFraction: number = 0.0001, // 0.01% default
-  pathLength: number = 1.0,
-  temperature: number = 300,
-  pressure: number = 1.0
+  defaultMoleFraction = 0.0001, // 0.01% default
+  pathLength = 1.0,
+  temperature = 300,
+  pressure = 1.0
 ): MaterialProperties {
   const moleFractions: Record<string, number> = {};
 

@@ -1,9 +1,9 @@
 /**
  * Blur Kernels and Shared Memory Operations
- * 
+ *
  * Implements Gaussian and Voigt blur kernels for scattering effects.
  * Uses workgroup shared memory for efficient tiled blur operations.
- * 
+ *
  * Blur Types:
  * - Gaussian: Standard blur for emission aura
  * - Voigt: Gaussian core + Lorentzian tails for scattering
@@ -23,7 +23,7 @@ import package::wgsl::bindings::blurTile;
 
 /**
  * Simple Gaussian weight for emission aura blur.
- * 
+ *
  * @param dist - Distance from center
  * @param sigma - Standard deviation
  * @returns Gaussian weight
@@ -39,10 +39,10 @@ fn gaussianWeight(dist: f32, sigma: f32) -> f32 {
 
 /**
  * Voigt-like blur kernel weight.
- * 
+ *
  * Combines Gaussian core with Lorentzian tails for physical accuracy.
  * The Lorentzian tails model the extended scattering halo.
- * 
+ *
  * @param dist - Distance from center
  * @param sigma - Standard deviation
  * @returns Voigt-like weight
@@ -52,16 +52,16 @@ fn voigtBlurWeight(dist: f32, sigma: f32) -> f32 {
     if (dist == 0.0) { return 1.0; }
     return 0.0;
   }
-  
+
   let normalizedDist = dist / sigma;
-  
+
   // Gaussian core
   let gaussian = exp(-0.5 * normalizedDist * normalizedDist);
-  
+
   // Lorentzian tails (gamma = sigma * 0.5)
   let gamma = 0.5;
   let lorentzian = gamma / (normalizedDist * normalizedDist + gamma * gamma);
-  
+
   // Mix: 80% Gaussian, 20% Lorentzian
   return 0.8 * gaussian + 0.2 * lorentzian;
 }
@@ -72,10 +72,10 @@ fn voigtBlurWeight(dist: f32, sigma: f32) -> f32 {
 
 /**
  * Calculate wavelength-dependent blur sigma for scattering.
- * 
+ *
  * Rayleigh: blur ∝ 1/λ⁴ (blue scatters more)
  * Mie: blur ≈ constant (wavelength-independent)
- * 
+ *
  * @param wavelengthNm - Wavelength in nm
  * @param smallDensity - Rayleigh particle density
  * @param largeDensity - Mie particle density
@@ -91,14 +91,14 @@ fn getScatterBlurSigma(
   if (smallDensity <= 0.0 && largeDensity <= 0.0) {
     return 0.0;
   }
-  
+
   // Rayleigh: blur ∝ 1/λ⁴ (normalized to 550nm)
   let rayleighFactor = pow(550.0 / wavelengthNm, 4.0);
   let rayleighBlur = smallDensity * rayleighFactor * RAYLEIGH_BLUR_SCALE;
-  
+
   // Mie: blur ≈ constant
   let mieBlur = largeDensity * MIE_BLUR_SCALE;
-  
+
   // Combined blur (add variances, take sqrt for sigma)
   return sqrt(rayleighBlur + mieBlur) * pathLength;
 }
@@ -109,10 +109,10 @@ fn getScatterBlurSigma(
 
 /**
  * Get precomputed Gaussian weight for sigma=5.0.
- * 
+ *
  * Uses the BLUR_WEIGHTS constant array for efficient lookup.
  * Weights are symmetric: weight[dx] = weight[-dx]
- * 
+ *
  * @param dx - Distance from center (0-16)
  * @returns Normalized weight
  */
@@ -123,4 +123,3 @@ fn getPrecomputedWeight(dx: i32) -> f32 {
   }
   return BLUR_WEIGHTS[idx];
 }
-

@@ -1,10 +1,10 @@
 import { defineConfig } from 'vitest/config';
+import { linkBuildExtension, staticBuildExtension } from 'wesl-plugin';
 import weslPlugin from 'wesl-plugin/vite';
-import { staticBuildExtension, linkBuildExtension } from 'wesl-plugin';
 
 /**
  * Vitest configuration for tests
- * 
+ *
  * WGSL/WESL shader tests use wesl-test which requires WebGPU.
  * Non-WGSL tests use jsdom environment.
  */

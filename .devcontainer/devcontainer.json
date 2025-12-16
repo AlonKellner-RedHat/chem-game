@@ -24,8 +24,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode",
+        "biomejs.biome",
         "ms-vscode.vscode-typescript-next",
         "bradlc.vscode-tailwindcss",
         "ms-vscode.makefile-tools",
@@ -34,27 +33,22 @@
       ],
       "settings": {
         "editor.formatOnSave": true,
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.defaultFormatter": "biomejs.biome",
         "editor.codeActionsOnSave": {
-          "source.fixAll.eslint": "explicit"
+          "quickfix.biome": "explicit",
+          "source.organizeImports.biome": "explicit"
         },
         "[typescript]": {
-          "editor.defaultFormatter": "esbenp.prettier-vscode"
+          "editor.defaultFormatter": "biomejs.biome"
         },
         "[javascript]": {
-          "editor.defaultFormatter": "esbenp.prettier-vscode"
+          "editor.defaultFormatter": "biomejs.biome"
         },
         "[json]": {
-          "editor.defaultFormatter": "esbenp.prettier-vscode"
+          "editor.defaultFormatter": "biomejs.biome"
         },
         "typescript.tsdk": "node_modules/typescript/lib",
-        "typescript.enablePromptUseWorkspaceTsdk": true,
-        "eslint.validate": [
-          "javascript",
-          "javascriptreact",
-          "typescript",
-          "typescriptreact"
-        ]
+        "typescript.enablePromptUseWorkspaceTsdk": true
       }
     }
   },
@@ -75,5 +69,5 @@
     }
   },
 
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers && npm install -g npm@latest && node --version && npm --version && .devcontainer/setup-msdfgen.sh && npm install && .devcontainer/setup-webgpu.sh"
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers pre-commit && npm install -g npm@latest && node --version && npm --version && .devcontainer/setup-msdfgen.sh && npm install && .devcontainer/setup-webgpu.sh && pre-commit install"
 }

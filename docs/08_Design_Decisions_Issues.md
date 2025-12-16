@@ -318,7 +318,7 @@ Flow = k * ΔP / Resistance
 
 **Current:** 1 ppm floor used throughout simulation.
 
-**Consideration:** 
+**Consideration:**
 - Inhibitors require 1 ppm precision
 - Other calculations may not need such precision
 - Could improve performance by using single precision for non-critical calculations
@@ -424,4 +424,3 @@ All TBD items are marked with "TBD" in their respective documents and listed in 
 - **v1.0:** Initial specification expansion
 - **Design Decisions:** Clarifications on layer heights, node volumes, mixing terminology, solid intersection, purity calculation, boid scaling
 - **Unresolved Issues:** 10 TBD items identified for future specification
-

@@ -1,6 +1,6 @@
 /**
  * Combine Entry Points
- * 
+ *
  * Entry points for combining transmitted, scattered, and emitted light.
  * Also handles ambient light application.
  */
@@ -53,13 +53,13 @@ fn getWavelength(wIdx: u32) -> f32 {
  */
 fn computeScatterProb(fx: f32, fy: f32, wavelength: f32, numShapes: u32) -> f32 {
   var unscatteredFrac: f32 = 1.0;
-  
+
   for (var i: u32 = 0u; i < numShapes; i++) {
     let mask = getShapeMask(shapes[i], fx, fy);
     if (mask > 0.0) {
       let shape = shapes[i];
       let pathLength = max(shape.width, shape.height) * 0.01;
-      
+
       let scatterTrans = applyScattering(
         1.0,
         wavelength,
@@ -67,11 +67,11 @@ fn computeScatterProb(fx: f32, fy: f32, wavelength: f32, numShapes: u32) -> f32 
         shape.largeParticleDensity,
         pathLength * mask
       );
-      
+
       unscatteredFrac *= scatterTrans;
     }
   }
-  
+
   return 1.0 - unscatteredFrac;
 }
 
@@ -81,7 +81,7 @@ fn computeScatterProb(fx: f32, fy: f32, wavelength: f32, numShapes: u32) -> f32 
 
 /**
  * Combine transmitted light with scattering and unified aura.
- * 
+ *
  * Three-path combination:
  * 1. Direct: transmitted × (1 - scatterProb)
  * 2. In-shape: blurredTransmitted × scatterProb × IN_SHAPE_SCATTER_FRACTION
@@ -91,53 +91,53 @@ fn computeScatterProb(fx: f32, fy: f32, wavelength: f32, numShapes: u32) -> f32 
 fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
   let fx = f32(screenPos.x);
   let fy = f32(screenPos.y);
   let numShapes = arrayLength(&shapes);
-  
+
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    
+
     // Read components
     let transmitted = spectralOutput[spectralIdx];
     let blurredFull = blurredTransmitted[spectralIdx];
     let aura = scatterSource[spectralIdx];
-    
+
     // Compute scatter probability
     var scatterProb: f32 = 0.0;
     if (inBounds) {
       scatterProb = computeScatterProb(fx, fy, wavelength, numShapes);
     }
     let scatterProb16 = f16(scatterProb);
-    
+
     // Three-path combination
     let direct = transmitted * (f16(1.0) - scatterProb16);
     let inShapeScatter = blurredFull * scatterProb16 * f16(IN_SHAPE_SCATTER_FRACTION);
-    
+
     var result = direct + inShapeScatter + aura;
-    
+
     // Per-layer ambient reflection
     if (inBounds) {
       let pattern = getAmbientPattern(fx, fy);
       let ambient = getAmbientIntensity(wavelength);
-      
+
       var compoundedReflection: f16 = f16(1.0);
       var maxCoverage: f16 = f16(0.0);
-      
+
       for (var i: u32 = 0u; i < numShapes; i++) {
         let shape = shapes[i];
         if (shape.layer != params.currentLayer) {
           continue;
         }
-        
+
         let mask = getShapeMask(shape, fx, fy);
         if (mask > 0.0) {
           let reflection = getMaterialReflection(shape.materialIndex, wavelength);
@@ -145,12 +145,12 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
           maxCoverage = max(maxCoverage, f16(mask));
         }
       }
-      
+
       if (maxCoverage > f16(0.0)) {
         result += ambient * compoundedReflection * maxCoverage * pattern;
       }
     }
-    
+
     spectralInput[spectralIdx] = result;
   }
 }
@@ -166,23 +166,23 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
 fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
-  
+
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    
+
     var intensity: f16 = f16(0.0);
     if (inBounds) {
       let wavelength = getWavelength(wIdx);
       intensity = getAmbientIntensity(wavelength);
     }
-    
+
     spectralOutput[spectralIdx] = intensity;
     scatterSource[spectralIdx] = f16(0.0);
   }
@@ -195,11 +195,11 @@ fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
 /**
  * Apply absorption, scattering, and emission for a single layer.
  * This is the core per-layer physics processing.
- * 
+ *
  * Two-pass fluorescence:
  * - Pass 1: Accumulate excitation from all wavelengths
  * - Pass 2: Apply physics with accumulated excitation
- * 
+ *
  * Reads from spectralInput, writes to:
  * - spectralOutput: transmitted + direct emission
  * - scatterSource: scattered light (to be blurred)
@@ -208,22 +208,22 @@ fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
 fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
   let fx = f32(screenPos.x);
   let fy = f32(screenPos.y);
   let numShapes = arrayLength(&shapes);
-  
+
   // Pre-compute masks and pathLengths ONCE per pixel
   var shapeData: array<PrecomputedShapeData, 16>;
   var anyMask: bool = false;
   let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
-  
+
   if (inBounds) {
     for (var i: u32 = 0u; i < shapesToProcess; i++) {
       let mask = f16(getShapeMask(shapes[i], fx, fy));
@@ -232,7 +232,7 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
       anyMask = anyMask || (mask > f16(0.0));
     }
   }
-  
+
   // Early exit for pixels with no shape coverage
   if (!anyMask || !inBounds) {
     for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
@@ -242,50 +242,50 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     return;
   }
-  
+
   // Two-pass fluorescence: accumulate excitation, then emit
   var shapeExcitation: array<f32, 16>;
   for (var i: u32 = 0u; i < 16u; i++) {
     shapeExcitation[i] = 0.0;
   }
-  
+
   // Pass 1: Accumulate excitation from all wavelengths
   if (params.enableEmission == 1u) {
     for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
       let wavelength = getWavelength(wIdx);
       let spectralIdx = getSpectralIdx(localX, localY, wIdx);
       let inputIntensity = f32(spectralInput[spectralIdx]);
-      
+
       var transmitted = inputIntensity;
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let data = shapeData[i];
         let mask = f32(data.mask);
-        
+
         if (mask > 0.0) {
           let shape = shapes[i];
           let materialTrans = getMaterialTransmission(shape.materialIndex, wavelength);
           let absorbedLight = transmitted * (1.0 - materialTrans) * mask;
           let excitationEff = getFluorescenceExcitation(shape.materialIndex, wavelength);
-          
+
           shapeExcitation[i] += absorbedLight * excitationEff;
-          
+
           let absorption = mix(1.0, materialTrans, mask);
           transmitted *= absorption;
         }
       }
     }
   }
-  
+
   // Pass 2: Process wavelengths with accumulated excitation
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
     let inputIntensity = spectralInput[spectralIdx];
-    
+
     let result = computeLayerPhysicsWithFluorescence(
       inputIntensity, wavelength, shapesToProcess, &shapeData, &shapeExcitation
     );
-    
+
     spectralOutput[spectralIdx] = result.transmitted + result.directEmission;
     scatterSource[spectralIdx] = result.auraSrc;
   }
@@ -302,49 +302,49 @@ fn applyLayerAbsorption(@builtin(global_invocation_id) id: vec3<u32>) {
 fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
   let fx = f32(screenPos.x);
   let fy = f32(screenPos.y);
   let numShapes = arrayLength(&shapes);
-  
+
   if (!inBounds) {
     return;
   }
-  
+
   let pattern = getAmbientPattern(fx, fy);
-  
+
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    
+
     let current = spectralInput[spectralIdx];
     let ambient = getAmbientIntensity(wavelength);
-    
+
     var compoundedReflection: f16 = f16(1.0);
     var anyShapeCovers: bool = false;
-    
+
     for (var i: u32 = 0u; i < numShapes; i++) {
       let mask = getShapeMask(shapes[i], fx, fy);
       if (mask > 0.0) {
         let shape = shapes[i];
         anyShapeCovers = true;
-        
+
         let reflection = getMaterialReflection(shape.materialIndex, wavelength);
         let effectiveReflection = f16(mask) * reflection + f16(1.0 - mask);
         compoundedReflection *= effectiveReflection;
       }
     }
-    
+
     if (!anyShapeCovers) {
       compoundedReflection = f16(0.0);
     }
-    
+
     let ambientContribution = ambient * compoundedReflection * pattern;
     spectralInput[spectralIdx] = current + ambientContribution;
   }
@@ -359,11 +359,11 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
  * 1. combineScattered (from current layer)
  * 2. applyAmbient (from current layer)
  * 3. applyLayerAbsorption (for NEXT layer) - if not last layer
- * 
+ *
  * This eliminates 2 dispatches per layer transition by:
  * - Pre-computing shape masks ONCE for all operations
  * - Avoiding intermediate buffer writes between combine and next absorption
- * 
+ *
  * Buffer flow:
  * - Reads: spectralOutput (transmitted), blurredTransmitted, scatterSource (aura)
  * - Writes: spectralOutput (next layer's transmitted), scatterSource (next layer's aura)
@@ -373,24 +373,24 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
 fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
   let fx = f32(screenPos.x);
   let fy = f32(screenPos.y);
   let numShapes = arrayLength(&shapes);
-  
+
   // ============================================================
   // OPTIMIZATION 1: Pre-compute shape masks ONCE for all operations
   // ============================================================
   var shapeMasks: array<f16, 16>;
   var maxMask: f16 = f16(0.0);
   let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
-  
+
   if (inBounds) {
     for (var i: u32 = 0u; i < shapesToProcess; i++) {
       let mask = f16(getShapeMask(shapes[i], fx, fy));
@@ -398,7 +398,7 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       maxMask = max(maxMask, mask);
     }
   }
-  
+
   // ============================================================
   // EARLY-EXIT: Fast path for pixels with no shape coverage
   // ============================================================
@@ -409,27 +409,27 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     return;
   }
-  
+
   let anyMask = maxMask > f16(0.0);
-  
+
   // Ambient light pattern (computed once, used for both combine and next layer)
   var ambientPattern: f16 = f16(0.0);
   if (inBounds) {
     ambientPattern = getAmbientPattern(fx, fy);
   }
-  
+
   // Process each wavelength
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let wavelength = getWavelength(wIdx);
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
-    
+
     // ============================================================
     // STEP 1: Three-path combination (combine scattered)
     // ============================================================
     let transmitted = spectralOutput[spectralIdx];
     let blurredFull = blurredTransmitted[spectralIdx];
     let aura = scatterSource[spectralIdx];
-    
+
     // Compute scatter probability using cached masks
     var scatterProb: f16 = f16(0.0);
     if (inBounds && anyMask) {
@@ -449,12 +449,12 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       }
       scatterProb = f16(1.0 - unscatteredFrac);
     }
-    
+
     // Three-path combination
     let direct = transmitted * (f16(1.0) - scatterProb);
     let inShapeScatter = blurredFull * scatterProb * IN_SHAPE_SCATTER_FRACTION_H;
     var combined = direct + inShapeScatter + aura;
-    
+
     // ============================================================
     // STEP 2: Apply ambient reflection
     // ============================================================
@@ -462,7 +462,7 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       let ambient = getAmbientIntensity(wavelength);
       var compoundedReflection: f16 = f16(1.0);
       var maxCoverage: f16 = f16(0.0);
-      
+
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let mask = shapeMasks[i];
         if (mask > f16(0.0)) {
@@ -474,19 +474,19 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
           }
         }
       }
-      
+
       if (maxCoverage > f16(0.0)) {
         combined += ambient * compoundedReflection * maxCoverage * ambientPattern;
       }
     }
-    
+
     // ============================================================
     // STEP 3: Apply NEXT layer's absorption (if not last layer)
     // ============================================================
     // Note: Next layer shapes should be loaded into shapes buffer before dispatch
     // The params.currentLayer should indicate this is a transition dispatch
     // If this is the last layer, write to spectralInput as final output
-    
+
     // For now, write combined result to spectralInput
     // The next layer's absorption will be handled by a separate dispatch
     // Full cross-layer merge requires TypeScript pipeline restructuring
@@ -506,11 +506,11 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
 fn processLayerTransitionFast(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   // Fast path: just pass through transmitted + aura
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
@@ -526,35 +526,35 @@ fn processLayerTransitionFast(@builtin(global_invocation_id) id: vec3<u32>) {
 
 /**
  * OPTIMIZED: Process 4 wavelengths simultaneously using vec4<f16>.
- * 
+ *
  * This version provides 2-4x ALU improvement by:
  * - Processing 4 wavelengths in parallel with SIMD operations
  * - Reducing loop iterations by 4x
  * - Better GPU utilization through vectorized math
  * - EARLY-EXIT for pixels with no shape coverage (~30% savings on sparse scenes)
- * 
+ *
  * Note: Requires sampleCount to be divisible by 4 (which 16 is).
  */
 @compute @workgroup_size(8, 8)
 fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
   let localX = id.x;
   let localY = id.y;
-  
+
   if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
     return;
   }
-  
+
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
   let fx = f32(screenPos.x);
   let fy = f32(screenPos.y);
   let numShapes = arrayLength(&shapes);
-  
+
   // Pre-compute shape masks ONCE
   var shapeMasks: array<f16, 16>;
   var maxMask: f16 = f16(0.0);
   let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
-  
+
   if (inBounds) {
     for (var i: u32 = 0u; i < shapesToProcess; i++) {
       let mask = f16(getShapeMask(shapes[i], fx, fy));
@@ -562,9 +562,9 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       maxMask = max(maxMask, mask);
     }
   }
-  
+
   let baseIdx = (localY * params.bufferWidth + localX) * params.sampleCount;
-  
+
   // ============================================================
   // EARLY-EXIT: Fast path for pixels with no shape coverage
   // This skips all physics calculations for ~70-90% of pixels
@@ -576,7 +576,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       let idx1 = baseIdx + w + 1u;
       let idx2 = baseIdx + w + 2u;
       let idx3 = baseIdx + w + 3u;
-      
+
       // Simple pass-through: transmitted + aura
       spectralInput[idx0] = spectralOutput[idx0] + scatterSource[idx0];
       spectralInput[idx1] = spectralOutput[idx1] + scatterSource[idx1];
@@ -585,15 +585,15 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     return;
   }
-  
+
   // Ambient light pattern (computed once, only for pixels with coverage)
   var ambientPattern: f16 = f16(0.0);
   if (inBounds) {
     ambientPattern = getAmbientPattern(fx, fy);
   }
-  
+
   let anyMask = maxMask > f16(0.0);
-  
+
   // Process 4 wavelengths at a time
   for (var w: u32 = 0u; w < params.sampleCount; w += 4u) {
     // Load 4 wavelengths
@@ -603,12 +603,12 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       getWavelength(w + 2u),
       getWavelength(w + 3u)
     );
-    
+
     let idx0 = baseIdx + w;
     let idx1 = baseIdx + w + 1u;
     let idx2 = baseIdx + w + 2u;
     let idx3 = baseIdx + w + 3u;
-    
+
     // Load transmitted, blurred, and aura as vec4
     let transmitted = vec4<f16>(
       spectralOutput[idx0], spectralOutput[idx1],
@@ -622,7 +622,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       scatterSource[idx0], scatterSource[idx1],
       scatterSource[idx2], scatterSource[idx3]
     );
-    
+
     // Compute scatter probability for each wavelength
     var scatterProb4 = vec4<f16>(0.0h, 0.0h, 0.0h, 0.0h);
     if (inBounds && anyMask) {
@@ -632,7 +632,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         if (mask > f16(0.0)) {
           let shape = shapes[i];
           let pathLength = max(shape.width, shape.height) * 0.01 * f32(mask);
-          
+
           // Compute scatter transmission for each wavelength
           unscattered.x *= applyScattering(1.0, wavelengths.x, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
           unscattered.y *= applyScattering(1.0, wavelengths.y, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
@@ -642,14 +642,14 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       }
       scatterProb4 = vec4<f16>(f16(1.0 - unscattered.x), f16(1.0 - unscattered.y), f16(1.0 - unscattered.z), f16(1.0 - unscattered.w));
     }
-    
+
     // Vectorized three-path combination
     let one4 = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
     let scatter_frac = vec4<f16>(IN_SHAPE_SCATTER_FRACTION_H);
     let direct = transmitted * (one4 - scatterProb4);
     let inShapeScatter = blurred * scatterProb4 * scatter_frac;
     var combined = direct + inShapeScatter + aura;
-    
+
     // Vectorized ambient reflection
     if (inBounds && anyMask) {
       // Get ambient intensity for each wavelength
@@ -659,10 +659,10 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         getAmbientIntensity(wavelengths.z),
         getAmbientIntensity(wavelengths.w)
       );
-      
+
       var compoundedReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
       var maxCoverage: f16 = f16(0.0);
-      
+
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let mask = shapeMasks[i];
         if (mask > f16(0.0)) {
@@ -680,12 +680,12 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
           }
         }
       }
-      
+
       if (maxCoverage > f16(0.0)) {
         combined += ambient * compoundedReflection * vec4<f16>(maxCoverage) * vec4<f16>(ambientPattern);
       }
     }
-    
+
     // Store results
     spectralInput[idx0] = combined.x;
     spectralInput[idx1] = combined.y;
@@ -693,4 +693,3 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     spectralInput[idx3] = combined.w;
   }
 }
-

@@ -70,4 +70,3 @@ When running the app, check browser console for:
 - `[GPU] GPU rendering failed` (if rendering fails)
 
 If GPU is failing, the error messages will tell us why (shader compilation, framebuffer issues, WebGL context problems, etc.)
-

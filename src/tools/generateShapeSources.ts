@@ -1,13 +1,13 @@
 /**
  * Shape Source Generator - Creates source.svg files for all shapes
- * 
+ *
  * This tool generates source.svg files containing:
  * - <g id="msdf">: Shape mask for MSDF texture generation
  * - <g id="alpha">: Optional gradient overlays for alpha channel
  * - <defs>: Gradient definitions used by the alpha group
- * 
+ *
  * Output: public/shapes/{shapeName}/source.svg
- * 
+ *
  * Usage:
  *   npx tsx src/tools/generateShapeSources.ts
  */
@@ -72,10 +72,10 @@ function generateTrianglePath(width: number, height: number): string {
  */
 function generateCircleGridPath(): string {
   const pathParts: string[] = [];
-  
+
   const cols = Math.floor(GRID_WIDTH / CELL_SIZE);
   const rows = Math.floor(GRID_HEIGHT / CELL_SIZE);
-  
+
   // Vertical lines
   for (let i = 0; i <= cols; i++) {
     const x = i * CELL_SIZE;
@@ -84,7 +84,7 @@ function generateCircleGridPath(): string {
     const x2 = Math.min(GRID_WIDTH, x + halfWidth);
     pathParts.push(`M ${x1} 0 L ${x2} 0 L ${x2} ${GRID_HEIGHT} L ${x1} ${GRID_HEIGHT} Z`);
   }
-  
+
   // Horizontal lines
   for (let j = 0; j <= rows; j++) {
     const y = j * CELL_SIZE;
@@ -93,17 +93,19 @@ function generateCircleGridPath(): string {
     const y2 = Math.min(GRID_HEIGHT, y + halfWidth);
     pathParts.push(`M 0 ${y1} L ${GRID_WIDTH} ${y1} L ${GRID_WIDTH} ${y2} L 0 ${y2} Z`);
   }
-  
+
   // Circles
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const cx = col * CELL_SIZE + CELL_SIZE / 2;
       const cy = row * CELL_SIZE + CELL_SIZE / 2;
       const r = CIRCLE_RADIUS;
-      pathParts.push(`M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`);
+      pathParts.push(
+        `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`
+      );
     }
   }
-  
+
   return pathParts.join(' ');
 }
 
@@ -112,36 +114,38 @@ function generateCircleGridPath(): string {
  */
 function generateDiagonalCircleGridPath(): string {
   const pathParts: string[] = [];
-  
+
   const cols = Math.floor(GRID_WIDTH / CELL_SIZE) + 1;
   const rows = Math.floor(GRID_HEIGHT / CELL_SIZE);
   const halfCell = CELL_SIZE / 2;
   const lineHalfWidth = LINE_WIDTH / 2;
-  
+
   // Staggered circles
   for (let row = 0; row < rows; row++) {
     const cy = row * CELL_SIZE + halfCell;
     const xOffset = (row % 2) * halfCell;
-    
+
     for (let col = 0; col < cols; col++) {
       const cx = col * CELL_SIZE + halfCell + xOffset;
       if (cx < 0 || cx > GRID_WIDTH) continue;
-      
+
       const r = CIRCLE_RADIUS;
-      pathParts.push(`M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`);
+      pathParts.push(
+        `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`
+      );
     }
   }
-  
+
   // Diagonal lines
   for (let row = 0; row < rows - 1; row++) {
     const y1 = row * CELL_SIZE + halfCell;
     const y2 = (row + 1) * CELL_SIZE + halfCell;
     const xOffset1 = (row % 2) * halfCell;
-    
+
     for (let col = 0; col < cols; col++) {
       const x1 = col * CELL_SIZE + halfCell + xOffset1;
       if (x1 < 0 || x1 > GRID_WIDTH) continue;
-      
+
       // Down-left connection
       const x2left = x1 - halfCell;
       if (x2left >= 0 && x2left <= GRID_WIDTH) {
@@ -150,9 +154,11 @@ function generateDiagonalCircleGridPath(): string {
         const len = Math.sqrt(dx * dx + dy * dy);
         const nx = (-dy / len) * lineHalfWidth;
         const ny = (dx / len) * lineHalfWidth;
-        pathParts.push(`M ${x1 + nx} ${y1 + ny} L ${x2left + nx} ${y2 + ny} L ${x2left - nx} ${y2 - ny} L ${x1 - nx} ${y1 - ny} Z`);
+        pathParts.push(
+          `M ${x1 + nx} ${y1 + ny} L ${x2left + nx} ${y2 + ny} L ${x2left - nx} ${y2 - ny} L ${x1 - nx} ${y1 - ny} Z`
+        );
       }
-      
+
       // Down-right connection
       const x2right = x1 + halfCell;
       if (x2right >= 0 && x2right <= GRID_WIDTH) {
@@ -161,11 +167,13 @@ function generateDiagonalCircleGridPath(): string {
         const len = Math.sqrt(dx * dx + dy * dy);
         const nx = (-dy / len) * lineHalfWidth;
         const ny = (dx / len) * lineHalfWidth;
-        pathParts.push(`M ${x1 + nx} ${y1 + ny} L ${x2right + nx} ${y2 + ny} L ${x2right - nx} ${y2 - ny} L ${x1 - nx} ${y1 - ny} Z`);
+        pathParts.push(
+          `M ${x1 + nx} ${y1 + ny} L ${x2right + nx} ${y2 + ny} L ${x2right - nx} ${y2 - ny} L ${x1 - nx} ${y1 - ny} Z`
+        );
       }
     }
   }
-  
+
   return pathParts.join(' ');
 }
 
@@ -181,7 +189,7 @@ interface GradientDef {
 }
 
 interface AlphaLayer {
-  fill: string;  // color or url(#gradientId)
+  fill: string; // color or url(#gradientId)
   blendMode?: string;
 }
 
@@ -193,14 +201,14 @@ interface AlphaConfig {
 /**
  * Generate ambient light alpha config for diagonal-circle-grid
  * Two overlapping gradients: linear right-to-left + radial from bottom-left
- * 
+ *
  * Uses transparent gradients with screen blend mode for additive light mixing:
  * - Linear: bright on right, fades to transparent on left
  * - Radial: bright spot at bottom-left, fades to transparent
- * 
+ *
  * Screen blend: result = 1 - (1-a)(1-b), so lights add together naturally.
  * Black base ensures we start from dark, then lights add on top.
- * 
+ *
  * The radial gradient uses userSpaceOnUse with pixel values to ensure
  * a circular (not elliptical) gradient regardless of viewport aspect ratio.
  */
@@ -208,12 +216,12 @@ function generateAmbientLightAlpha(): AlphaConfig {
   // For circular radial gradient, we need pixel coordinates
   // Bottom-left center: 10% from left = 128px, 90% from top = 648px
   // Radius: large enough to cover screen diagonal (~1470px), use 1200px
-  const cx = Math.round(GRID_WIDTH * 0.1);   // 128
-  const cy = Math.round(GRID_HEIGHT * 0.9);  // 648
-  const fx = Math.round(GRID_WIDTH * 0.05);  // 64
+  const cx = Math.round(GRID_WIDTH * 0.1); // 128
+  const cy = Math.round(GRID_HEIGHT * 0.9); // 648
+  const fx = Math.round(GRID_WIDTH * 0.05); // 64
   const fy = Math.round(GRID_HEIGHT * 0.95); // 684
   const r = 1200; // Large radius to cover most of the screen
-  
+
   return {
     gradients: [
       {
@@ -230,13 +238,13 @@ function generateAmbientLightAlpha(): AlphaConfig {
         // Radial gradient: bright at bottom-left, transparent outward
         id: 'radialBottomLeft',
         type: 'radial',
-        attrs: { 
+        attrs: {
           gradientUnits: 'userSpaceOnUse',
-          cx: `${cx}`, 
-          cy: `${cy}`, 
-          r: `${r}`, 
-          fx: `${fx}`, 
-          fy: `${fy}` 
+          cx: `${cx}`,
+          cy: `${cy}`,
+          r: `${r}`,
+          fx: `${fx}`,
+          fy: `${fy}`,
         },
         stops: [
           { offset: '0%', color: 'white', opacity: '1' },
@@ -265,12 +273,12 @@ function formatGradientDef(gradient: GradientDef): string {
     .map(([k, v]) => `${k}="${v}"`)
     .join(' ');
   const stops = gradient.stops
-    .map(s => {
+    .map((s) => {
       const opacityAttr = s.opacity ? ` stop-opacity="${s.opacity}"` : '';
       return `      <stop offset="${s.offset}" stop-color="${s.color}"${opacityAttr}/>`;
     })
     .join('\n');
-  
+
   return `    <${tag} id="${gradient.id}" ${attrs}>
 ${stops}
     </${tag}>`;
@@ -283,23 +291,23 @@ function formatAlphaLayer(layer: AlphaLayer, width: number, height: number): str
 
 /**
  * Generate complete source.svg content
- * 
+ *
  * Structure:
  * - <defs>: Gradients + mask using MSDF pattern
  * - <g id="msdf">: Hidden, for extraction to msdf-mask.svg
- * - <g id="alpha">: Hidden, for extraction to alpha-grads.svg  
+ * - <g id="alpha">: Hidden, for extraction to alpha-grads.svg
  * - <g id="preview">: Visual preview showing gradients masked by pattern
  */
 function generateSourceSvg(config: ShapeConfig): string {
   const { width, height, msdfPath, alpha } = config;
-  
+
   const parts: string[] = [];
   const hasAlpha = alpha && alpha.layers.length > 0;
   const hasBothMsdfAndAlpha = msdfPath && hasAlpha;
-  
+
   // SVG header
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">`);
-  
+
   // Comment header
   parts.push(`  <!--`);
   parts.push(`    Source SVG for ${config.name} shape.`);
@@ -310,18 +318,18 @@ function generateSourceSvg(config: ShapeConfig): string {
     parts.push(`    The msdf and alpha groups are hidden but extractable.`);
   }
   parts.push(`  -->`);
-  
+
   // Defs section (gradients + pattern mask for visual preview)
   parts.push('');
   parts.push('  <defs>');
-  
+
   // Add gradients
   if (alpha && alpha.gradients.length > 0) {
     for (const gradient of alpha.gradients) {
       parts.push(formatGradientDef(gradient));
     }
   }
-  
+
   // Add pattern mask for visual preview (only if we have both msdf and alpha)
   if (hasBothMsdfAndAlpha) {
     parts.push('    <!-- Mask using MSDF pattern for visual preview -->');
@@ -330,9 +338,9 @@ function generateSourceSvg(config: ShapeConfig): string {
     parts.push(`      <path d="${msdfPath}" fill="white"/>`);
     parts.push('    </mask>');
   }
-  
+
   parts.push('  </defs>');
-  
+
   // MSDF group (hidden for extraction only)
   parts.push('');
   parts.push('  <!-- MSDF group: shape mask for distance field (hidden, for extraction) -->');
@@ -347,7 +355,7 @@ function generateSourceSvg(config: ShapeConfig): string {
     parts.push('    <!-- No MSDF mask for this shape -->');
     parts.push('  </g>');
   }
-  
+
   // Alpha group (hidden for extraction only)
   parts.push('');
   if (hasAlpha) {
@@ -363,7 +371,7 @@ function generateSourceSvg(config: ShapeConfig): string {
     parts.push('  <!-- No alpha gradients for this shape -->');
     parts.push('  <g id="alpha"></g>');
   }
-  
+
   // Visual preview: gradients masked by pattern (only if we have both)
   if (hasBothMsdfAndAlpha) {
     parts.push('');
@@ -374,10 +382,10 @@ function generateSourceSvg(config: ShapeConfig): string {
     }
     parts.push('  </g>');
   }
-  
+
   parts.push('</svg>');
   parts.push('');
-  
+
   return parts.join('\n');
 }
 
@@ -439,37 +447,36 @@ function buildShapeConfigs(): ShapeConfig[] {
 async function main(): Promise<void> {
   console.log('Shape Source Generator\n');
   console.log('Generates source.svg files with MSDF patterns and alpha gradients.\n');
-  
+
   // Ensure output directory exists
   if (!fs.existsSync(SHAPES_DIR)) {
     fs.mkdirSync(SHAPES_DIR, { recursive: true });
   }
-  
+
   const shapes = buildShapeConfigs();
-  
+
   for (const shape of shapes) {
     const shapeDir = path.join(SHAPES_DIR, shape.name);
-    
+
     // Ensure shape directory exists
     if (!fs.existsSync(shapeDir)) {
       fs.mkdirSync(shapeDir, { recursive: true });
     }
-    
+
     // Generate source.svg
     const svgContent = generateSourceSvg(shape);
     const outputPath = path.join(shapeDir, 'source.svg');
-    
+
     fs.writeFileSync(outputPath, svgContent);
     console.log(`Generated: ${shape.name}/source.svg`);
-    
+
     const features: string[] = [];
     if (shape.msdfPath) features.push('msdf');
     if (shape.alpha) features.push(`alpha (${shape.alpha.gradients.length} gradients)`);
     console.log(`  Features: ${features.join(', ') || 'none'}`);
   }
-  
+
   console.log('\nDone! Run buildShapeTextures.ts to generate PNG files.');
 }
 
 main().catch(console.error);
-

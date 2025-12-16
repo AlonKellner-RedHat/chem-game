@@ -83,4 +83,3 @@ Potential improvements:
 - Rule dependencies
 - Rule composition (chaining rules)
 - Rule metadata (descriptions, icons, etc.)
-

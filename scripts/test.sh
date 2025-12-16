@@ -41,4 +41,3 @@ case "$TEST_TYPE" in
 esac
 
 print_status "Tests completed successfully!"
-

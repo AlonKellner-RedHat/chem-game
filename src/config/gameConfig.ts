@@ -1,6 +1,6 @@
 /**
  * Phaser 4 Game Configuration
- * 
+ *
  * Configuration for the Phaser 4 + WebGPU implementation.
  * Note: Phaser 4 uses a different config format than Phaser 3.
  */
@@ -19,7 +19,3 @@ export const gameConfig: GameConfig = {
   backgroundColor: '#ffffff',
   parent: 'game-container',
 };
-
-
-
-

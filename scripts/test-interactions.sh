@@ -50,4 +50,3 @@ print_info "Display server detected. Running full integration tests..."
 # Full tests would go here if we had window-based test infrastructure
 
 print_status "All tests completed!"
-

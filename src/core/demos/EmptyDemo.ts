@@ -1,11 +1,11 @@
 /**
  * Empty Demo
- * 
+ *
  * Minimal placeholder demo for testing scene lifecycle.
  */
 
-import { Demo } from './Demo';
-import { GameScene } from '../../scenes/GameScene';
+import type { GameScene } from '../../scenes/GameScene';
+import type { Demo } from './Demo';
 
 // Base design dimensions
 const BASE_WIDTH = 1280;
@@ -13,28 +13,28 @@ const BASE_WIDTH = 1280;
 export class EmptyDemo implements Demo {
   readonly name = 'Empty';
   readonly description = 'Minimal placeholder demo';
-  
+
   initialize(scene: GameScene): void {
     console.log('[EmptyDemo] Initialized');
     this.render(scene);
   }
-  
+
   resize(scene: GameScene, width: number, height: number): void {
     this.render(scene);
   }
-  
+
   cleanup(scene: GameScene): void {
     console.log('[EmptyDemo] Cleaned up');
   }
-  
+
   private render(scene: GameScene): void {
     const ctx = scene.getContext();
     const { width, height } = scene.getDimensions();
     const scale = width / BASE_WIDTH;
-    
+
     ctx.fillStyle = '#333';
     ctx.fillRect(0, 0, width, height);
-    
+
     ctx.fillStyle = '#fff';
     ctx.font = `${24 * scale}px sans-serif`;
     ctx.textAlign = 'center';
@@ -43,5 +43,3 @@ export class EmptyDemo implements Demo {
     ctx.fillText('Press M to open menu', width / 2, height / 2 + 20 * scale);
   }
 }
-
-

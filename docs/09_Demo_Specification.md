@@ -340,18 +340,18 @@ N_IB (Inner Bulk):
   Temperature: 250.5°C
   Composition: 95% CO₂, 5% H₂O
   Volume: 1.2L
-  
+
 N_IS (Inner Surface):
   Thickness: 52μm
   Residue: None
-  
+
 N_Mat (Material):
   Temperature: 245.0°C
   Thickness: 2mm
-  
+
 N_OS (Outer Surface):
   Soot: 0%
-  
+
 N_OB (Outer Bulk):
   Environment: Air
   Temperature: 20°C
@@ -380,7 +380,7 @@ Composition:
   Cu₂CO₃(OH)₂: 0.5g (10%)
   CuO: 3.5g (70%)
   CO₂: 1.2L (20%)
-  
+
 Purity: 70% (Unrefined)
 ```
 
@@ -462,4 +462,3 @@ See:
 - [10_Demo_TDD_Plan.md](10_Demo_TDD_Plan.md) - Test-driven development plan
 - [11_Demo_POC_Plan.md](11_Demo_POC_Plan.md) - Proof of concept prototypes
 - [12_Demo_Build_Plan.md](12_Demo_Build_Plan.md) - Incremental build plan
-

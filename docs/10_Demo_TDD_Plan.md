@@ -42,16 +42,16 @@ mod tests {
     fn create_container_with_type_returns_container_entity() {
         // Arrange
         let container_type = ContainerType::Flask;
-        
+
         // Act
         let mut app = App::new();
         app.add_systems(Update, create_container_system);
-        
+
         let entity = app.world.spawn(ContainerNode {
             container_type,
             ..default()
         }).id();
-        
+
         // Assert
         assert!(app.world.entity(entity).contains::<ContainerNode>());
         let node = app.world.entity(entity).get::<ContainerNode>().unwrap();
@@ -68,11 +68,11 @@ fn place_container_on_grid_snaps_to_grid() {
     let mut app = App::new();
     let container = app.world.spawn(ContainerNode::default()).id();
     let position = Vec2::new(123.4, 567.8);
-    
+
     // Act
     let snapped = snap_to_grid(position);
     app.world.entity_mut(container).insert(Transform::from_translation(snapped.extend(0.0)));
-    
+
     // Assert
     let transform = app.world.entity(container).get::<Transform>().unwrap();
     let actual_position = transform.translation.truncate();
@@ -95,10 +95,10 @@ fn add_solid_to_empty_container_creates_layer() {
         ..default()
     }).id();
     let malachite = create_malachite(5.0); // 5g
-    
+
     // Act
     add_solid_to_container(&mut app.world, container, malachite);
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     assert_eq!(1, node.layers.len());
@@ -116,10 +116,10 @@ fn add_malachite_tracks_composition() {
     let mut app = App::new();
     let container = app.world.spawn(ContainerNode::default()).id();
     let malachite = create_malachite(5.0);
-    
+
     // Act
     add_solid_to_container(&mut app.world, container, malachite);
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     let layer = app.world.entity(node.layers[0]).get::<LayerEntity>().unwrap();
@@ -140,14 +140,14 @@ fn add_malachite_tracks_composition() {
 fn create_heat_source_with_temperature_sets_temperature() {
     // Arrange
     let temperature = 200.0;
-    
+
     // Act
     let mut app = App::new();
     let heat_source = app.world.spawn(HeatSource {
         temperature,
         ..default()
     }).id();
-    
+
     // Assert
     let heat = app.world.entity(heat_source).get::<HeatSource>().unwrap();
     assert_eq!(temperature, heat.temperature);
@@ -165,11 +165,11 @@ fn heat_container_from_heat_source_updates_temperature() {
         temperature: 200.0,
         position: Vec2::new(0.0, -1.0), // Below container
     }).id();
-    
+
     // Act
     app.add_systems(Update, heat_transfer_system);
     app.update();
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     let layer = app.world.entity(node.layers[0]).get::<LayerEntity>().unwrap();
@@ -188,16 +188,16 @@ fn heat_container_gradually_increases_temperature() {
         temperature: 200.0,
         position: Vec2::new(0.0, -1.0),
     }).id();
-    
+
     // Act & Assert
     app.add_systems(Update, heat_transfer_system);
-    
+
     app.update();
     let temp1 = get_layer_temperature(&app.world, container);
-    
+
     app.update();
     let temp2 = get_layer_temperature(&app.world, container);
-    
+
     assert!(temp2 > temp1);
 }
 ```
@@ -218,13 +218,13 @@ fn heat_malachite_above_200c_triggers_decomposition() {
         temperature: 250.0,
         position: Vec2::new(0.0, -1.0),
     }).id();
-    
+
     // Act
     app.add_systems(Update, (heat_transfer_system, reaction_system));
     for _ in 0..60 {
         app.update(); // Simulate 1 second at 60 FPS
     }
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     let layer = app.world.entity(node.layers[0]).get::<LayerEntity>().unwrap();
@@ -243,23 +243,23 @@ fn decompose_malachite_produces_cuo_co2_h2o() {
     let container = app.world.spawn(ContainerNode::default()).id();
     add_malachite(&mut app.world, container, 5.0);
     heat_to_temperature(&mut app.world, container, 250.0);
-    
+
     // Act
     app.add_systems(Update, reaction_system);
     app.update();
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     let layers: Vec<_> = node.layers.iter()
         .map(|&e| app.world.entity(e).get::<LayerEntity>().unwrap())
         .collect();
-    
+
     // Check for CuO (solid)
     let solid_layer = layers.iter().find(|l| l.state == PhysicalState::Solid);
     assert!(solid_layer.is_some());
     let cuo_moles = get_moles_from_layer(&app.world, solid_layer.unwrap(), CUO_ID);
     assert!(cuo_moles > 0.0);
-    
+
     // Check for CO₂ and H₂O (gas)
     let gas_layer = layers.iter().find(|l| l.state == PhysicalState::Gas);
     assert!(gas_layer.is_some());
@@ -279,7 +279,7 @@ fn decompose_malachite_at_250c_completes_in_reasonable_time() {
     let container = app.world.spawn(ContainerNode::default()).id();
     add_malachite(&mut app.world, container, 5.0);
     heat_to_temperature(&mut app.world, container, 250.0);
-    
+
     // Act
     let start_moles = get_malachite_moles(&app.world, container);
     app.add_systems(Update, reaction_system);
@@ -287,7 +287,7 @@ fn decompose_malachite_at_250c_completes_in_reasonable_time() {
         app.update(); // 10 seconds at 60 FPS
     }
     let end_moles = get_malachite_moles(&app.world, container);
-    
+
     // Assert
     assert!(end_moles < start_moles * 0.1); // <10% remaining
 }
@@ -308,10 +308,10 @@ fn attach_balloon_to_flask_connects_to_container() {
         ..default()
     }).id();
     let balloon = app.world.spawn(Balloon::default()).id();
-    
+
     // Act
     attach_balloon(&mut app.world, balloon, flask);
-    
+
     // Assert
     let balloon_data = app.world.entity(balloon).get::<Balloon>().unwrap();
     assert_eq!(flask, balloon_data.attached_container);
@@ -328,11 +328,11 @@ fn add_gas_to_attached_balloon_inflates() {
     let flask = app.world.spawn(ContainerNode::default()).id();
     let balloon = attach_balloon(&mut app.world, flask);
     add_gas_to_container(&mut app.world, flask, CO2_ID, 1.2); // 1.2L
-    
+
     // Act
     app.add_systems(Update, balloon_inflation_system);
     app.update();
-    
+
     // Assert
     let balloon_data = app.world.entity(balloon).get::<Balloon>().unwrap();
     assert!(balloon_data.volume > 0.0);
@@ -350,11 +350,11 @@ fn inflate_balloon_tracks_gas_composition() {
     let balloon = attach_balloon(&mut app.world, flask);
     add_gas_to_container(&mut app.world, flask, CO2_ID, 1.0);
     add_gas_to_container(&mut app.world, flask, H2O_ID, 0.1);
-    
+
     // Act
     app.add_systems(Update, balloon_inflation_system);
     app.update();
-    
+
     // Assert
     let balloon_data = app.world.entity(balloon).get::<Balloon>().unwrap();
     let composition = get_composition(&app.world, balloon_data.composition);
@@ -374,13 +374,13 @@ fn stage1_complete_flow_extracts_co2() {
     // Arrange
     let mut app = App::new();
     setup_stage1(&mut app);
-    
+
     let bench = create_bench(&mut app.world);
     let burner = place_burner(&mut app.world, bench);
     let flask = place_flask(&mut app.world, burner);
     let malachite = add_malachite(&mut app.world, flask, 5.0);
     let balloon = attach_balloon(&mut app.world, flask);
-    
+
     // Act
     heat_burner(&mut app.world, burner, 250.0);
     app.add_systems(Update, (
@@ -391,7 +391,7 @@ fn stage1_complete_flow_extracts_co2() {
     for _ in 0..600 {
         app.update(); // Wait 10 seconds
     }
-    
+
     // Assert
     let balloon_data = app.world.entity(balloon).get::<Balloon>().unwrap();
     assert!(balloon_data.volume > 1.0); // >1L
@@ -413,10 +413,10 @@ fn pour_liquid_into_container_creates_liquid_layer() {
     let mut app = App::new();
     let container = app.world.spawn(ContainerNode::default()).id();
     let acid = create_sulfuric_acid(0.1); // 100mL
-    
+
     // Act
     pour_liquid(&mut app.world, container, acid, 0.1);
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     let layers: Vec<_> = node.layers.iter()
@@ -439,11 +439,11 @@ fn add_acid_to_cuo_dissolves() {
     let container = app.world.spawn(ContainerNode::default()).id();
     add_cuo(&mut app.world, container, 3.5);
     pour_acid(&mut app.world, container, 0.1);
-    
+
     // Act
     app.add_systems(Update, reaction_system);
     app.update();
-    
+
     // Assert
     let solid_layer = get_solid_layer(&app.world, container);
     let cuo_moles = get_moles_from_layer(&app.world, solid_layer, CUO_ID);
@@ -460,13 +460,13 @@ fn dissolve_cuo_produces_blue_solution() {
     let container = app.world.spawn(ContainerNode::default()).id();
     add_cuo(&mut app.world, container, 3.5);
     pour_acid(&mut app.world, container, 0.1);
-    
+
     // Act
     app.add_systems(Update, reaction_system);
     for _ in 0..600 {
         app.update(); // 10 seconds
     }
-    
+
     // Assert
     let liquid_layer = get_liquid_layer(&app.world, container);
     let color = calculate_solution_color(&app.world, liquid_layer);
@@ -484,10 +484,10 @@ fn stir_container_increases_mixing_rate() {
     let mut app = App::new();
     let container = app.world.spawn(ContainerNode::default()).id();
     let stirring_rod = app.world.spawn(StirringRod::default()).id();
-    
+
     // Act
     stir_container(&mut app.world, container, stirring_rod, 1.0);
-    
+
     // Assert
     let node = app.world.entity(container).get::<ContainerNode>().unwrap();
     let layer = app.world.entity(node.layers[0]).get::<LayerEntity>().unwrap();
@@ -505,7 +505,7 @@ fn stage2_complete_flow_creates_blue_solution() {
     // Arrange
     let mut app = App::new();
     let flask = create_flask_with_cuo(&mut app.world, 3.5);
-    
+
     // Act
     pour_acid(&mut app.world, flask, 0.1);
     heat_container(&mut app.world, flask, 50.0); // Gentle heat
@@ -514,7 +514,7 @@ fn stage2_complete_flow_creates_blue_solution() {
     for _ in 0..600 {
         app.update(); // Wait 10 seconds
     }
-    
+
     // Assert
     let liquid_layer = get_liquid_layer(&app.world, flask);
     let color = calculate_solution_color(&app.world, liquid_layer);
@@ -538,10 +538,10 @@ fn attach_condenser_to_flask_connects() {
         ..default()
     }).id();
     let condenser = app.world.spawn(Condenser::default()).id();
-    
+
     // Act
     attach_condenser(&mut app.world, condenser, flask);
-    
+
     // Assert
     let condenser_data = app.world.entity(condenser).get::<Condenser>().unwrap();
     assert_eq!(flask, condenser_data.source_container);
@@ -559,14 +559,14 @@ fn heat_solution_to_boiling_evaporates_water() {
     let container = app.world.spawn(ContainerNode::default()).id();
     let solution = create_cuso4_solution(0.2); // 200mL
     add_solution(&mut app.world, container, solution);
-    
+
     // Act
     heat_to_temperature(&mut app.world, container, 100.0); // Boiling
     app.add_systems(Update, evaporation_system);
     for _ in 0..600 {
         app.update(); // 10 seconds
     }
-    
+
     // Assert
     let liquid_layer = get_liquid_layer(&app.world, container);
     assert!(liquid_layer.height < initial_height());
@@ -585,11 +585,11 @@ fn condense_vapor_in_condenser_produces_liquid() {
     let condenser = attach_condenser(&mut app.world, flask);
     let beaker = place_beaker_under_condenser(&mut app.world, condenser);
     add_vapor_to_container(&mut app.world, flask, H2O_ID, 0.1); // 100mL vapor
-    
+
     // Act
     app.add_systems(Update, condensation_system);
     app.update();
-    
+
     // Assert
     let beaker_data = app.world.entity(beaker).get::<ContainerNode>().unwrap();
     let liquid_layer = get_liquid_layer(&app.world, beaker);
@@ -608,11 +608,11 @@ fn evaporate_water_from_solution_becomes_supersaturated() {
     let container = app.world.spawn(ContainerNode::default()).id();
     let solution = create_cuso4_solution(0.2);
     add_solution(&mut app.world, container, solution);
-    
+
     // Act
     heat_to_temperature(&mut app.world, container, 100.0);
     evaporate_water(&mut app.world, container, 0.15); // Evaporate 150mL
-    
+
     // Assert
     let liquid_layer = get_liquid_layer(&app.world, container);
     assert!(is_supersaturated(&app.world, liquid_layer));
@@ -628,11 +628,11 @@ fn supersaturated_solution_nucleates_crystals() {
     let container = app.world.spawn(ContainerNode::default()).id();
     let solution = create_supersaturated_cuso4_solution();
     add_solution(&mut app.world, container, solution);
-    
+
     // Act
     app.add_systems(Update, nucleation_system);
     app.update();
-    
+
     // Assert
     let crystals = get_crystals(&app.world, container);
     assert!(crystals.len() > 0);
@@ -648,13 +648,13 @@ fn crystals_grow_over_time() {
     let container = app.world.spawn(ContainerNode::default()).id();
     let crystals = create_crystals(&mut app.world, container, 5);
     let initial_mass = get_total_crystal_mass(&app.world, &crystals);
-    
+
     // Act
     app.add_systems(Update, crystal_growth_system);
     for _ in 0..600 {
         app.update(); // 10 seconds
     }
-    
+
     // Assert
     let final_mass = get_total_crystal_mass(&app.world, &crystals);
     assert!(final_mass > initial_mass);
@@ -673,10 +673,10 @@ fn condensed_water_high_purity() {
     let water = create_water(0.1); // 100mL
     add_trace_impurity(&mut app.world, water, 0.0001); // 0.1mL impurity
     add_liquid(&mut app.world, beaker, water);
-    
+
     // Act
     let purity = calculate_purity(&app.world, beaker, H2O_ID);
-    
+
     // Assert
     assert!(purity > 0.99); // >99% pure
 }
@@ -693,7 +693,7 @@ fn stage3_complete_flow_separates_water_and_crystals() {
     let flask = create_flask_with_cuso4_solution(&mut app.world, 0.2);
     let condenser = attach_condenser(&mut app.world, flask);
     let beaker = place_beaker_under_condenser(&mut app.world, condenser);
-    
+
     // Act
     heat_to_boiling(&mut app.world, flask);
     app.add_systems(Update, (evaporation_system, condensation_system));
@@ -705,11 +705,11 @@ fn stage3_complete_flow_separates_water_and_crystals() {
     for _ in 0..300 {
         app.update(); // Wait for crystallization
     }
-    
+
     // Assert
     let water_purity = calculate_purity(&app.world, beaker, H2O_ID);
     assert!(water_purity > 0.99);
-    
+
     let crystals = get_crystals(&app.world, flask);
     assert!(crystals.len() > 0);
 }

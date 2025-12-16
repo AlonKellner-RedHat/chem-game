@@ -121,4 +121,3 @@ Both scenarios are handled automatically by the registry.
 4. Register the rule: `interactionSystem.registerConnectionRule(new MyRule())`
 
 The system will automatically use your new rule when checking connections!
-

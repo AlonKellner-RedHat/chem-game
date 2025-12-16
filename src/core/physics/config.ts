@@ -1,18 +1,18 @@
 /**
  * Spectral Physics Configuration
- * 
+ *
  * Defines configuration types for the spectral physics engine.
  * The config is split into shared settings (identical for both paths)
  * and path-specific settings (can differ between render and plot).
  */
 
 import {
-  WAVELENGTH_MIN,
-  WAVELENGTH_MAX,
-  VISIBLE_MIN,
-  VISIBLE_MAX,
-  DRAPER_POINT,
   D65_TEMPERATURE,
+  DRAPER_POINT,
+  VISIBLE_MAX,
+  VISIBLE_MIN,
+  WAVELENGTH_MAX,
+  WAVELENGTH_MIN,
 } from './constants';
 
 /**
@@ -32,28 +32,28 @@ export type OutputMode = 'rgb' | 'spectrum';
 export interface SharedPhysicsConfig {
   /** Minimum wavelength for spectrum calculations (nm) */
   wavelengthMin: number;
-  
+
   /** Maximum wavelength for spectrum calculations (nm) */
   wavelengthMax: number;
-  
+
   /** Start of visible spectrum (nm) */
   visibleMin: number;
-  
+
   /** End of visible spectrum (nm) */
   visibleMax: number;
-  
+
   /** Temperature threshold for visible emission (K) */
   draperPoint: number;
-  
+
   /** D65 reference temperature for normalization (K) */
   d65ReferenceTemp: number;
-  
+
   /** Whether to calculate thermal emission */
   enableEmission: boolean;
-  
+
   /** Whether to apply scattering effects (future) */
   enableScattering: boolean;
-  
+
   /** Background illumination mode */
   backgroundMode: BackgroundMode;
 }
@@ -65,7 +65,7 @@ export interface SharedPhysicsConfig {
 export interface RenderPathConfig {
   /** Number of wavelength samples for integration (16-32 typical) */
   spectralResolution: number;
-  
+
   /** Output format (always 'rgb' for rendering) */
   outputMode: 'rgb';
 }
@@ -77,10 +77,10 @@ export interface RenderPathConfig {
 export interface PlotPathConfig {
   /** Number of wavelength samples (320-5334 typical) */
   spectralResolution: number;
-  
+
   /** Output format (always 'spectrum' for plotting) */
   outputMode: 'spectrum';
-  
+
   /** Optional custom wavelength step size (nm) */
   wavelengthStep?: number;
 }
@@ -91,10 +91,10 @@ export interface PlotPathConfig {
 export interface SpectralPhysicsConfig {
   /** Shared settings (identical for both paths) */
   shared: SharedPhysicsConfig;
-  
+
   /** Render path specific settings */
   render: RenderPathConfig;
-  
+
   /** Plot path specific settings */
   plot: PlotPathConfig;
 }
@@ -121,7 +121,7 @@ export function createDefaultSharedConfig(): SharedPhysicsConfig {
  */
 export function createDefaultRenderConfig(): RenderPathConfig {
   return {
-    spectralResolution: 32,  // 32 samples across 100-1000nm for UV fluorescence
+    spectralResolution: 32, // 32 samples across 100-1000nm for UV fluorescence
     outputMode: 'rgb',
   };
 }
@@ -164,7 +164,3 @@ export function mergeConfig(
     plot: { ...base.plot, ...updates.plot },
   };
 }
-
-
-
-

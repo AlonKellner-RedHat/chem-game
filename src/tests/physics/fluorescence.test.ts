@@ -1,73 +1,72 @@
 /**
  * Fluorescence Physics Tests
- * 
+ *
  * TDD tests for the fluorescence physics module.
  * Tests the excitation efficiency, emission line shape, and quantum yield calculations.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { FluorescenceBand, Molecule } from '../../core/materials/Material';
 import {
-  FluorescenceModel,
-  MoleculeFluorescence,
-  getExcitationEfficiency,
-  getEmissionLineShape,
   calculateTotalExcitation,
   getDopplerWidth,
+  getEmissionLineShape,
+  getExcitationEfficiency,
+  MoleculeFluorescence,
 } from '../../core/physics/fluorescence';
-import { FluorescenceBand, Molecule } from '../../core/materials/Material';
 
 describe('FluorescenceModel Interface', () => {
   const testBand: FluorescenceBand = {
-  excitationMin: 280,
-  excitationMax: 350,
+    excitationMin: 280,
+    excitationMax: 350,
     excitationPeak: 315,
     emissionWavelength: 589,
-  emissionWidth: 0.1,
+    emissionWidth: 0.1,
     quantumYield: 0.8,
-};
+  };
 
   describe('getExcitationEfficiency', () => {
     it('returns 1.0 at excitation peak', () => {
       const efficiency = getExcitationEfficiency(315, testBand);
       expect(efficiency).toBeCloseTo(1.0, 2);
     });
-    
+
     it('returns 0 outside excitation range', () => {
       expect(getExcitationEfficiency(200, testBand)).toBe(0);
       expect(getExcitationEfficiency(400, testBand)).toBe(0);
     });
-    
+
     it('follows Gaussian profile within excitation range', () => {
       // At 1 sigma from peak, efficiency should be ~0.606
       // At 2 sigma from peak, efficiency should be ~0.135
       const atPeak = getExcitationEfficiency(315, testBand);
       const nearPeak = getExcitationEfficiency(320, testBand);
       const farFromPeak = getExcitationEfficiency(340, testBand);
-      
+
       expect(atPeak).toBeGreaterThan(nearPeak);
       expect(nearPeak).toBeGreaterThan(farFromPeak);
       expect(farFromPeak).toBeGreaterThan(0);
     });
-    
+
     it('is symmetric around excitation peak', () => {
       const below = getExcitationEfficiency(300, testBand);
       const above = getExcitationEfficiency(330, testBand);
       expect(below).toBeCloseTo(above, 2);
     });
   });
-  
+
   describe('getEmissionLineShape', () => {
     it('returns peak value at emission wavelength', () => {
       const atPeak = getEmissionLineShape(589, testBand, 300);
       const offPeak = getEmissionLineShape(590, testBand, 300);
       expect(atPeak).toBeGreaterThan(offPeak);
     });
-    
+
     it('returns near-zero far from emission wavelength', () => {
       const farAway = getEmissionLineShape(500, testBand, 300);
       expect(farAway).toBeLessThan(0.001);
     });
-    
+
     it('is normalized so peak value is 1', () => {
       const atPeak = getEmissionLineShape(589, testBand, 300);
       expect(atPeak).toBeCloseTo(1.0, 1);
@@ -75,8 +74,8 @@ describe('FluorescenceModel Interface', () => {
 
     it('broadens with temperature (Doppler broadening)', () => {
       // Higher temperature = broader Doppler width
-      const widthCold = getDopplerWidth(589, 100, 23);  // 100K
-      const widthHot = getDopplerWidth(589, 1000, 23);  // 1000K
+      const widthCold = getDopplerWidth(589, 100, 23); // 100K
+      const widthHot = getDopplerWidth(589, 1000, 23); // 1000K
       expect(widthHot).toBeGreaterThan(widthCold);
     });
   });
@@ -105,8 +104,8 @@ describe('MoleculeFluorescence Class', () => {
     const model = new MoleculeFluorescence(testMolecule);
     expect(model.id).toBe('test');
     expect(model.bands).toHaveLength(1);
-    });
-    
+  });
+
   it('returns empty bands for molecule without fluorescence', () => {
     const noFluorMolecule: Molecule = {
       id: 'no-fluor',
@@ -147,9 +146,9 @@ describe('MoleculeFluorescence Class', () => {
     };
     const model = new MoleculeFluorescence(multiband);
     expect(model.getTotalQuantumYield()).toBeCloseTo(0.7, 2);
-    });
   });
-  
+});
+
 describe('calculateTotalExcitation', () => {
   const testBand: FluorescenceBand = {
     excitationMin: 280,
@@ -159,7 +158,7 @@ describe('calculateTotalExcitation', () => {
     emissionWidth: 0.1,
     quantumYield: 0.8,
   };
-    
+
   it('returns 0 when no light is absorbed', () => {
     const absorbedSpectrum = new Float32Array(100).fill(0);
     const result = calculateTotalExcitation(absorbedSpectrum, 200, 400, testBand);
@@ -175,8 +174,8 @@ describe('calculateTotalExcitation', () => {
     }
     const result = calculateTotalExcitation(absorbedSpectrum, 200, 400, testBand);
     expect(result).toBeGreaterThan(0);
-    });
-    
+  });
+
   it('excitation is proportional to absorbed intensity', () => {
     const absorbedLow = new Float32Array(100);
     const absorbedHigh = new Float32Array(100);
@@ -187,20 +186,20 @@ describe('calculateTotalExcitation', () => {
     const resultLow = calculateTotalExcitation(absorbedLow, 200, 400, testBand);
     const resultHigh = calculateTotalExcitation(absorbedHigh, 200, 400, testBand);
     expect(resultHigh).toBeCloseTo(resultLow * 2, 1);
-    });
+  });
 
   it('excitation is weighted by excitation efficiency', () => {
     // Absorption only at peak excitation wavelength
     const absorbedAtPeak = new Float32Array(100).fill(0);
-    absorbedAtPeak[57] = 1.0;  // ~315nm for 200-400nm range with 100 samples
-    
+    absorbedAtPeak[57] = 1.0; // ~315nm for 200-400nm range with 100 samples
+
     // Absorption at edge of excitation range
     const absorbedAtEdge = new Float32Array(100).fill(0);
-    absorbedAtEdge[40] = 1.0;  // ~280nm
-    
+    absorbedAtEdge[40] = 1.0; // ~280nm
+
     const resultPeak = calculateTotalExcitation(absorbedAtPeak, 200, 400, testBand);
     const resultEdge = calculateTotalExcitation(absorbedAtEdge, 200, 400, testBand);
-    
+
     expect(resultPeak).toBeGreaterThan(resultEdge);
   });
 });
@@ -215,7 +214,7 @@ describe('Stokes Shift Physics', () => {
       emissionWidth: 0.1,
       quantumYield: 0.8,
     };
-  
+
     // All excitation wavelengths should be shorter than emission
     expect(band.excitationMax).toBeLessThan(band.emissionWavelength);
   });
@@ -228,10 +227,9 @@ describe('Stokes Shift Physics', () => {
       excitationPeak: 315,
       emissionWavelength: 589,
       emissionWidth: 0.1,
-      quantumYield: 0.8,  // 80% of absorbed photons re-emitted
+      quantumYield: 0.8, // 80% of absorbed photons re-emitted
     };
-    
+
     expect(band.quantumYield).toBeLessThan(1);
   });
 });
-

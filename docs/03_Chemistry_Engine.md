@@ -102,13 +102,13 @@ function SelectReactionNode(reaction, layer):
 function HasRequiredCatalyst(node, reaction):
     if not reaction.RequiresCatalyst:
         return true
-    
+
     // Check if catalyst is present
     catalyst = GetCatalyst(node.Composition, reaction.CatalystType)
-    
+
     if catalyst == null:
         return false
-    
+
     // Check catalyst concentration (must be > threshold)
     catalystConc = GetConcentration(node.Composition, catalyst)
     return catalystConc > MIN_CATALYST_CONCENTRATION
@@ -150,24 +150,24 @@ Where:
 function CalculateDiffusionToSurface(layer, reactant):
     // Concentration in bulk
     c_IB = GetConcentration(layer.N_IB.Composition, reactant)
-    
+
     // Concentration at surface (assume zero if reaction is fast)
     c_IS = GetConcentration(layer.N_IS.Composition, reactant)
-    
+
     // Concentration gradient
     deltaC = c_IB - c_IS
     distance = layer.N_IS.Thickness  // Diffusion distance
-    
+
     // Diffusion coefficient (temperature-dependent)
     D = CalculateDiffusionCoefficient(reactant, layer.Temperature, layer.Viscosity)
-    
+
     // Flux
     flux = D * (deltaC / distance)
-    
+
     // Mass transfer per timestep
     surfaceArea = CalculateSurfaceArea(layer)
     massTransferred = flux * surfaceArea * deltaTime
-    
+
     return massTransferred
 ```
 
@@ -191,7 +191,7 @@ function CalculateSurfaceReactionRate(reaction, layer):
     for each reactant in reaction.Reactants:
         available = GetConcentration(layer.N_IS.Composition, reactant.ChemicalId)
         required = reactant.MinConcentration
-        
+
         if available < required:
             // Not enough at surface - rate limited by diffusion
             diffusionRate = CalculateDiffusionToSurface(layer, reactant)
@@ -211,18 +211,18 @@ Acids in N_IS attack N_Mat (material wall).
 function CheckCorrosion(layer):
     // Check if acid is present in N_IS
     acidConcentration = GetAcidConcentration(layer.N_IS.Composition)
-    
+
     if acidConcentration < MIN_ACID_CONCENTRATION:
         return  // No corrosion
-    
+
     // Check if material is susceptible
     material = layer.N_Mat.Material
     if not IsCorrodible(material):
         return  // Material is resistant (e.g., glass, Teflon)
-    
+
     // Calculate corrosion rate
     corrosionRate = CalculateCorrosionRate(acidConcentration, material, layer.Temperature)
-    
+
     return corrosionRate
 ```
 
@@ -259,13 +259,13 @@ public struct MaterialCorrosion
 function ApplyCorrosion(layer, corrosionRate, deltaTime):
     // Remove material from N_Mat
     materialLost = corrosionRate * deltaTime * layer.N_Mat.SurfaceArea
-    
+
     layer.N_Mat.Thickness -= materialLost / (layer.N_Mat.Density * layer.N_Mat.SurfaceArea)
-    
+
     // Add corrosion products to N_IS
     corrosionProducts = GetCorrosionProducts(layer.N_Mat.Material)
     AddToComposition(layer.N_IS.Composition, corrosionProducts, materialLost)
-    
+
     // Check for material failure
     if layer.N_Mat.Thickness < MIN_WALL_THICKNESS:
         TriggerMaterialFailure(layer, container)
@@ -292,20 +292,20 @@ Where:
 function CalculateReactionRate(reaction, node, layer):
     // Base rate constant (Arrhenius)
     k = reaction.RateConstant * exp(-reaction.ActivationEnergy / (R * node.Temperature))
-    
+
     // Concentration term (product of reactant concentrations)
     concTerm = 1.0
     for each reactant in reaction.Reactants:
         conc = GetConcentration(node.Composition, reactant.ChemicalId)
         concTerm *= pow(conc, reactant.Stoichiometry)
-    
+
     // Temperature factor (doubles every 10K)
     deltaT = node.Temperature - REFERENCE_TEMPERATURE
     tempFactor = pow(2.0, deltaT / 10.0)
-    
+
     // Mixing factor (from physics engine)
     mixingFactor = layer.MixingFactor
-    
+
     // Surface area (TBD: exact calculation method)
     // For bulk reactions: use node volume
     // For surface reactions: use N_IS surface area
@@ -313,10 +313,10 @@ function CalculateReactionRate(reaction, node, layer):
         surfaceArea = CalculateSurfaceArea(layer.N_IS)
     else:
         surfaceArea = node.Volume  // Volume-based for bulk
-    
+
     // Total rate
     rate = k * concTerm * tempFactor * mixingFactor * surfaceArea
-    
+
     return rate
 ```
 
@@ -365,13 +365,13 @@ function CheckInhibition(reaction, node):
         if chemical.IsInhibitor:
             concentration = GetConcentration(node.Composition, chemical.Id)
             concentrationPPM = concentration * MOLAR_MASS_TO_PPM_CONVERSION
-            
+
             // Check if above threshold (>1 ppm)
             if concentrationPPM > MAX(chemical.InhibitionThreshold, 1e-6):
                 // Check if this inhibitor affects this reaction
                 if reaction.Id in chemical.InhibitedReactions:
                     return true  // Reaction is inhibited
-    
+
     return false
 ```
 
@@ -403,22 +403,22 @@ function ProcessReactions(container, deltaTime):
     // Process by priority
     for priority in [Combustion, Redox, Precipitation, AcidBase, Complexation, Organic]:
         reactions = GetReactionsByPriority(priority)
-        
+
         for each reaction in reactions:
             for each layer in container.Layers:
                 // Select node
                 node = SelectReactionNode(reaction, layer)
                 if node == null:
                     continue
-                
+
                 // Check inhibition
                 if CheckInhibition(reaction, node):
                     continue
-                
+
                 // Calculate rate
                 rate = CalculateReactionRate(reaction, node, layer)
                 rate = ApplyInhibition(reaction, node, rate)
-                
+
                 // Execute reaction
                 ExecuteReaction(reaction, node, rate, deltaTime)
 ```
@@ -429,28 +429,28 @@ function ProcessReactions(container, deltaTime):
 function ExecuteReaction(reaction, node, rate, deltaTime):
     // Calculate moles consumed/produced
     molesConsumed = rate * deltaTime
-    
+
     // Check reactant availability
     limitingReactant = FindLimitingReactant(reaction, node.Composition)
     maxMoles = GetAvailableMoles(node.Composition, limitingReactant)
-    
+
     // Clamp to available
     actualMoles = Min(molesConsumed, maxMoles)
-    
+
     // Consume reactants
     for each reactant in reaction.Reactants:
         molesToRemove = actualMoles * reactant.Stoichiometry
         RemoveFromComposition(node.Composition, reactant.ChemicalId, molesToRemove)
-    
+
     // Produce products
     for each product in reaction.Products:
         molesToAdd = actualMoles * product.Stoichiometry * product.Yield
         AddToComposition(node.Composition, product.ChemicalId, molesToAdd)
-    
+
     // Update temperature (exothermic/endothermic)
     heatReleased = reaction.EnthalpyChange * actualMoles
     UpdateNodeTemperature(node, heatReleased, deltaTime)
-    
+
     // Trigger visualization (see Visualization document)
     if actualMoles > 0:
         TriggerReactionVisualization(reaction, node, actualMoles)
@@ -471,13 +471,13 @@ function HandleOrganicFallback(reaction, node, deltaTime):
             // Convert to carbon tar
             organicMass = GetOrganicMass(node.Composition)
             tarMass = organicMass * CARBON_CONVERSION_EFFICIENCY
-            
+
             // Remove organic compounds
             RemoveOrganicCompounds(node.Composition)
-            
+
             // Add carbon tar
             AddToComposition(node.Composition, CARBON_TAR_ID, tarMass)
-            
+
             // Update temperature (exothermic)
             heatReleased = tarMass * CARBON_FORMATION_ENTHALPY
             UpdateNodeTemperature(node, heatReleased, deltaTime)
@@ -502,15 +502,15 @@ Tar has high adsorption; it moves instantly to N_IS, coating the glass.
 ```pseudocode
 function ApplyTarAdsorption(layer):
     tarMass = GetTarMass(layer.N_IB.Composition)
-    
+
     if tarMass > 0:
         // Instant adsorption to N_IS
         adsorptionRate = tarMass * CARBON_TAR_ADSORPTION_COEFFICIENT
-        
+
         // Move tar to N_IS
         RemoveFromComposition(layer.N_IB.Composition, CARBON_TAR_ID, adsorptionRate)
         AddToComposition(layer.N_IS.Composition, CARBON_TAR_ID, adsorptionRate)
-        
+
         // Update N_IS properties
         layer.N_IS.Thickness += adsorptionRate / (CARBON_TAR_DENSITY * layer.N_IS.SurfaceArea)
         layer.N_IS.Opacity = CalculateOpacity(layer.N_IS.Composition)
@@ -540,7 +540,7 @@ function PropagateReactionProducts(layer, products, deltaTime):
             // Diffuse to bulk
             diffusionRate = CalculateDiffusion(layer.N_IS, layer.N_IB, product)
             TransferMass(layer.N_IS, layer.N_IB, product, diffusionRate * deltaTime)
-    
+
     // Products in N_IB can move to adjacent layers
     // (handled by transport dynamics in Physics Engine)
 ```
@@ -584,4 +584,3 @@ function PropagateReactionProducts(layer, products, deltaTime):
 - **Surface Physics** ([04_Surface_Physics.md](04_Surface_Physics.md)): Tar adsorption affects N_IS thickness
 - **Knowledge Analysis** ([05_Knowledge_Analysis.md](05_Knowledge_Analysis.md)): Reaction products affect composition identification
 - **Visualization** ([06_Visualization.md](06_Visualization.md)): Reactions trigger boid animations
-

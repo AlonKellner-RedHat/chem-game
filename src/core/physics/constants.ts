@@ -1,6 +1,6 @@
 /**
  * Physical Constants for Spectral Calculations
- * 
+ *
  * These are the fundamental physical constants used throughout
  * the spectral physics calculations. Values are from CODATA 2018.
  */
@@ -44,12 +44,8 @@ export const VISIBLE_MAX = 700;
 export const UV_SHORT_FADE_START = 100;
 export const UV_SHORT_FADE_END = 150;
 export const UV_LONG_FADE_START = 350;
-export const UV_LONG_FADE_END = 380;  // Fades to zero at visible boundary (380nm)
+export const UV_LONG_FADE_END = 380; // Fades to zero at visible boundary (380nm)
 
 // Normal mode fade boundaries (nm)
 export const NORMAL_UV_FADE_START = 250;
 export const NORMAL_IR_FADE_END = 850;
-
-
-
-

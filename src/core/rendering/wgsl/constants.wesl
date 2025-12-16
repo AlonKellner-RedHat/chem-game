@@ -1,9 +1,9 @@
 /**
  * Physical and Rendering Constants
- * 
+ *
  * This module exports all physical constants and rendering parameters
  * used throughout the spectral compute pipeline.
- * 
+ *
  * Note: f16 is enabled in the root SpectralCompute.wesl module
  */
 
@@ -107,4 +107,3 @@ const SCATTER_LUT_SIZE: u32 = 64u;
 
 /// Maximum shapes per layer for pre-computed masks
 const MAX_SHAPES_PER_LAYER: u32 = 16u;
-

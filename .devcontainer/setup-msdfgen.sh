@@ -48,4 +48,3 @@ rm -rf msdfgen-build
 
 echo "msdfgen installed successfully!"
 msdfgen --version 2>&1 | head -1 || echo "msdfgen ready"
-

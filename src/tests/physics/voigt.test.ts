@@ -1,20 +1,20 @@
 /**
  * Voigt Profile Tests
- * 
+ *
  * Tests for the true Voigt profile implementation.
  * Voigt = Gaussian ⊗ Lorentzian (convolution)
- * 
+ *
  * The Voigt function combines:
  * - Doppler broadening (Gaussian) from thermal motion
  * - Pressure/natural broadening (Lorentzian) from collisions
  */
 
-import { describe, it, expect } from 'vitest';
-import { 
-  voigtProfile, 
-  gaussianProfile, 
+import { describe, expect, it } from 'vitest';
+import {
+  gaussianProfile,
   lorentzianProfile,
-  voigtFWHM
+  voigtFWHM,
+  voigtProfile,
 } from '../../core/physics/voigt';
 
 describe('Voigt Profile', () => {
@@ -64,20 +64,20 @@ describe('Voigt Profile', () => {
     it('reduces to Gaussian when Lorentzian width is zero', () => {
       const gaussianFWHM = 1.0;
       const lorentzianFWHM = 0;
-      
+
       const voigt = voigtProfile(0.5, gaussianFWHM, lorentzianFWHM);
       const gaussian = gaussianProfile(0.5, gaussianFWHM);
-      
+
       expect(voigt).toBeCloseTo(gaussian, 2);
     });
 
     it('reduces to Lorentzian when Gaussian width is zero', () => {
       const gaussianFWHM = 0;
       const lorentzianFWHM = 1.0;
-      
+
       const voigt = voigtProfile(0.5, gaussianFWHM, lorentzianFWHM);
       const lorentzian = lorentzianProfile(0.5, lorentzianFWHM);
-      
+
       expect(voigt).toBeCloseTo(lorentzian, 2);
     });
 
@@ -85,11 +85,11 @@ describe('Voigt Profile', () => {
       const x = 3.0; // In the tails
       const gaussianFWHM = 1.0;
       const lorentzianFWHM = 1.0;
-      
+
       const voigt = voigtProfile(x, gaussianFWHM, lorentzianFWHM);
       const gaussian = gaussianProfile(x, gaussianFWHM);
       const lorentzian = lorentzianProfile(x, lorentzianFWHM);
-      
+
       // Voigt tail should be between Gaussian (fast decay) and Lorentzian (slow decay)
       expect(voigt).toBeGreaterThan(gaussian * 0.5);
       expect(voigt).toBeLessThan(lorentzian * 2);
@@ -123,7 +123,7 @@ describe('Voigt Profile', () => {
       const gaussianFWHM = 1.0;
       const lorentzianFWHM = 1.0;
       const totalFWHM = voigtFWHM(gaussianFWHM, lorentzianFWHM);
-      
+
       expect(totalFWHM).toBeGreaterThan(gaussianFWHM);
       expect(totalFWHM).toBeGreaterThan(lorentzianFWHM);
     });
@@ -134,9 +134,8 @@ describe('Voigt Profile', () => {
       const L = 1.0;
       const expected = 0.5346 * L + Math.sqrt(0.2166 * L * L + G * G);
       const actual = voigtFWHM(G, L);
-      
+
       expect(actual).toBeCloseTo(expected, 2);
     });
   });
 });
-

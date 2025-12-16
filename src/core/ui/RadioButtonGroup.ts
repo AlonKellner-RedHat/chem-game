@@ -38,7 +38,7 @@ export class RadioButtonGroup<T extends string> {
     this.selectedValue = options.selectedValue;
 
     // Create container
-    this.container = document.createElement("div");
+    this.container = document.createElement('div');
     this.container.style.cssText = `
       display: flex;
       flex-direction: column;
@@ -51,7 +51,7 @@ export class RadioButtonGroup<T extends string> {
 
     // Add label if provided
     if (options.label) {
-      const labelEl = document.createElement("div");
+      const labelEl = document.createElement('div');
       labelEl.textContent = options.label;
       labelEl.style.cssText = `
         color: #aaa;
@@ -64,7 +64,7 @@ export class RadioButtonGroup<T extends string> {
 
     // Create radio buttons
     for (const option of options.options) {
-      const optionContainer = document.createElement("label");
+      const optionContainer = document.createElement('label');
       optionContainer.style.cssText = `
         display: flex;
         align-items: center;
@@ -76,15 +76,15 @@ export class RadioButtonGroup<T extends string> {
       `;
 
       // Hover effect
-      optionContainer.addEventListener("mouseenter", () => {
-        optionContainer.style.background = "rgba(255, 255, 255, 0.1)";
+      optionContainer.addEventListener('mouseenter', () => {
+        optionContainer.style.background = 'rgba(255, 255, 255, 0.1)';
       });
-      optionContainer.addEventListener("mouseleave", () => {
-        optionContainer.style.background = "transparent";
+      optionContainer.addEventListener('mouseleave', () => {
+        optionContainer.style.background = 'transparent';
       });
 
-      const input = document.createElement("input");
-      input.type = "radio";
+      const input = document.createElement('input');
+      input.type = 'radio';
       input.name = options.name;
       input.value = option.value;
       input.checked = option.value === options.selectedValue;
@@ -94,7 +94,7 @@ export class RadioButtonGroup<T extends string> {
         margin: 0;
       `;
 
-      input.addEventListener("change", () => {
+      input.addEventListener('change', () => {
         if (input.checked) {
           this.selectedValue = option.value;
           options.onChange?.(option.value);
@@ -103,7 +103,7 @@ export class RadioButtonGroup<T extends string> {
 
       this.inputs.set(option.value, input);
 
-      const labelText = document.createElement("span");
+      const labelText = document.createElement('span');
       labelText.textContent = option.label;
       labelText.style.cssText = `
         color: #fff;
@@ -130,7 +130,7 @@ export class RadioButtonGroup<T extends string> {
    * @param value - The value to select
    * @param triggerCallback - Whether to trigger the onChange callback
    */
-  setValue(value: T, triggerCallback: boolean = true): void {
+  setValue(value: T, triggerCallback = true): void {
     const input = this.inputs.get(value);
     if (input) {
       input.checked = true;
@@ -149,4 +149,3 @@ export class RadioButtonGroup<T extends string> {
     this.inputs.clear();
   }
 }
-

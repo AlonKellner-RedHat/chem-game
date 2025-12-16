@@ -1,10 +1,10 @@
 /**
  * OptimizationConfig - Shader optimization configuration
- * 
+ *
  * Follows OCP (Open-Closed Principle):
  * - Open for extension: New optimization flags can be added
  * - Closed for modification: Core behavior is controlled by config, not code changes
- * 
+ *
  * This allows runtime control of shader optimizations without
  * recompiling or modifying shader code.
  */
@@ -54,16 +54,16 @@ const DEFAULT_LUT_SIZE = 64;
 
 /**
  * OptimizationConfig manages shader optimization settings.
- * 
+ *
  * Usage:
  * ```typescript
  * // Use a preset
  * const config = OptimizationConfig.performance();
- * 
+ *
  * // Or customize
  * const config = OptimizationConfig.default();
  * config.setFlag('downsampledScattering', false);
- * 
+ *
  * // Apply to pipeline
  * pipeline.setOptimizations(config);
  * ```
@@ -107,7 +107,7 @@ export class OptimizationConfig {
     return new OptimizationConfig({
       hoistedMasks: true,
       earlyExit: true,
-      downsampledScattering: false,  // Use full per-wavelength calculation
+      downsampledScattering: false, // Use full per-wavelength calculation
       precomputedScatteringTexture: true,
     });
   }
@@ -176,7 +176,7 @@ export class OptimizationConfig {
 
   /**
    * Generate WGSL-compatible constant definitions for enabled optimizations.
-   * 
+   *
    * These can be prepended to shader code or used with shader compilation.
    * WGSL doesn't have preprocessor directives, so we use const declarations.
    */
@@ -225,21 +225,35 @@ export class OptimizationConfig {
     const f = this.flags;
 
     // Check for None preset
-    if (!f.hoistedMasks && !f.earlyExit && !f.downsampledScattering && !f.precomputedScatteringTexture) {
+    if (
+      !f.hoistedMasks &&
+      !f.earlyExit &&
+      !f.downsampledScattering &&
+      !f.precomputedScatteringTexture
+    ) {
       return OptimizationPreset.None;
     }
 
     // Check for Performance preset (all enabled)
-    if (f.hoistedMasks && f.earlyExit && f.downsampledScattering && f.precomputedScatteringTexture) {
+    if (
+      f.hoistedMasks &&
+      f.earlyExit &&
+      f.downsampledScattering &&
+      f.precomputedScatteringTexture
+    ) {
       return OptimizationPreset.Performance;
     }
 
     // Check for Quality preset
-    if (f.hoistedMasks && f.earlyExit && !f.downsampledScattering && f.precomputedScatteringTexture) {
+    if (
+      f.hoistedMasks &&
+      f.earlyExit &&
+      !f.downsampledScattering &&
+      f.precomputedScatteringTexture
+    ) {
       return OptimizationPreset.Quality;
     }
 
     return OptimizationPreset.Custom;
   }
 }
-
