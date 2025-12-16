@@ -17,6 +17,8 @@ export default defineConfig({
   ],
   test: {
     include: ['src/tests/**/*.test.ts'],
+    // Note: tests/ directory contains legacy tests that reference non-existent modules
+    // They need to be updated or removed before being re-enabled
     // Use jsdom by default, WGSL tests will use node environment
     environment: 'jsdom',
     globals: true,
