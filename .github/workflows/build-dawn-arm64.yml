@@ -140,13 +140,17 @@ jobs:
           ls -la node-webgpu/dist/
           file node-webgpu/dist/linux-arm64.dawn.node
 
-      - name: Create or update release
+      - name: Create release
         if: steps.check_release.outputs.exists != 'true'
         run: |
-          # Create release if it doesn't exist
-          gh release create dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} \
-            --title "Dawn ARM64 v${{ env.NODE_WEBGPU_VERSION }}" \
-            --notes "Pre-built Dawn WebGPU bindings for linux-arm64.
+          # Check if release already exists
+          if gh release view dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} >/dev/null 2>&1; then
+            echo "Release already exists, will upload asset"
+          else
+            echo "Creating new release..."
+            gh release create dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} \
+              --title "Dawn ARM64 v${{ env.NODE_WEBGPU_VERSION }}" \
+              --notes "Pre-built Dawn WebGPU bindings for linux-arm64.
 
           This binary is built from [node-webgpu](https://github.com/dawn-gpu/node-webgpu) v${{ env.NODE_WEBGPU_VERSION }}.
 
@@ -157,10 +161,14 @@ jobs:
           curl -L -o node_modules/webgpu/dist/linux-arm64.dawn.node \\
             https://github.com/${{ github.repository }}/releases/download/dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }}/linux-arm64.dawn.node
           \`\`\`" \
-            --latest=false \
-            2>/dev/null || true
+              --latest=false
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # Upload the binary
+      - name: Upload binary to release
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
           gh release upload dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} \
             node-webgpu/dist/linux-arm64.dawn.node \
             --clobber
