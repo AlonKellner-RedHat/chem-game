@@ -1,28 +1,60 @@
 /**
- * Shader Integration Tests
+ * WESL Integration Tests
  *
- * Tests that verify the shader code contains all required entry points,
- * struct definitions, and physics functions.
- *
- * Note: Uses the legacy .wgsl file directly since WESL ?static tree-shakes
- * unused imports. The .wgsl file is the pre-linked full shader used in production.
+ * Tests that verify WESL runtime linking produces valid shader code
+ * with all required entry points, struct definitions, and physics functions.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { link } from "wesl";
+import linkConfig from "../../core/rendering/SpectralCompute.wesl?link";
 
-// Use the legacy pre-linked WGSL file for content validation
-// WESL ?static tree-shakes unused imports, so we test the full shader directly
-import shaderCode from "../../core/rendering/SpectralCompute.wgsl?raw";
+// Entry point modules that contain @compute functions
+const ENTRY_MODULES = [
+  "package::wgsl::entry::main",        // main, integrateSpectrum
+  "package::wgsl::entry::spectrum",    // computeSpectrumBox, averageSpectrum, finalCombine
+  "package::wgsl::entry::blur_passes", // blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV
+  "package::wgsl::entry::combine",     // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
+];
+
+/**
+ * Link all entry point modules and combine them
+ * WESL tree-shakes each module independently, so we need to link all modules
+ * containing @compute entry points to get all entry points in the shader.
+ */
+async function linkAllModules(): Promise<string> {
+  const linkedModules = await Promise.all(
+    ENTRY_MODULES.map((rootModuleName) =>
+      link({ ...linkConfig, rootModuleName })
+    )
+  );
+  
+  // Combine all linked modules (they share common code but have unique entry points)
+  // For testing, simple concatenation is sufficient since WESL mangles names
+  return linkedModules.map(m => m.dest).join('\n\n// === NEXT MODULE ===\n\n');
+}
 
 describe("WESL Integration", () => {
-  describe("Static Linking", () => {
+  let shaderCode: string | null = null;
+
+  beforeAll(async () => {
+    try {
+      shaderCode = await linkAllModules();
+      console.log("[WESL Integration] Combined linked modules, length:", shaderCode.length);
+    } catch (error) {
+      console.warn("[WESL Integration] Failed to link:", error);
+    }
+  });
+
+  describe("Runtime Linking", () => {
     it("should return a non-empty string", () => {
+      expect(shaderCode).not.toBeNull();
       expect(typeof shaderCode).toBe("string");
-      expect(shaderCode.length).toBeGreaterThan(0);
+      expect(shaderCode!.length).toBeGreaterThan(0);
     });
 
-    it("should not return just the file path (linking should work)", () => {
-      // The shader should be substantial (at least 50KB)
-      expect(shaderCode.length).toBeGreaterThan(50000);
+    it("should produce substantial output (linking should work)", () => {
+      // All combined modules should be substantial (at least 20KB)
+      expect(shaderCode!.length).toBeGreaterThan(20000);
     });
 
     it("should contain valid WGSL syntax markers", () => {
@@ -91,8 +123,8 @@ describe("WESL Integration", () => {
 
   describe("Shader Code Quality", () => {
     it("should be a reasonable size (not empty, not truncated)", () => {
-      // The full linked shader should be substantial (at least 10KB)
-      expect(shaderCode.length).toBeGreaterThan(10000);
+      // The combined linked shader should be substantial (at least 20KB)
+      expect(shaderCode!.length).toBeGreaterThan(20000);
     });
 
     it("should not have unresolved imports", () => {
@@ -100,9 +132,11 @@ describe("WESL Integration", () => {
       expect(shaderCode).not.toMatch(/^import\s+/m);
     });
 
-    it("should not have WESL-specific syntax in output", () => {
-      // Double colon module paths should be resolved
-      expect(shaderCode).not.toContain("spectral::");
+    it("should not have WESL-specific module paths in code", () => {
+      // Double colon module paths should not appear in actual code (only comments are OK)
+      // Filter out comments and check remaining code
+      const codeWithoutComments = shaderCode!.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      expect(codeWithoutComments).not.toContain("package::");
     });
   });
 });

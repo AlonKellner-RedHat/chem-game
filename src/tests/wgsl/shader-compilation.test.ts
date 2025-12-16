@@ -6,9 +6,16 @@
  * like vec4<f16>(f32, ...) that string-based tests miss.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-// Use the legacy .wgsl file which has all entry points pre-linked
-// The WESL ?static import tree-shakes unused code, so we test the full shader directly
-import shaderCode from "../../core/rendering/SpectralCompute.wgsl?raw";
+import { link } from "wesl";
+import linkConfig from "../../core/rendering/SpectralCompute.wesl?link";
+
+// Entry point modules that contain @compute functions
+const ENTRY_MODULES = [
+  "package::wgsl::entry::main",        // main, integrateSpectrum
+  "package::wgsl::entry::spectrum",    // computeSpectrumBox, averageSpectrum, finalCombine
+  "package::wgsl::entry::blur_passes", // blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV
+  "package::wgsl::entry::combine",     // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
+];
 
 // Helper to get WebGPU - works in both Node.js (via webgpu package) and browser
 async function getGPU(): Promise<GPU | null> {
@@ -28,10 +35,62 @@ async function getGPU(): Promise<GPU | null> {
   }
 }
 
+/**
+ * Combine multiple linked WESL modules into a single WGSL shader
+ * 
+ * WESL mangles names to be unique, but we still get duplicate declarations
+ * for shared code (structs, bindings, helper functions). This simple approach
+ * tracks seen declarations by their full content hash to deduplicate.
+ */
+function combineLinkedModules(modules: string[]): string {
+  const seenContent = new Set<string>();
+  const result: string[] = [];
+
+  for (const moduleCode of modules) {
+    // Split module into blocks separated by double newlines (WGSL convention)
+    const blocks = moduleCode.split(/\n\n+/);
+    
+    for (const block of blocks) {
+      const trimmed = block.trim();
+      if (!trimmed) continue;
+      
+      // Use full content as hash to detect exact duplicates
+      if (!seenContent.has(trimmed)) {
+        seenContent.add(trimmed);
+        result.push(trimmed);
+      }
+    }
+  }
+
+  return result.join('\n\n');
+}
+
+// Helper to link all entry point modules
+async function linkAllModules(): Promise<string> {
+  const linkedModules = await Promise.all(
+    ENTRY_MODULES.map((rootModuleName) =>
+      link({ ...linkConfig, rootModuleName })
+    )
+  );
+  
+  const combined = combineLinkedModules(linkedModules.map(m => m.dest));
+  return "enable f16;\n\n" + combined;
+}
+
 describe("Shader Compilation E2E", () => {
   let device: GPUDevice | null = null;
+  let shaderCode: string | null = null;
 
   beforeAll(async () => {
+    // Link the shader code first
+    try {
+      shaderCode = await linkAllModules();
+      console.log("[Shader Compilation] Linked shader length:", shaderCode.length);
+    } catch (error) {
+      console.warn("[Shader Compilation] Failed to link WESL:", error);
+      return;
+    }
+
     const gpu = await getGPU();
     if (!gpu) {
       console.warn(
@@ -65,18 +124,20 @@ describe("Shader Compilation E2E", () => {
     device?.destroy();
   });
 
+  it("should link WESL modules successfully", () => {
+    expect(shaderCode).not.toBeNull();
+    expect(shaderCode!.length).toBeGreaterThan(10000);
+  });
+
   it("should compile without errors", async () => {
-    if (!device) {
-      console.warn("Skipping: WebGPU not available");
+    if (!device || !shaderCode) {
+      console.warn("Skipping: WebGPU or shader not available");
       return;
     }
 
-    // Prepend "enable f16;" directive as done in production code
-    const shaderWithF16 = "enable f16;\n\n" + shaderCode;
-
     const module = device.createShaderModule({
       label: "SpectralCompute Test",
-      code: shaderWithF16,
+      code: shaderCode,
     });
 
     const info = await module.getCompilationInfo();
@@ -93,16 +154,14 @@ describe("Shader Compilation E2E", () => {
   });
 
   it("should have no warnings for type mismatches", async () => {
-    if (!device) {
-      console.warn("Skipping: WebGPU not available");
+    if (!device || !shaderCode) {
+      console.warn("Skipping: WebGPU or shader not available");
       return;
     }
 
-    const shaderWithF16 = "enable f16;\n\n" + shaderCode;
-
     const module = device.createShaderModule({
       label: "SpectralCompute Test",
-      code: shaderWithF16,
+      code: shaderCode,
     });
 
     const info = await module.getCompilationInfo();
@@ -121,16 +180,14 @@ describe("Shader Compilation E2E", () => {
   });
 
   it("should create all required compute pipelines", async () => {
-    if (!device) {
-      console.warn("Skipping: WebGPU not available");
+    if (!device || !shaderCode) {
+      console.warn("Skipping: WebGPU or shader not available");
       return;
     }
 
-    const shaderWithF16 = "enable f16;\n\n" + shaderCode;
-
     const module = device.createShaderModule({
       label: "SpectralCompute Test",
-      code: shaderWithF16,
+      code: shaderCode,
     });
 
     // Wait for compilation
@@ -143,9 +200,7 @@ describe("Shader Compilation E2E", () => {
       return;
     }
 
-    // Test that all entry points exist by attempting to reference them
-    // (We can't actually create pipelines without bind group layouts,
-    // but the shader module creation validates entry point existence)
+    // Test that all entry points exist by checking for @compute fn declarations
     const entryPoints = [
       "main",
       "integrateSpectrum",
@@ -167,7 +222,7 @@ describe("Shader Compilation E2E", () => {
     // Verify entry points are present in shader code
     for (const entryPoint of entryPoints) {
       const regex = new RegExp(`@compute[\\s\\S]*?fn\\s+${entryPoint}\\s*\\(`);
-      expect(shaderWithF16).toMatch(regex);
+      expect(shaderCode).toMatch(regex);
     }
   });
 });

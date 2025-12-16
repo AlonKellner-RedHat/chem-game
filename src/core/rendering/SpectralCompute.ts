@@ -40,9 +40,9 @@ import {
 } from "./WebGPUContext";
 import { generateCIETextures } from "../physics/cie";
 import { BackgroundMode } from "../physics/config";
-// Use legacy pre-linked WGSL file - WESL ?static tree-shakes unused imports
-// TODO: Fix WESL module to prevent tree-shaking of entry points
-import shaderCode from "./SpectralCompute.wgsl?raw";
+// WESL runtime linking - avoids tree-shaking by specifying root module at link time
+import { link } from "wesl";
+import linkConfig from "./SpectralCompute.wesl?link";
 import { GPUProfiler, ProfilingReport } from "./GPUProfiler";
 import { OptimizationConfig } from "./OptimizationConfig";
 
@@ -476,10 +476,31 @@ export class SpectralComputePipeline {
    * Initialize the compute pipeline
    */
   async initialize(): Promise<void> {
+    // Link each WESL entry point module separately
+    // WESL tree-shakes unused code, so we link from each module containing @compute entry points
+    // This gives us all entry points plus their transitive dependencies
+    const entryModules = [
+      "package::wgsl::entry::main",        // main, integrateSpectrum
+      "package::wgsl::entry::spectrum",    // computeSpectrumBox, averageSpectrum, finalCombine
+      "package::wgsl::entry::blur_passes", // blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV
+      "package::wgsl::entry::combine",     // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
+    ];
+
+    // Link all modules and collect unique WGSL declarations
+    const linkedModules = await Promise.all(
+      entryModules.map((rootModuleName) =>
+        link({ ...linkConfig, rootModuleName })
+      )
+    );
+
+    // Combine linked modules, deduplicating common declarations
+    // WESL mangles names to avoid conflicts, so we can safely concatenate
+    const combinedWgsl = this.combineLinkedModules(linkedModules.map(m => m.dest));
+
     // Create shader module (shared by all pipelines)
     // Prepend "enable f16;" directive for half-precision float support
     // WESL doesn't support WGSL directives, so we add it here
-    const shaderWithF16 = "enable f16;\n\n" + shaderCode;
+    const shaderWithF16 = "enable f16;\n\n" + combinedWgsl;
     const shaderModule = this.device.createShaderModule({
       label: "Spectral Compute Shader",
       code: shaderWithF16,
@@ -725,6 +746,36 @@ export class SpectralComputePipeline {
       size: 8 * 8,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
+  }
+
+  /**
+   * Combine multiple linked WESL modules into a single WGSL shader
+   * 
+   * WESL's tree-shaking means each module only includes code reachable from its entry points.
+   * When linking multiple modules, we get duplicate declarations for shared code.
+   * This deduplicates by comparing full declaration content.
+   */
+  private combineLinkedModules(modules: string[]): string {
+    const seenContent = new Set<string>();
+    const result: string[] = [];
+
+    for (const moduleCode of modules) {
+      // Split module into blocks separated by double newlines (WGSL convention)
+      const blocks = moduleCode.split(/\n\n+/);
+      
+      for (const block of blocks) {
+        const trimmed = block.trim();
+        if (!trimmed) continue;
+        
+        // Use full content as hash to detect exact duplicates
+        if (!seenContent.has(trimmed)) {
+          seenContent.add(trimmed);
+          result.push(trimmed);
+        }
+      }
+    }
+
+    return result.join('\n\n');
   }
 
   /**
