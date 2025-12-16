@@ -40,8 +40,9 @@ import {
 } from "./WebGPUContext";
 import { generateCIETextures } from "../physics/cie";
 import { BackgroundMode } from "../physics/config";
-// Import WESL module - wesl-plugin links all imports at build time and produces WGSL
-import shaderCode from "./SpectralCompute.wesl?static";
+// Use legacy pre-linked WGSL file - WESL ?static tree-shakes unused imports
+// TODO: Fix WESL module to prevent tree-shaking of entry points
+import shaderCode from "./SpectralCompute.wgsl?raw";
 import { GPUProfiler, ProfilingReport } from "./GPUProfiler";
 import { OptimizationConfig } from "./OptimizationConfig";
 

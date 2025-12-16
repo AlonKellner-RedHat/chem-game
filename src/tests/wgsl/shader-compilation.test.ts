@@ -34,7 +34,9 @@ describe("Shader Compilation E2E", () => {
   beforeAll(async () => {
     const gpu = await getGPU();
     if (!gpu) {
-      console.warn("[Shader Compilation] WebGPU not available in this environment");
+      console.warn(
+        "[Shader Compilation] WebGPU not available in this environment"
+      );
       return;
     }
 
@@ -169,4 +171,3 @@ describe("Shader Compilation E2E", () => {
     }
   });
 });
-
