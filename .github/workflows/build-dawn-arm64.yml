@@ -118,6 +118,12 @@ jobs:
           cp scripts/standalone-with-node.gclient .gclient
           gclient sync -D --no-history
 
+      - name: Install node-webgpu dependencies
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
+          cd node-webgpu
+          npm install
+
       - name: Build Dawn node bindings
         if: steps.check_release.outputs.exists != 'true'
         run: |
