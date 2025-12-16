@@ -141,13 +141,13 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
           continue;
         }
 
-        // Compute coverage and alpha separately for consistent ratio
+        // Compute coverage (MSDF only) - alpha does NOT affect visibility gate
         let coverage = getMsdfCoverage(shape, fx, fy);
-        let alpha = getAlphaValue(shape, fx, fy);
-        let mask = coverage * alpha;  // Combined for gate check
         let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-        if (mask > 0.0 || isFullCoverage) {
+        // Gate check uses COVERAGE only, not alpha
+        // Alpha affects absorption intensity, not reflection visibility
+        if (coverage > 0.0 || isFullCoverage) {
           // Only count as "on layer" when shape ACTUALLY covers this pixel
           anyShapeOnLayer = true;
 
@@ -349,13 +349,13 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
     for (var i: u32 = 0u; i < numShapes; i++) {
       let shape = shapes[i];
 
-      // Compute coverage and alpha separately for consistent ratio
+      // Compute coverage (MSDF only) - alpha does NOT affect visibility gate
       let coverage = getMsdfCoverage(shape, fx, fy);
-      let alpha = getAlphaValue(shape, fx, fy);
-      let mask = coverage * alpha;  // Combined for gate check
       let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-      if (mask > 0.0 || isFullCoverage) {
+      // Gate check uses COVERAGE only, not alpha
+      // Alpha affects absorption intensity, not reflection visibility
+      if (coverage > 0.0 || isFullCoverage) {
         // Only count as "on layer" when shape ACTUALLY covers this pixel
         anyShapeOnLayer = true;
 
@@ -502,12 +502,13 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          // Use CACHED coverage and alpha for consistency
+          // Use CACHED coverage (MSDF only) - alpha does NOT affect visibility gate
           let coverage = f32(shapeCoverages[i]);
-          let mask = coverage * f32(shapeAlphas[i]);  // Combined for gate check
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-          if (mask > 0.0 || isFullCoverage) {
+          // Gate check uses COVERAGE only, not alpha
+          // Alpha affects absorption intensity, not reflection visibility
+          if (coverage > 0.0 || isFullCoverage) {
             // Only count as "on layer" when shape ACTUALLY covers this pixel
             anyShapeOnLayer = true;
 
@@ -719,12 +720,13 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          // Use CACHED coverage and alpha for consistency
+          // Use CACHED coverage (MSDF only) - alpha does NOT affect visibility gate
           let coverage = f32(shapeCoverages[i]);
-          let mask = coverage * f32(shapeAlphas[i]);  // Combined for gate check
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-          if (mask > 0.0 || isFullCoverage) {
+          // Gate check uses COVERAGE only, not alpha
+          // Alpha affects absorption intensity, not reflection visibility
+          if (coverage > 0.0 || isFullCoverage) {
             // Only count as "on layer" when shape ACTUALLY covers this pixel
             anyShapeOnLayer = true;
 
