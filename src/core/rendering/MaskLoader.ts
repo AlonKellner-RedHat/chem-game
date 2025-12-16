@@ -157,17 +157,35 @@ export class MaskManager {
 
     this.metadataPromise = (async () => {
       const url = `${this.basePath}/metadata.json`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        // Default metadata if file doesn't exist
-        console.warn(`[MaskManager] Metadata not found at ${url}, using defaults`);
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          // Default metadata if file doesn't exist
+          console.warn(`[MaskManager] Metadata not found at ${url}, using defaults`);
+          this.metadata = { pxRange: 4.0, shapes: [] };
+          return this.metadata;
+        }
+
+        // Check Content-Type to detect HTML responses (SPA fallback)
+        const contentType = response.headers.get('Content-Type') || '';
+        if (!contentType.includes('application/json')) {
+          // Server returned non-JSON (likely HTML from SPA fallback)
+          console.warn(
+            `[MaskManager] Expected JSON but got ${contentType} at ${url}, using defaults`
+          );
+          this.metadata = { pxRange: 4.0, shapes: [] };
+          return this.metadata;
+        }
+
+        this.metadata = await response.json();
+        console.log(`[MaskManager] Loaded metadata: pxRange=${this.metadata!.pxRange}`);
+        return this.metadata!;
+      } catch (error) {
+        // Handle network errors or JSON parsing failures
+        console.warn(`[MaskManager] Failed to load metadata from ${url}:`, error);
         this.metadata = { pxRange: 4.0, shapes: [] };
         return this.metadata;
       }
-
-      this.metadata = await response.json();
-      console.log(`[MaskManager] Loaded metadata: pxRange=${this.metadata!.pxRange}`);
-      return this.metadata!;
     })();
 
     return this.metadataPromise;
