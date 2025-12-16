@@ -497,7 +497,7 @@ export class WebGPURenderer implements Renderer {
 
     // Create mask manager if not exists
     if (!this.maskManager) {
-      this.maskManager = new MaskManager(this.context.device, '/msdf');
+      this.maskManager = new MaskManager(this.context.device, '/shapes');
     }
 
     // Load all requested shapes
