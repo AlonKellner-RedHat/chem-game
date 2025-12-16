@@ -195,7 +195,7 @@ export class SpectralDemo implements Demo {
       {
         id: "bg-base",
         name: "Background Base",
-        maskName: "fullscreen", // Dedicated fullscreen MSDF (no margins)
+        maskName: "", // No mask = full coverage (all pixels in shape with alpha 1.0)
         // Normalized: full screen
         nx: 0,
         ny: 0,
@@ -960,25 +960,25 @@ export class SpectralDemo implements Demo {
       } else {
         // Start loading
         this.masksLoadingPromise = (async () => {
-          // Collect unique masks from shapes
-          const shapeMasks = [...new Set(this.shapes.map((s) => s.maskName))];
+          // Collect unique masks from shapes (filter out empty names - those use full coverage)
+          const shapeMasks = [...new Set(this.shapes.map((s) => s.maskName).filter(name => name !== ""))];
 
           // Build mask list: include basic shapes, ambient pattern, and all shape masks
           // The MaskManager will automatically categorize them by resolution:
           // - Small (256x256): circle, rectangle, triangle
-          // - Large (1280x720): circle-grid, diagonal-circle-grid, fullscreen
+          // - Large (1280x720): circle-grid, diagonal-circle-grid
+          // Note: Shapes without a maskName use full coverage (no texture needed)
           const allMasks: string[] = [
             "circle",
             "rectangle",
             "triangle", // Basic shapes
             "diagonal-circle-grid", // Ambient pattern
             "circle-grid", // Background grid
-            "fullscreen", // Full-screen background
           ];
 
           // Add any additional masks from shapes that aren't in the list
           for (const mask of shapeMasks) {
-            if (!allMasks.includes(mask)) {
+            if (mask && !allMasks.includes(mask)) {
               allMasks.push(mask);
             }
           }
@@ -1065,7 +1065,7 @@ export class SpectralDemo implements Demo {
       const maskIdx = renderer.getMaskIndex(shape.maskName);
       const maskDims = renderer.getMaskDimensions(shape.maskName);
       console.log(
-        `[SpectralDemo] Shape ${shape.id}: pos=(${shape.x},${shape.y}) size=${shape.width}x${shape.height}, renderLayer=${shape.layer} -> maskArray=${maskIdx.arrayIndex}, maskLayer=${maskIdx.layerIndex}, texSize=${maskDims.width}x${maskDims.height}`
+        `[SpectralDemo] Shape ${shape.id}: pos=(${shape.x},${shape.y}) size=${shape.width}x${shape.height}, renderLayer=${shape.layer} -> msdf=${maskIdx.hasMsdf}(${maskIdx.msdfArrayIndex}:${maskIdx.msdfLayerIndex}), alpha=${maskIdx.hasAlpha}(${maskIdx.alphaArrayIndex}:${maskIdx.alphaLayerIndex}), texSize=${maskDims.width}x${maskDims.height}`
       );
       return {
         x: shape.x,
@@ -1075,10 +1075,14 @@ export class SpectralDemo implements Demo {
         temperature: this.enableEmission ? shape.properties.temperature : 300,
         layer: shape.layer,
         materialIndex: index,
-        maskArrayIndex: maskIdx.arrayIndex,
-        maskLayerIndex: maskIdx.layerIndex,
+        msdfArrayIndex: maskIdx.msdfArrayIndex,
+        msdfLayerIndex: maskIdx.msdfLayerIndex,
         texWidth: maskDims.width,
         texHeight: maskDims.height,
+        alphaArrayIndex: maskIdx.alphaArrayIndex,
+        alphaLayerIndex: maskIdx.alphaLayerIndex,
+        hasMsdf: maskIdx.hasMsdf,
+        hasAlpha: maskIdx.hasAlpha,
         // Scattering particle densities
         smallParticleDensity: shape.smallParticleDensity,
         largeParticleDensity: shape.largeParticleDensity,

@@ -70,8 +70,14 @@ struct Params {
 // Shape Definition
 // ============================================================
 
-/// Shape data structure (64 bytes, 16-byte aligned)
+/// Shape data structure (80 bytes, 16-byte aligned)
 /// Represents a renderable shape with physics properties
+/// 
+/// Supports optional MSDF (for sharp edges) and/or alpha (for intensity modulation):
+/// - MSDF only: Sharp edges, alpha = 1.0
+/// - Alpha only: All pixels in shape, variable intensity
+/// - Both: MSDF defines boundary, alpha modulates intensity (multiply)
+/// - Neither: Full coverage with alpha 1.0
 struct Shape {
   // Position and bounds (16 bytes)
   x: f32,              // Position X
@@ -85,12 +91,20 @@ struct Shape {
   // Rendering properties (12 bytes)
   layer: u32,          // Render order (0=background, higher=foreground)
   materialIndex: u32,  // Index into material palette textures
-  maskArrayIndex: u32, // MSDF array: 0=small (256x256), 1=large (1280x720)
+  msdfArrayIndex: u32, // MSDF array: 0=small (256x256), 1=large (1280x720)
   
   // MSDF properties (12 bytes)
-  maskLayerIndex: u32, // Layer within MSDF texture array
-  texWidth: f32,       // MSDF texture width (for screenPxRange)
-  texHeight: f32,      // MSDF texture height
+  msdfLayerIndex: u32, // Layer within MSDF texture array
+  texWidth: f32,       // Texture width (for screenPxRange)
+  texHeight: f32,      // Texture height
+  
+  // Alpha texture properties (8 bytes)
+  alphaArrayIndex: u32, // Alpha array: 0=small, 1=large
+  alphaLayerIndex: u32, // Layer within alpha texture array
+  
+  // Texture existence flags (8 bytes)
+  hasMsdf: u32,        // 1 if MSDF texture exists, 0 otherwise
+  hasAlpha: u32,       // 1 if alpha texture exists, 0 otherwise
   
   // Scattering properties (8 bytes)
   smallParticleDensity: f32,  // Rayleigh particles/cm³
@@ -99,9 +113,8 @@ struct Shape {
   // Fluorescence properties (4 bytes)
   fluorescenceQuantumYield: f32,  // Quantum yield (0-1)
   
-  // Padding for 16-byte alignment (8 bytes)
+  // Padding for 16-byte alignment (4 bytes)
   _padding1: f32,
-  _padding2: f32,
 }
 
 // ============================================================

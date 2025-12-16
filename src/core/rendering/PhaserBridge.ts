@@ -479,55 +479,62 @@ export class WebGPURenderer implements Renderer {
   }
   
   /**
-   * Load MSDF files for shapes
+   * Load shape mask files (MSDF and/or alpha)
    */
   async loadMasks(maskNames: string[]): Promise<void> {
     if (!this.context || !this.pipeline) {
-      console.warn('[WebGPURenderer] Cannot load MSDF - not initialized');
+      console.warn('[WebGPURenderer] Cannot load masks - not initialized');
       return;
     }
     
-    // Create MSDF manager if not exists
+    // Create mask manager if not exists
     if (!this.maskManager) {
       this.maskManager = new MaskManager(this.context.device, '/msdf');
     }
     
-    // Load all requested MSDFs
+    // Load all requested shapes
     await this.maskManager.loadMasks(maskNames);
     
-    // Get masks grouped by resolution
-    const smallMasks = this.maskManager.getSmallMasks();
-    const largeMasks = this.maskManager.getLargeMasks();
+    // Get textures grouped by type and resolution
+    const smallMsdfs = this.maskManager.getSmallMsdfs();
+    const largeMsdfs = this.maskManager.getLargeMsdfs();
+    const smallAlphas = this.maskManager.getSmallAlphas();
+    const largeAlphas = this.maskManager.getLargeAlphas();
     
-    // Set MSDF texture arrays on pipeline
+    // Set texture arrays on pipeline
     this.pipeline.setMaskArrays(
-      smallMasks.map(m => m.texture),
-      largeMasks.map(m => m.texture),
+      smallMsdfs,
+      largeMsdfs,
+      smallAlphas,
+      largeAlphas,
       this.maskManager.getSmallResolution(),
       this.maskManager.getLargeResolution()
     );
     
     console.log(
-      `[WebGPURenderer] Loaded MSDF textures: ${smallMasks.length} small, ${largeMasks.length} large`
+      `[WebGPURenderer] Loaded masks: MSDF small=${smallMsdfs.length}, large=${largeMsdfs.length}; Alpha small=${smallAlphas.length}, large=${largeAlphas.length}`
     );
   }
   
   /**
-   * Get MSDF index by name (returns arrayIndex + layerIndex)
+   * Get mask indices by name (returns MSDF and alpha array/layer indices)
    */
   getMaskIndex(name: string): MaskIndex {
-    return this.maskManager?.getMaskIndex(name) ?? { arrayIndex: 0, layerIndex: 0 };
+    return this.maskManager?.getMaskIndex(name) ?? {
+      msdfArrayIndex: 0,
+      msdfLayerIndex: -1,
+      alphaArrayIndex: 0,
+      alphaLayerIndex: -1,
+      hasMsdf: false,
+      hasAlpha: false,
+    };
   }
   
   /**
-   * Get MSDF texture dimensions by name
+   * Get shape texture dimensions by name
    */
   getMaskDimensions(name: string): { width: number; height: number } {
-    const msdf = this.maskManager?.getMask(name);
-    if (msdf) {
-      return { width: msdf.width, height: msdf.height };
-    }
-    return { width: 256, height: 256 };  // Default
+    return this.maskManager?.getShapeDimensions(name) ?? { width: 256, height: 256 };
   }
   
   /**
@@ -647,7 +654,15 @@ export class CPURenderer implements Renderer {
   }
   
   getMaskIndex(_name: string): MaskIndex {
-    return { arrayIndex: 0, layerIndex: 0 }; // CPU fallback returns default index
+    // CPU fallback returns default index (no textures)
+    return {
+      msdfArrayIndex: 0,
+      msdfLayerIndex: -1,
+      alphaArrayIndex: 0,
+      alphaLayerIndex: -1,
+      hasMsdf: false,
+      hasAlpha: false,
+    };
   }
   
   getMaskDimensions(_name: string): { width: number; height: number } {

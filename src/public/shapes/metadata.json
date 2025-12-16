@@ -1,0 +1,40 @@
+{
+  "pxRange": 8,
+  "shapes": [
+    {
+      "name": "circle",
+      "width": 256,
+      "height": 256,
+      "hasMsdf": true,
+      "hasAlpha": false
+    },
+    {
+      "name": "circle-grid",
+      "width": 1280,
+      "height": 720,
+      "hasMsdf": true,
+      "hasAlpha": false
+    },
+    {
+      "name": "diagonal-circle-grid",
+      "width": 1280,
+      "height": 720,
+      "hasMsdf": true,
+      "hasAlpha": true
+    },
+    {
+      "name": "rectangle",
+      "width": 256,
+      "height": 256,
+      "hasMsdf": true,
+      "hasAlpha": false
+    },
+    {
+      "name": "triangle",
+      "width": 256,
+      "height": 256,
+      "hasMsdf": true,
+      "hasAlpha": false
+    }
+  ]
+}

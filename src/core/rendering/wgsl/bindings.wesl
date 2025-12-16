@@ -86,18 +86,24 @@ import package::wgsl::constants::SPECTRAL_SAMPLES;
 @group(2) @binding(4) var<uniform> cieScales: vec4<f32>;
 
 // ============================================================
-// Bind Group 3: MSDF Texture Arrays
+// Bind Group 3: Shape Mask Texture Arrays
 // ============================================================
-// Two arrays for different mask resolutions (efficient storage)
+// Separate arrays for MSDF (edges) and Alpha (intensity) at two resolutions
 
 /// Small MSDF masks (256x256) - circle, rectangle, triangle, etc.
 @group(3) @binding(0) var msdfArraySmall: texture_2d_array<f32>;
 
-/// Large MSDF masks (1280x720) - circle-grid, fullscreen, etc.
+/// Large MSDF masks (1280x720) - circle-grid, diagonal-circle-grid, etc.
 @group(3) @binding(1) var msdfArrayLarge: texture_2d_array<f32>;
 
-/// MSDF sampler (linear filtering)
+/// Mask sampler (linear filtering for smooth interpolation)
 @group(3) @binding(2) var msdfSampler: sampler;
+
+/// Small alpha masks (256x256) - grayscale intensity modulation
+@group(3) @binding(3) var alphaArraySmall: texture_2d_array<f32>;
+
+/// Large alpha masks (1280x720) - grayscale intensity modulation
+@group(3) @binding(4) var alphaArrayLarge: texture_2d_array<f32>;
 
 // ============================================================
 // Workgroup Shared Memory

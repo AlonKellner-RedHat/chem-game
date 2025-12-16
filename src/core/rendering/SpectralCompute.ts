@@ -48,6 +48,12 @@ import { OptimizationConfig } from "./OptimizationConfig";
 
 /**
  * Shape definition for GPU (matches WGSL Shape struct)
+ *
+ * Supports optional MSDF (for sharp edges) and/or alpha (for intensity modulation):
+ * - MSDF only: Sharp edges, alpha = 1.0
+ * - Alpha only: All pixels in shape (coverage = 1.0), variable intensity
+ * - Both: MSDF defines boundary, alpha modulates intensity (multiply)
+ * - Neither: Full coverage with alpha 1.0
  */
 export interface GPUShape {
   x: number; // Position X
@@ -57,10 +63,14 @@ export interface GPUShape {
   temperature: number; // For emission calculations
   layer: number; // Render order (0 = background, higher = foreground)
   materialIndex: number; // Index into material textures
-  maskArrayIndex: number; // Which MSDF array (0 = small/256x256, 1 = large/1280x720)
-  maskLayerIndex: number; // Layer index within the MSDF array
-  texWidth: number; // MSDF texture width (for screenPxRange calculation)
-  texHeight: number; // MSDF texture height
+  msdfArrayIndex: number; // Which MSDF array (0 = small/256x256, 1 = large/1280x720)
+  msdfLayerIndex: number; // Layer index within the MSDF array
+  texWidth: number; // Texture width (for screenPxRange calculation)
+  texHeight: number; // Texture height
+  alphaArrayIndex: number; // Which alpha array (0 = small, 1 = large)
+  alphaLayerIndex: number; // Layer index within the alpha array
+  hasMsdf: boolean; // Whether shape has an MSDF texture
+  hasAlpha: boolean; // Whether shape has an alpha texture
   smallParticleDensity: number; // Rayleigh scattering particle density (particles/cm³)
   largeParticleDensity: number; // Mie scattering particle density (particles/cm³)
   fluorescenceQuantumYield: number; // Total quantum yield for fluorescence (0-1)
@@ -433,9 +443,12 @@ export class SpectralComputePipeline {
   private renderReflectionTexture: GPUTexture | null = null; // For ambient light reflection
 
   private numMaterials: number = 0;
-  // MSDF texture arrays (replacing individual textures for scalability)
+  // MSDF texture arrays (for sharp edge rendering)
   private msdfArraySmall: GPUTexture | null = null; // 256x256 masks
   private msdfArrayLarge: GPUTexture | null = null; // 1280x720 masks
+  // Alpha texture arrays (for intensity modulation)
+  private alphaArraySmall: GPUTexture | null = null; // 256x256 alpha
+  private alphaArrayLarge: GPUTexture | null = null; // 1280x720 alpha
   private cieTextures: { x: GPUTexture; y: GPUTexture; z: GPUTexture } | null =
     null;
   private cieScalesBuffer: GPUBuffer | null = null;
@@ -1058,26 +1071,41 @@ export class SpectralComputePipeline {
       ],
     });
 
-    // Bind group 3: MSDF texture arrays (2 arrays for different resolutions)
-    // Array 0: Small masks (256x256) - circle, rectangle, triangle, etc.
-    // Array 1: Large masks (1280x720) - circle-grid, diagonal-circle-grid, fullscreen, etc.
+    // Bind group 3: Shape mask texture arrays (MSDF + Alpha at 2 resolutions each)
+    // MSDF arrays for sharp edge rendering
+    // Alpha arrays for intensity modulation
     this.bindGroupLayout3 = this.device.createBindGroupLayout({
-      label: "Bind Group Layout 3 (MSDF Arrays)",
+      label: "Bind Group Layout 3 (Mask Arrays)",
       entries: [
         {
+          // MSDF small (256x256)
           binding: 0,
           visibility: GPUShaderStage.COMPUTE,
           texture: { sampleType: "float", viewDimension: "2d-array" },
         },
         {
+          // MSDF large (1280x720)
           binding: 1,
           visibility: GPUShaderStage.COMPUTE,
           texture: { sampleType: "float", viewDimension: "2d-array" },
         },
         {
+          // Shared sampler for all mask textures
           binding: 2,
           visibility: GPUShaderStage.COMPUTE,
           sampler: { type: "filtering" },
+        },
+        {
+          // Alpha small (256x256)
+          binding: 3,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: "float", viewDimension: "2d-array" },
+        },
+        {
+          // Alpha large (1280x720)
+          binding: 4,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: "float", viewDimension: "2d-array" },
         },
       ],
     });
@@ -1145,11 +1173,13 @@ export class SpectralComputePipeline {
   }
 
   /**
-   * Initialize default MSDF texture arrays (solid - fully inside)
+   * Initialize default MSDF and alpha texture arrays
    * Creates one layer each for small (256x256) and large (1280x720) arrays
+   * MSDF defaults: solid (fully inside)
+   * Alpha defaults: opaque (1.0)
    */
   private initDefaultMSDFTextures(): void {
-    // Create default small texture array (256x256) with 1 layer
+    // Create default small MSDF texture array (256x256) with 1 layer
     this.msdfArraySmall = this.device.createTexture({
       label: "Default MSDF Array Small",
       size: { width: 256, height: 256, depthOrArrayLayers: 1 },
@@ -1162,7 +1192,7 @@ export class SpectralComputePipeline {
       0
     );
 
-    // Create default large texture array (1280x720) with 1 layer
+    // Create default large MSDF texture array (1280x720) with 1 layer
     this.msdfArrayLarge = this.device.createTexture({
       label: "Default MSDF Array Large",
       size: { width: 1280, height: 720, depthOrArrayLayers: 1 },
@@ -1171,6 +1201,32 @@ export class SpectralComputePipeline {
     });
     this.fillDefaultMSDFLayer(
       this.msdfArrayLarge,
+      { width: 1280, height: 720 },
+      0
+    );
+
+    // Create default small alpha texture array (256x256) with 1 layer
+    this.alphaArraySmall = this.device.createTexture({
+      label: "Default Alpha Array Small",
+      size: { width: 256, height: 256, depthOrArrayLayers: 1 },
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.fillDefaultAlphaLayer(
+      this.alphaArraySmall,
+      { width: 256, height: 256 },
+      0
+    );
+
+    // Create default large alpha texture array (1280x720) with 1 layer
+    this.alphaArrayLarge = this.device.createTexture({
+      label: "Default Alpha Array Large",
+      size: { width: 1280, height: 720, depthOrArrayLayers: 1 },
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.fillDefaultAlphaLayer(
+      this.alphaArrayLarge,
       { width: 1280, height: 720 },
       0
     );
@@ -1198,27 +1254,31 @@ export class SpectralComputePipeline {
   }
 
   /**
-   * Set MSDF texture arrays from loaded mask data
+   * Set mask texture arrays from loaded shape data
    *
-   * @param smallMasks - Array of small masks (256x256)
-   * @param largeMasks - Array of large masks (1280x720)
+   * @param smallMsdfs - Array of small MSDF textures (256x256)
+   * @param largeMsdfs - Array of large MSDF textures (1280x720)
+   * @param smallAlphas - Array of small alpha textures (256x256)
+   * @param largeAlphas - Array of large alpha textures (1280x720)
    * @param smallResolution - Resolution for small masks
    * @param largeResolution - Resolution for large masks
    */
   setMaskArrays(
-    smallMasks: GPUTexture[],
-    largeMasks: GPUTexture[],
+    smallMsdfs: GPUTexture[],
+    largeMsdfs: GPUTexture[],
+    smallAlphas: GPUTexture[],
+    largeAlphas: GPUTexture[],
     smallResolution: { width: number; height: number },
     largeResolution: { width: number; height: number }
   ): void {
-    // Create texture array for small masks
-    const smallLayerCount = Math.max(1, smallMasks.length);
+    // Create texture array for small MSDFs
+    const smallMsdfCount = Math.max(1, smallMsdfs.length);
     this.msdfArraySmall = this.device.createTexture({
       label: "MSDF Array Small (256x256)",
       size: {
         width: smallResolution.width,
         height: smallResolution.height,
-        depthOrArrayLayers: smallLayerCount,
+        depthOrArrayLayers: smallMsdfCount,
       },
       format: "rgba8unorm",
       usage:
@@ -1227,14 +1287,14 @@ export class SpectralComputePipeline {
         GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    // Create texture array for large masks
-    const largeLayerCount = Math.max(1, largeMasks.length);
+    // Create texture array for large MSDFs
+    const largeMsdfCount = Math.max(1, largeMsdfs.length);
     this.msdfArrayLarge = this.device.createTexture({
       label: "MSDF Array Large (1280x720)",
       size: {
         width: largeResolution.width,
         height: largeResolution.height,
-        depthOrArrayLayers: largeLayerCount,
+        depthOrArrayLayers: largeMsdfCount,
       },
       format: "rgba8unorm",
       usage:
@@ -1243,12 +1303,44 @@ export class SpectralComputePipeline {
         GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    // Copy small masks into the small array
+    // Create texture array for small alphas
+    const smallAlphaCount = Math.max(1, smallAlphas.length);
+    this.alphaArraySmall = this.device.createTexture({
+      label: "Alpha Array Small (256x256)",
+      size: {
+        width: smallResolution.width,
+        height: smallResolution.height,
+        depthOrArrayLayers: smallAlphaCount,
+      },
+      format: "rgba8unorm",
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    // Create texture array for large alphas
+    const largeAlphaCount = Math.max(1, largeAlphas.length);
+    this.alphaArrayLarge = this.device.createTexture({
+      label: "Alpha Array Large (1280x720)",
+      size: {
+        width: largeResolution.width,
+        height: largeResolution.height,
+        depthOrArrayLayers: largeAlphaCount,
+      },
+      format: "rgba8unorm",
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
     const commandEncoder = this.device.createCommandEncoder();
 
-    for (let i = 0; i < smallMasks.length; i++) {
+    // Copy small MSDFs into the small MSDF array
+    for (let i = 0; i < smallMsdfs.length; i++) {
       commandEncoder.copyTextureToTexture(
-        { texture: smallMasks[i] },
+        { texture: smallMsdfs[i] },
         { texture: this.msdfArraySmall, origin: { x: 0, y: 0, z: i } },
         {
           width: smallResolution.width,
@@ -1258,11 +1350,37 @@ export class SpectralComputePipeline {
       );
     }
 
-    // Copy large masks into the large array
-    for (let i = 0; i < largeMasks.length; i++) {
+    // Copy large MSDFs into the large MSDF array
+    for (let i = 0; i < largeMsdfs.length; i++) {
       commandEncoder.copyTextureToTexture(
-        { texture: largeMasks[i] },
+        { texture: largeMsdfs[i] },
         { texture: this.msdfArrayLarge, origin: { x: 0, y: 0, z: i } },
+        {
+          width: largeResolution.width,
+          height: largeResolution.height,
+          depthOrArrayLayers: 1,
+        }
+      );
+    }
+
+    // Copy small alphas into the small alpha array
+    for (let i = 0; i < smallAlphas.length; i++) {
+      commandEncoder.copyTextureToTexture(
+        { texture: smallAlphas[i] },
+        { texture: this.alphaArraySmall, origin: { x: 0, y: 0, z: i } },
+        {
+          width: smallResolution.width,
+          height: smallResolution.height,
+          depthOrArrayLayers: 1,
+        }
+      );
+    }
+
+    // Copy large alphas into the large alpha array
+    for (let i = 0; i < largeAlphas.length; i++) {
+      commandEncoder.copyTextureToTexture(
+        { texture: largeAlphas[i] },
+        { texture: this.alphaArrayLarge, origin: { x: 0, y: 0, z: i } },
         {
           width: largeResolution.width,
           height: largeResolution.height,
@@ -1273,16 +1391,22 @@ export class SpectralComputePipeline {
 
     this.device.queue.submit([commandEncoder.finish()]);
 
-    // If arrays are empty, fill with default solid MSDF
-    if (smallMasks.length === 0) {
+    // Fill empty arrays with defaults
+    if (smallMsdfs.length === 0) {
       this.fillDefaultMSDFLayer(this.msdfArraySmall, smallResolution, 0);
     }
-    if (largeMasks.length === 0) {
+    if (largeMsdfs.length === 0) {
       this.fillDefaultMSDFLayer(this.msdfArrayLarge, largeResolution, 0);
+    }
+    if (smallAlphas.length === 0) {
+      this.fillDefaultAlphaLayer(this.alphaArraySmall, smallResolution, 0);
+    }
+    if (largeAlphas.length === 0) {
+      this.fillDefaultAlphaLayer(this.alphaArrayLarge, largeResolution, 0);
     }
 
     console.log(
-      `[SpectralCompute] MSDF arrays created: small=${smallLayerCount} layers, large=${largeLayerCount} layers`
+      `[SpectralCompute] Mask arrays created: MSDF small=${smallMsdfCount}, large=${largeMsdfCount}; Alpha small=${smallAlphaCount}, large=${largeAlphaCount}`
     );
 
     // Invalidate bind group
@@ -1301,6 +1425,35 @@ export class SpectralComputePipeline {
     const pixels = new Uint8Array(resolution.width * resolution.height * 4);
     for (let i = 0; i < pixels.length; i += 4) {
       pixels[i] = 255; // R
+      pixels[i + 1] = 255; // G
+      pixels[i + 2] = 255; // B
+      pixels[i + 3] = 255; // A
+    }
+
+    this.device.queue.writeTexture(
+      { texture: array, origin: { x: 0, y: 0, z: layer } },
+      pixels,
+      { bytesPerRow: resolution.width * 4, rowsPerImage: resolution.height },
+      {
+        width: resolution.width,
+        height: resolution.height,
+        depthOrArrayLayers: 1,
+      }
+    );
+  }
+
+  /**
+   * Fill a layer with default opaque alpha (1.0)
+   */
+  private fillDefaultAlphaLayer(
+    array: GPUTexture,
+    resolution: { width: number; height: number },
+    layer: number
+  ): void {
+    // Create a solid white texture (alpha value 1.0 = fully opaque)
+    const pixels = new Uint8Array(resolution.width * resolution.height * 4);
+    for (let i = 0; i < pixels.length; i += 4) {
+      pixels[i] = 255; // R (alpha value)
       pixels[i + 1] = 255; // G
       pixels[i + 2] = 255; // B
       pixels[i + 3] = 255; // A
@@ -2498,7 +2651,7 @@ export class SpectralComputePipeline {
       // DEBUG: Start recording this layer (after buffer update so we can verify sizes)
       if (debugEnabled) {
         const shapeInfo = layerShapes.map((s) => ({
-          name: `shape_${s.maskIndex}`,
+          name: `shape_${s.materialIndex}`,
           layer: s.layer,
           temperature: s.temperature,
           materialIndex: s.materialIndex,
@@ -3708,17 +3861,21 @@ export class SpectralComputePipeline {
 
   /**
    * Update shapes storage buffer
-   * Shape struct size: 60 bytes (15 fields * 4 bytes each)
+   * Shape struct size: 80 bytes (20 fields * 4 bytes each)
    */
   private updateShapesBuffer(shapes: GPUShape[]): void {
-    // Shape struct in WGSL:
-    // x, y, width, height, temperature (5 f32)
-    // layer, materialIndex, maskArrayIndex, maskLayerIndex (4 u32)
-    // texWidth, texHeight (2 f32)
-    // smallParticleDensity, largeParticleDensity (2 f32)
-    // fluorescenceQuantumYield (1 f32)
-    // Total: 15 * 4 = 60 bytes (will be padded to 64 for alignment)
-    const shapeSize = 64;
+    // Shape struct in WGSL (80 bytes, 16-byte aligned):
+    // x, y, width, height (4 f32) - 16 bytes
+    // temperature (1 f32) - 4 bytes
+    // layer, materialIndex, msdfArrayIndex (3 u32) - 12 bytes
+    // msdfLayerIndex (1 u32), texWidth, texHeight (2 f32) - 12 bytes
+    // alphaArrayIndex, alphaLayerIndex (2 u32) - 8 bytes
+    // hasMsdf, hasAlpha (2 u32) - 8 bytes
+    // smallParticleDensity, largeParticleDensity (2 f32) - 8 bytes
+    // fluorescenceQuantumYield (1 f32) - 4 bytes
+    // _padding1 (1 f32) - 4 bytes
+    // Total: 80 bytes
+    const shapeSize = 80;
     const data = new ArrayBuffer(Math.max(shapes.length, 1) * shapeSize);
     const view = new DataView(data);
 
@@ -3726,25 +3883,43 @@ export class SpectralComputePipeline {
       const offset = i * shapeSize;
       const shape = shapes[i];
 
+      // Position and bounds (16 bytes)
       view.setFloat32(offset + 0, shape.x, true);
       view.setFloat32(offset + 4, shape.y, true);
       view.setFloat32(offset + 8, shape.width, true);
       view.setFloat32(offset + 12, shape.height, true);
+
+      // Thermal properties (4 bytes)
       view.setFloat32(offset + 16, shape.temperature, true);
+
+      // Rendering properties (12 bytes)
       view.setUint32(offset + 20, shape.layer, true);
       view.setUint32(offset + 24, shape.materialIndex, true);
-      view.setUint32(offset + 28, shape.maskArrayIndex ?? 0, true);
-      view.setUint32(offset + 32, shape.maskLayerIndex ?? 0, true);
+      view.setUint32(offset + 28, shape.msdfArrayIndex ?? 0, true);
+
+      // MSDF properties (12 bytes)
+      view.setUint32(offset + 32, shape.msdfLayerIndex ?? 0, true);
       view.setFloat32(offset + 36, shape.texWidth ?? 256, true);
       view.setFloat32(offset + 40, shape.texHeight ?? 256, true);
-      // Scattering particle densities (particles/cm³)
-      view.setFloat32(offset + 44, shape.smallParticleDensity ?? 0, true);
-      view.setFloat32(offset + 48, shape.largeParticleDensity ?? 0, true);
-      // Fluorescence quantum yield
-      view.setFloat32(offset + 52, shape.fluorescenceQuantumYield ?? 0, true);
-      // Padding to 64 bytes (16-byte alignment)
-      view.setFloat32(offset + 56, 0, true);
-      view.setFloat32(offset + 60, 0, true);
+
+      // Alpha texture properties (8 bytes)
+      view.setUint32(offset + 44, shape.alphaArrayIndex ?? 0, true);
+      view.setUint32(offset + 48, shape.alphaLayerIndex ?? 0, true);
+
+      // Texture existence flags (8 bytes)
+      view.setUint32(offset + 52, shape.hasMsdf ? 1 : 0, true);
+      view.setUint32(offset + 56, shape.hasAlpha ? 1 : 0, true);
+
+      // Scattering properties (8 bytes)
+      view.setFloat32(offset + 60, shape.smallParticleDensity ?? 0, true);
+      view.setFloat32(offset + 64, shape.largeParticleDensity ?? 0, true);
+
+      // Fluorescence properties (4 bytes)
+      view.setFloat32(offset + 68, shape.fluorescenceQuantumYield ?? 0, true);
+
+      // Padding to 80 bytes (16-byte alignment)
+      view.setFloat32(offset + 72, 0, true);
+      view.setFloat32(offset + 76, 0, true);
     }
 
     // Recreate buffer if size changed IN EITHER DIRECTION
@@ -3935,9 +4110,9 @@ export class SpectralComputePipeline {
       });
     }
 
-    // Bind group 3: MSDF texture arrays (2 arrays for different resolutions)
+    // Bind group 3: Mask texture arrays (MSDF + Alpha at 2 resolutions each)
     if (!this.bindGroup3) {
-      // Create default texture arrays if not already set
+      // Create default MSDF texture arrays if not already set
       if (!this.msdfArraySmall) {
         this.msdfArraySmall = this.device.createTexture({
           label: "Default MSDF Array Small",
@@ -3966,15 +4141,44 @@ export class SpectralComputePipeline {
         );
       }
 
+      // Create default alpha texture arrays if not already set
+      if (!this.alphaArraySmall) {
+        this.alphaArraySmall = this.device.createTexture({
+          label: "Default Alpha Array Small",
+          size: { width: 256, height: 256, depthOrArrayLayers: 1 },
+          format: "rgba8unorm",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        this.fillDefaultAlphaLayer(
+          this.alphaArraySmall,
+          { width: 256, height: 256 },
+          0
+        );
+      }
+
+      if (!this.alphaArrayLarge) {
+        this.alphaArrayLarge = this.device.createTexture({
+          label: "Default Alpha Array Large",
+          size: { width: 1280, height: 720, depthOrArrayLayers: 1 },
+          format: "rgba8unorm",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        this.fillDefaultAlphaLayer(
+          this.alphaArrayLarge,
+          { width: 1280, height: 720 },
+          0
+        );
+      }
+
       if (!this.msdfSampler || !this.bindGroupLayout3) {
         console.error(
-          "[SpectralCompute] Cannot create bindGroup3 - missing MSDF sampler or layout"
+          "[SpectralCompute] Cannot create bindGroup3 - missing sampler or layout"
         );
         return false;
       }
 
       this.bindGroup3 = this.device.createBindGroup({
-        label: "Bind Group 3 (MSDF Arrays)",
+        label: "Bind Group 3 (Mask Arrays)",
         layout: this.bindGroupLayout3,
         entries: [
           {
@@ -3986,6 +4190,18 @@ export class SpectralComputePipeline {
             resource: this.msdfArrayLarge.createView({ dimension: "2d-array" }),
           },
           { binding: 2, resource: this.msdfSampler },
+          {
+            binding: 3,
+            resource: this.alphaArraySmall.createView({
+              dimension: "2d-array",
+            }),
+          },
+          {
+            binding: 4,
+            resource: this.alphaArrayLarge.createView({
+              dimension: "2d-array",
+            }),
+          },
         ],
       });
     }
@@ -4109,6 +4325,8 @@ export class SpectralComputePipeline {
 
     this.msdfArraySmall?.destroy();
     this.msdfArrayLarge?.destroy();
+    this.alphaArraySmall?.destroy();
+    this.alphaArrayLarge?.destroy();
 
     this.cieTextures?.x.destroy();
     this.cieTextures?.y.destroy();
