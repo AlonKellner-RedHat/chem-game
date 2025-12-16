@@ -487,8 +487,9 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
         if (shape.layer == params.currentLayer) {
           anyShapeOnLayer = true;
 
-          // Mask gating: only contribute if inside shape or full-coverage shape
-          let mask = getShapeMask(shape, fx, fy);
+          // Use CACHED mask for consistency with scattering/absorption
+          // This ensures reflection and absorption use the SAME anti-aliasing
+          let mask = f32(shapeMasks[i]);
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           if (mask > 0.0 || isFullCoverage) {
@@ -696,8 +697,9 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         if (shape.layer == params.currentLayer) {
           anyShapeOnLayer = true;
 
-          // Mask gating: only contribute if inside shape or full-coverage shape
-          let mask = getShapeMask(shape, fx, fy);
+          // Use CACHED mask for consistency with scattering/absorption
+          // This ensures reflection and absorption use the SAME anti-aliasing
+          let mask = f32(shapeMasks[i]);
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           if (mask > 0.0 || isFullCoverage) {
