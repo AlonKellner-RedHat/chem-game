@@ -21,7 +21,7 @@ import package::wgsl::physics::materials::{
 };
 import package::wgsl::physics::planck::getKirchhoffEmission;
 import package::wgsl::physics::layer::computeLayerPhysicsWithFluorescence;
-import package::wgsl::rendering::msdf::{getShapeMask, getReflectionFactor};
+import package::wgsl::rendering::msdf::{getShapeMask, getMsdfCoverage, getAlphaValue};
 import package::wgsl::rendering::ambient::{getAmbientPattern, getAmbientIntensity};
 
 // ============================================================
@@ -125,6 +125,7 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
     var result = direct + inShapeScatter + aura;
 
     // Per-layer ambient reflection (multiplicative compounding)
+    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
     if (inBounds) {
       let pattern = getAmbientPattern(fx, fy);
       let ambient = getAmbientIntensity(wavelength);
@@ -139,20 +140,22 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
           continue;
         }
 
-        // Mask gating: only contribute if inside shape or full-coverage shape
-        let mask = getShapeMask(shape, fx, fy);
+        // Compute coverage and alpha separately for consistent ratio
+        let coverage = getMsdfCoverage(shape, fx, fy);
+        let alpha = getAlphaValue(shape, fx, fy);
+        let mask = coverage * alpha;  // Combined for gate check
         let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
         if (mask > 0.0 || isFullCoverage) {
           // Only count as "on layer" when shape ACTUALLY covers this pixel
           anyShapeOnLayer = true;
 
-          let reflFactor = getReflectionFactor(shape, fx, fy);
           let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-          // Blend material reflection by coverage for proper anti-aliasing
-          let effectiveMask = select(mask, 1.0, isFullCoverage);
-          let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
-          totalReflection *= f16(reflFactor) * effectiveRefl;
+          // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
+          // NO reflFactor re-sampling - uses coverage directly
+          let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
+          let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
+          totalReflection *= effectiveRefl;
         }
       }
 
@@ -337,26 +340,29 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
     let ambient = getAmbientIntensity(wavelength);
 
     // Multiplicative compounding: each shape's reflection factor multiplies together
+    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
     var totalReflection: f16 = f16(1.0);
     var anyShapeOnLayer: bool = false;
 
     for (var i: u32 = 0u; i < numShapes; i++) {
       let shape = shapes[i];
 
-      // Mask gating: only contribute if inside shape or full-coverage shape
-      let mask = getShapeMask(shape, fx, fy);
+      // Compute coverage and alpha separately for consistent ratio
+      let coverage = getMsdfCoverage(shape, fx, fy);
+      let alpha = getAlphaValue(shape, fx, fy);
+      let mask = coverage * alpha;  // Combined for gate check
       let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
       if (mask > 0.0 || isFullCoverage) {
         // Only count as "on layer" when shape ACTUALLY covers this pixel
         anyShapeOnLayer = true;
 
-        let reflFactor = getReflectionFactor(shape, fx, fy);
         let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-        // Blend material reflection by coverage for proper anti-aliasing
-        let effectiveMask = select(mask, 1.0, isFullCoverage);
-        let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
-        totalReflection *= f16(reflFactor) * effectiveRefl;
+        // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
+        // NO reflFactor re-sampling - uses coverage directly
+        let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
+        let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
+        totalReflection *= effectiveRefl;
       }
     }
 
@@ -404,17 +410,21 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
   let numShapes = arrayLength(&shapes);
 
   // ============================================================
-  // OPTIMIZATION 1: Pre-compute shape masks ONCE for all operations
+  // OPTIMIZATION 1: Pre-compute coverage and alpha SEPARATELY
+  // This ensures absorption and reflection use the SAME values
   // ============================================================
-  var shapeMasks: array<f16, 16>;
+  var shapeCoverages: array<f16, 16>;  // MSDF coverage (edge anti-aliasing)
+  var shapeAlphas: array<f16, 16>;     // Alpha intensity (affects absorption only)
   var maxMask: f16 = f16(0.0);
   let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
 
   if (inBounds) {
     for (var i: u32 = 0u; i < shapesToProcess; i++) {
-      let mask = f16(getShapeMask(shapes[i], fx, fy));
-      shapeMasks[i] = mask;
-      maxMask = max(maxMask, mask);
+      let coverage = f16(getMsdfCoverage(shapes[i], fx, fy));
+      let alpha = f16(getAlphaValue(shapes[i], fx, fy));
+      shapeCoverages[i] = coverage;
+      shapeAlphas[i] = alpha;
+      maxMask = max(maxMask, coverage * alpha);  // Combined mask for fast-path decision
     }
   }
 
@@ -449,12 +459,12 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
     let blurredFull = blurredTransmitted[spectralIdx];
     let aura = scatterSource[spectralIdx];
 
-    // Compute scatter probability using cached masks
+    // Compute scatter probability using cached coverage * alpha
     var scatterProb: f16 = f16(0.0);
     if (inBounds && anyMask) {
       var unscatteredFrac: f32 = 1.0;
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
-        let mask = shapeMasks[i];
+        let mask = shapeCoverages[i] * shapeAlphas[i];  // Combined for scattering
         if (mask > f16(0.0)) {
           let shape = shapes[i];
           let pathLength = max(shape.width, shape.height) * 0.01;
@@ -476,6 +486,7 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
 
     // ============================================================
     // STEP 2: Apply ambient reflection (multiplicative compounding)
+    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
     // ============================================================
     if (inBounds) {
       let ambient = getAmbientIntensity(wavelength);
@@ -487,23 +498,21 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          // Use CACHED mask for consistency with scattering/absorption
-          // This ensures reflection and absorption use the SAME anti-aliasing
-          let mask = f32(shapeMasks[i]);
+          // Use CACHED coverage and alpha for consistency
+          let coverage = f32(shapeCoverages[i]);
+          let mask = coverage * f32(shapeAlphas[i]);  // Combined for gate check
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           if (mask > 0.0 || isFullCoverage) {
             // Only count as "on layer" when shape ACTUALLY covers this pixel
-            // This prevents pixels outside shapes from getting reflection
-            // without the material's spectral distribution
             anyShapeOnLayer = true;
 
-            let reflFactor = getReflectionFactor(shape, fx, fy);
             let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-            // Blend material reflection by coverage for proper anti-aliasing
-            let effectiveMask = select(mask, 1.0, isFullCoverage);
-            let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveMask));
-            totalReflection *= f16(reflFactor) * effectiveRefl;
+            // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
+            // NO reflFactor re-sampling - uses cached coverage directly
+            let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
+            let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
+            totalReflection *= effectiveRefl;
           }
         }
       }
@@ -583,16 +592,19 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
   let fy = f32(screenPos.y);
   let numShapes = arrayLength(&shapes);
 
-  // Pre-compute shape masks ONCE
-  var shapeMasks: array<f16, 16>;
+  // Pre-compute coverage and alpha SEPARATELY for consistent ratio
+  var shapeCoverages: array<f16, 16>;  // MSDF coverage (edge anti-aliasing)
+  var shapeAlphas: array<f16, 16>;     // Alpha intensity (affects absorption only)
   var maxMask: f16 = f16(0.0);
   let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
 
   if (inBounds) {
     for (var i: u32 = 0u; i < shapesToProcess; i++) {
-      let mask = f16(getShapeMask(shapes[i], fx, fy));
-      shapeMasks[i] = mask;
-      maxMask = max(maxMask, mask);
+      let coverage = f16(getMsdfCoverage(shapes[i], fx, fy));
+      let alpha = f16(getAlphaValue(shapes[i], fx, fy));
+      shapeCoverages[i] = coverage;
+      shapeAlphas[i] = alpha;
+      maxMask = max(maxMask, coverage * alpha);
     }
   }
 
@@ -661,7 +673,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     if (inBounds && anyMask) {
       var unscattered = vec4<f32>(1.0, 1.0, 1.0, 1.0);
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
-        let mask = shapeMasks[i];
+        let mask = shapeCoverages[i] * shapeAlphas[i];  // Combined for scattering
         if (mask > f16(0.0)) {
           let shape = shapes[i];
           let pathLength = max(shape.width, shape.height) * 0.01 * f32(mask);
@@ -684,6 +696,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     var combined = direct + inShapeScatter + aura;
 
     // Vectorized ambient reflection (multiplicative compounding)
+    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
     if (inBounds) {
       // Get ambient intensity for each wavelength
       let ambient = vec4<f16>(
@@ -700,16 +713,14 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          // Use CACHED mask for consistency with scattering/absorption
-          // This ensures reflection and absorption use the SAME anti-aliasing
-          let mask = f32(shapeMasks[i]);
+          // Use CACHED coverage and alpha for consistency
+          let coverage = f32(shapeCoverages[i]);
+          let mask = coverage * f32(shapeAlphas[i]);  // Combined for gate check
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           if (mask > 0.0 || isFullCoverage) {
             // Only count as "on layer" when shape ACTUALLY covers this pixel
             anyShapeOnLayer = true;
-
-            let reflFactor = f16(getReflectionFactor(shape, fx, fy));
 
             // Get material reflection for each wavelength
             let materialRefl = vec4<f16>(
@@ -719,10 +730,11 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
               getMaterialReflection(shape.materialIndex, wavelengths.w)
             );
 
-            // Blend material reflection by coverage for proper anti-aliasing
-            let effectiveMask = select(f16(mask), f16(1.0), isFullCoverage);
-            let effectiveRefl = mix(one4, materialRefl, vec4<f16>(effectiveMask));
-            totalReflection *= vec4<f16>(reflFactor) * effectiveRefl;
+            // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
+            // NO reflFactor re-sampling - uses cached coverage directly
+            let effectiveCoverage = select(f16(coverage), f16(1.0), isFullCoverage);
+            let effectiveRefl = mix(one4, materialRefl, vec4<f16>(effectiveCoverage));
+            totalReflection *= effectiveRefl;
           }
         }
       }

@@ -121,6 +121,86 @@ fn sampleAlphaTexture(arrayIndex: u32, layerIndex: u32, uv: vec2<f32>) -> f32 {
 }
 
 // ============================================================
+// Separate Coverage and Alpha Functions (OCP Extension)
+// ============================================================
+
+/**
+ * Get MSDF coverage only (0-1), without alpha.
+ *
+ * This function extracts just the MSDF edge anti-aliasing component,
+ * which should be used consistently for BOTH absorption and reflection.
+ *
+ * @param shape - Shape definition
+ * @param x - Pixel X coordinate
+ * @param y - Pixel Y coordinate
+ * @returns MSDF coverage value (0-1), or 1.0 if no MSDF texture
+ */
+fn getMsdfCoverage(shape: Shape, x: f32, y: f32) -> f32 {
+  // Check if within bounding box
+  if (x < shape.x || x >= shape.x + shape.width ||
+      y < shape.y || y >= shape.y + shape.height) {
+    return 0.0;
+  }
+
+  // No MSDF = full coverage
+  if (shape.hasMsdf == 0u) {
+    return 1.0;
+  }
+
+  // Calculate UV coordinates relative to shape bounds
+  let u = (x - shape.x) / shape.width;
+  let v = (y - shape.y) / shape.height;
+  let uv = vec2<f32>(u, v);
+
+  let texSize = vec2<f32>(shape.texWidth, shape.texHeight);
+  let shapeScreenSize = vec2<f32>(shape.width, shape.height);
+
+  return sampleMSDF(
+    shape.msdfArrayIndex,
+    shape.msdfLayerIndex,
+    uv,
+    params.msdfPxRange,
+    texSize,
+    shapeScreenSize
+  );
+}
+
+/**
+ * Get alpha value only (0-1), without MSDF.
+ *
+ * This function extracts just the alpha intensity modulation,
+ * which affects absorption but NOT reflection.
+ *
+ * @param shape - Shape definition
+ * @param x - Pixel X coordinate
+ * @param y - Pixel Y coordinate
+ * @returns Alpha value (0-1), or 1.0 if no alpha texture
+ */
+fn getAlphaValue(shape: Shape, x: f32, y: f32) -> f32 {
+  // Check if within bounding box
+  if (x < shape.x || x >= shape.x + shape.width ||
+      y < shape.y || y >= shape.y + shape.height) {
+    return 0.0;
+  }
+
+  // No alpha = full intensity
+  if (shape.hasAlpha == 0u) {
+    return 1.0;
+  }
+
+  // Calculate UV coordinates relative to shape bounds
+  let u = (x - shape.x) / shape.width;
+  let v = (y - shape.y) / shape.height;
+  let uv = vec2<f32>(u, v);
+
+  return sampleAlphaTexture(
+    shape.alphaArrayIndex,
+    shape.alphaLayerIndex,
+    uv
+  );
+}
+
+// ============================================================
 // Shape Mask Function
 // ============================================================
 
