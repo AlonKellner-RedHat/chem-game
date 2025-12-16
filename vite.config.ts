@@ -1,11 +1,22 @@
 import { defineConfig } from 'vite';
+import weslPlugin from 'wesl-plugin/vite';
+import { staticBuildExtension, linkBuildExtension } from 'wesl-plugin';
 
 /**
  * Vite configuration for Phaser 4 + WebGPU implementation
+ * 
+ * WESL Plugin Extensions:
+ * - staticExtension: Build-time linking for production (import with ?static)
+ * - linkBuildExtension: Runtime linking for development (import with ?link)
  */
 export default defineConfig({
   root: 'src',
   base: './',
+  plugins: [
+    weslPlugin({
+      extensions: [staticBuildExtension, linkBuildExtension],
+    }),
+  ],
   build: {
     outDir: '../dist',
     emptyOutDir: true,
@@ -24,7 +35,7 @@ export default defineConfig({
   server: {
     port: 5174,
   },
-  assetsInclude: ['**/*.wgsl'],
+  assetsInclude: ['**/*.wgsl', '**/*.wesl'],
   optimizeDeps: {
     // Phaser 4 will be added here once installed
   },

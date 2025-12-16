@@ -1,0 +1,36 @@
+# WESL Configuration for SpectralCompute shader modules
+# This file defines the shader project structure for the WESL linker
+
+[package]
+name = "spectral"
+version = "0.1.0"
+
+# Source directories for WESL/WGSL files
+[sources]
+root = "wgsl"
+
+# Module path mappings
+# Allows "import spectral::physics::planck" to find "wgsl/physics/planck.wesl"
+[modules]
+"spectral::constants" = "wgsl/constants.wesl"
+"spectral::structs" = "wgsl/structs.wesl"
+"spectral::bindings" = "wgsl/bindings.wesl"
+"spectral::physics::planck" = "wgsl/physics/planck.wesl"
+"spectral::physics::scattering" = "wgsl/physics/scattering.wesl"
+"spectral::physics::materials" = "wgsl/physics/materials.wesl"
+"spectral::physics::fluorescence" = "wgsl/physics/fluorescence.wesl"
+"spectral::physics::background" = "wgsl/physics/background.wesl"
+"spectral::physics::layer" = "wgsl/physics/layer.wesl"
+"spectral::rendering::msdf" = "wgsl/rendering/msdf.wesl"
+"spectral::rendering::color" = "wgsl/rendering/color.wesl"
+"spectral::rendering::blur" = "wgsl/rendering/blur.wesl"
+"spectral::rendering::ambient" = "wgsl/rendering/ambient.wesl"
+"spectral::entry::main" = "wgsl/entry/main.wesl"
+"spectral::entry::spectrum" = "wgsl/entry/spectrum.wesl"
+"spectral::entry::blur_passes" = "wgsl/entry/blur-passes.wesl"
+"spectral::entry::combine" = "wgsl/entry/combine.wesl"
+
+# Enable f16 extension for half-precision floats
+[features]
+shader-f16 = true
+
