@@ -29,8 +29,8 @@ function getReflectionFactor(
   // Get effective MSDF coverage (1.0 if no MSDF texture)
   const effectiveMsdf = hasMsdf ? msdfCoverage : 1.0;
 
-  // Get effective alpha (1.0 if no alpha texture = full absorption when inside)
-  const effectiveAlpha = hasAlpha ? alpha : 1.0;
+  // Get effective alpha (0.0 if no alpha texture = no absorption, full reflection)
+  const effectiveAlpha = hasAlpha ? alpha : 0.0;
 
   // Reflection = 1 - (coverage * absorption)
   // Outside circles: msdfCoverage=0 → reflection=1.0
@@ -97,9 +97,10 @@ describe('Reflection Factor Calculation', () => {
   });
 
   describe('MSDF only (no alpha texture)', () => {
-    it('should use alpha=1.0 as default (full absorption inside)', () => {
-      // MSDF but no alpha → inside = full absorption
-      expect(getReflectionFactor(1.0, 0.0, true, false)).toBe(0.0);
+    it('should use alpha=0.0 as default (no absorption, full reflection inside)', () => {
+      // MSDF but no alpha → no absorption → full reflection inside
+      // This allows material shapes to reflect ambient light based on their material
+      expect(getReflectionFactor(1.0, 0.0, true, false)).toBe(1.0);
       expect(getReflectionFactor(0.0, 0.0, true, false)).toBe(1.0);
     });
   });

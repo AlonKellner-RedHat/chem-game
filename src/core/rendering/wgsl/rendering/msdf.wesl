@@ -235,8 +235,8 @@ fn getReflectionFactor(shape: Shape, x: f32, y: f32) -> f32 {
     );
   }
 
-  // Get alpha value (1.0 if no alpha = full absorption when inside)
-  var alphaValue: f32 = 1.0;
+  // Get alpha value (0.0 if no alpha = no absorption, full reflection)
+  var alphaValue: f32 = 0.0;
   if (shape.hasAlpha == 1u) {
     alphaValue = sampleAlphaTexture(
       shape.alphaArrayIndex,
