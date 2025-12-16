@@ -125,13 +125,14 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
     var result = direct + inShapeScatter + aura;
 
     // Per-layer ambient reflection (multiplicative compounding)
-    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
+    // Uses original formula: compound reflections, then multiply by maxCoverage
     if (inBounds) {
       let pattern = getAmbientPattern(fx, fy);
       let ambient = getAmbientIntensity(wavelength);
 
-      // Multiplicative compounding: each shape's reflection factor multiplies together
+      // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection: f16 = f16(1.0);
+      var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < numShapes; i++) {
@@ -151,16 +152,17 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
           anyShapeOnLayer = true;
 
           let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-          // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
-          // NO reflFactor re-sampling - uses coverage directly
+          // Compound material reflections (NOT blended with coverage)
+          totalReflection *= materialRefl;
+          // Track max coverage for final scaling
           let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-          let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
-          totalReflection *= effectiveRefl;
+          maxCoverage = max(maxCoverage, f16(effectiveCoverage));
         }
       }
 
       if (anyShapeOnLayer) {
-        result += ambient * totalReflection * pattern;
+        // Apply coverage at the end: reflection * coverage
+        result += ambient * totalReflection * maxCoverage * pattern;
       }
     }
 
@@ -339,9 +341,9 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
     let current = spectralInput[spectralIdx];
     let ambient = getAmbientIntensity(wavelength);
 
-    // Multiplicative compounding: each shape's reflection factor multiplies together
-    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
+    // Multiplicative compounding: compound material reflections, track max coverage
     var totalReflection: f16 = f16(1.0);
+    var maxCoverage: f16 = f16(0.0);
     var anyShapeOnLayer: bool = false;
 
     for (var i: u32 = 0u; i < numShapes; i++) {
@@ -358,19 +360,20 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
         anyShapeOnLayer = true;
 
         let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-        // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
-        // NO reflFactor re-sampling - uses coverage directly
+        // Compound material reflections (NOT blended with coverage)
+        totalReflection *= materialRefl;
+        // Track max coverage for final scaling
         let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-        let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
-        totalReflection *= effectiveRefl;
+        maxCoverage = max(maxCoverage, f16(effectiveCoverage));
       }
     }
 
-    if (!anyShapeOnLayer) {
-      totalReflection = f16(0.0);
+    var ambientContribution: f16 = f16(0.0);
+    if (anyShapeOnLayer) {
+      // Apply coverage at the end: reflection * coverage
+      ambientContribution = ambient * totalReflection * maxCoverage * pattern;
     }
 
-    let ambientContribution = ambient * totalReflection * pattern;
     spectralInput[spectralIdx] = current + ambientContribution;
   }
 }
@@ -486,13 +489,14 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
 
     // ============================================================
     // STEP 2: Apply ambient reflection (multiplicative compounding)
-    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
+    // Uses original formula: compound reflections, then multiply by maxCoverage
     // ============================================================
     if (inBounds) {
       let ambient = getAmbientIntensity(wavelength);
 
-      // Multiplicative compounding: each shape's reflection factor multiplies together
+      // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection: f16 = f16(1.0);
+      var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
@@ -508,17 +512,18 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
             anyShapeOnLayer = true;
 
             let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-            // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
-            // NO reflFactor re-sampling - uses cached coverage directly
+            // Compound material reflections (NOT blended with coverage)
+            totalReflection *= materialRefl;
+            // Track max coverage for final scaling
             let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-            let effectiveRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
-            totalReflection *= effectiveRefl;
+            maxCoverage = max(maxCoverage, f16(effectiveCoverage));
           }
         }
       }
 
       if (anyShapeOnLayer) {
-        combined += ambient * totalReflection * ambientPattern;
+        // Apply coverage at the end: reflection * coverage
+        combined += ambient * totalReflection * maxCoverage * ambientPattern;
       }
     }
 
@@ -696,7 +701,7 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     var combined = direct + inShapeScatter + aura;
 
     // Vectorized ambient reflection (multiplicative compounding)
-    // Uses COVERAGE only (not alpha) for consistent absorption-to-reflection ratio
+    // Uses original formula: compound reflections, then multiply by maxCoverage
     if (inBounds) {
       // Get ambient intensity for each wavelength
       let ambient = vec4<f16>(
@@ -706,8 +711,9 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         getAmbientIntensity(wavelengths.w)
       );
 
-      // Multiplicative compounding: each shape's reflection factor multiplies together
+      // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
+      var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
@@ -730,17 +736,18 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
               getMaterialReflection(shape.materialIndex, wavelengths.w)
             );
 
-            // Use COVERAGE only for reflection (not alpha) - ensures constant ratio
-            // NO reflFactor re-sampling - uses cached coverage directly
-            let effectiveCoverage = select(f16(coverage), f16(1.0), isFullCoverage);
-            let effectiveRefl = mix(one4, materialRefl, vec4<f16>(effectiveCoverage));
-            totalReflection *= effectiveRefl;
+            // Compound material reflections (NOT blended with coverage)
+            totalReflection *= materialRefl;
+            // Track max coverage for final scaling
+            let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
+            maxCoverage = max(maxCoverage, f16(effectiveCoverage));
           }
         }
       }
 
       if (anyShapeOnLayer) {
-        combined += ambient * totalReflection * vec4<f16>(ambientPattern);
+        // Apply coverage at the end: reflection * coverage
+        combined += ambient * totalReflection * maxCoverage * vec4<f16>(ambientPattern);
       }
     }
 
