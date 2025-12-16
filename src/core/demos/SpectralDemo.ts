@@ -190,7 +190,7 @@ export class SpectralDemo implements Demo {
       {
         id: 'bg-grid',
         name: 'Background Grid',
-        maskName: 'circle-grid', // Circle-grid pattern overlay
+        maskName: 'diagonal-circle-grid', // Diagonal grid with alpha gradients (RTL + radial from bottom-left)
         // Normalized: full screen
         nx: 0,
         ny: 0,
