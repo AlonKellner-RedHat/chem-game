@@ -549,131 +549,53 @@ describe('Coverage-based Reflection Blending', () => {
   });
 });
 
-describe('No-Halo Reflection Blending', () => {
+describe('Anti-Aliasing Edge Behavior', () => {
   /**
-   * The "halo" effect occurs when edge pixels are BRIGHTER than interior pixels.
-   * This happens because: mix(1.0, materialRefl, 0.5) > materialRefl for materialRefl < 1.0
+   * With proper anti-aliasing, edge pixels ARE brighter than interior.
+   * This is correct behavior - the edge is a blend of shape and background.
    *
-   * To fix: Use a sharper mask transition that reaches full material effect earlier.
-   * effectiveMask = min(mask * 2.0, 1.0)
+   * The "halo" is the natural consequence of linear blending:
+   *   mix(1.0, materialRefl, 0.5) > materialRefl  for materialRefl < 1.0
    *
-   * This means:
-   * - mask >= 0.5: effectiveMask = 1.0 (full material effect, same as interior)
-   * - mask < 0.5: effectiveMask = mask * 2.0 (smooth but faster transition)
+   * Attempting to "fix" this by sharpening the mask creates worse artifacts
+   * (hard aliased edges at certain sub-pixel positions).
    */
-  function sharpenedMask(mask: number): number {
-    return Math.min(mask * 2.0, 1.0);
-  }
 
-  function blendReflectionNoHalo(materialRefl: number, mask: number): number {
-    const effectiveMask = sharpenedMask(mask);
-    return 1 - effectiveMask + effectiveMask * materialRefl;
-  }
-
-  describe('Sharpened mask transition', () => {
-    it('mask >= 0.5 should give full effect (no halo)', () => {
-      // At mask=0.5 (middle of anti-aliased edge), we want full material effect
-      expect(sharpenedMask(0.5)).toBe(1.0);
-      expect(sharpenedMask(0.75)).toBe(1.0);
-      expect(sharpenedMask(1.0)).toBe(1.0);
-    });
-
-    it('mask < 0.5 should give proportional effect', () => {
-      expect(sharpenedMask(0.0)).toBe(0.0);
-      expect(sharpenedMask(0.25)).toBe(0.5);
-      expect(sharpenedMask(0.4)).toBeCloseTo(0.8, 5);
-    });
-  });
-
-  describe('No-halo blending removes bright edge', () => {
-    it('edge (mask=0.5) should equal interior (mask=1.0)', () => {
-      const goldRefl = 0.8;
-      // Key test: edge should NOT be brighter than interior
-      const edgeValue = blendReflectionNoHalo(goldRefl, 0.5);
-      const interiorValue = blendReflectionNoHalo(goldRefl, 1.0);
-      expect(edgeValue).toBe(interiorValue); // Both should be 0.8
-    });
-
-    it('gold: interior=0.8, edge=0.8, outer-edge=0.9', () => {
-      const goldRefl = 0.8;
-      expect(blendReflectionNoHalo(goldRefl, 1.0)).toBe(0.8); // Inside
-      expect(blendReflectionNoHalo(goldRefl, 0.5)).toBe(0.8); // Edge (same!)
-      expect(blendReflectionNoHalo(goldRefl, 0.25)).toBe(0.9); // Outer edge
-      expect(blendReflectionNoHalo(goldRefl, 0.0)).toBe(1.0); // Outside
-    });
-
-    it('blue: interior=0.6, edge=0.6, outer-edge=0.8', () => {
-      const blueRefl = 0.6;
-      expect(blendReflectionNoHalo(blueRefl, 1.0)).toBe(0.6);
-      expect(blendReflectionNoHalo(blueRefl, 0.5)).toBe(0.6);
-      expect(blendReflectionNoHalo(blueRefl, 0.25)).toBe(0.8);
-    });
-  });
-
-  describe('Transition is still smooth', () => {
-    it('outer edge transition: 1.0 -> 0.9 -> 0.8 (for gold)', () => {
-      const goldRefl = 0.8;
-      // The transition happens in the outer half of the anti-aliased edge
-      const results = [0.0, 0.125, 0.25, 0.375, 0.5].map((mask) =>
-        blendReflectionNoHalo(goldRefl, mask)
-      );
-      // Should be: [1.0, 0.95, 0.9, 0.85, 0.8]
-      expect(results[0]).toBe(1.0);
-      expect(results[1]).toBeCloseTo(0.95, 5);
-      expect(results[2]).toBeCloseTo(0.9, 5);
-      expect(results[3]).toBeCloseTo(0.85, 5);
-      expect(results[4]).toBe(0.8);
-    });
-
-    it('inner half of edge should be uniform (full material effect)', () => {
-      const goldRefl = 0.8;
-      // From mask=0.5 to mask=1.0, all values should be 0.8
-      const results = [0.5, 0.625, 0.75, 0.875, 1.0].map((mask) =>
-        blendReflectionNoHalo(goldRefl, mask)
-      );
-      expect(results.every((v) => v === 0.8)).toBe(true);
-    });
-  });
-
-  describe('Compounding with no-halo blend', () => {
-    function compoundNoHalo(
-      shapes: Array<{
-        mask: number;
-        reflFactor: number;
-        materialRefl: number;
-        hasMsdf: boolean;
-        hasAlpha: boolean;
-      }>
-    ): number {
-      let totalReflection = 1.0;
-      for (const shape of shapes) {
-        const isFullCoverage = !shape.hasMsdf && !shape.hasAlpha;
-        if (shape.mask > 0 || isFullCoverage) {
-          const effectiveMask = isFullCoverage ? 1.0 : sharpenedMask(shape.mask);
-          const effectiveRefl = 1 - effectiveMask + effectiveMask * shape.materialRefl;
-          totalReflection *= shape.reflFactor * effectiveRefl;
-        }
-      }
-      return totalReflection;
+  describe('Linear blend is correct for anti-aliasing', () => {
+    function blendReflection(materialRefl: number, mask: number): number {
+      return 1 - mask + mask * materialRefl;
     }
 
-    it('bg-base + golden square at edge (mask=0.5): full material, no halo', () => {
-      const shapes = [
-        { mask: 1.0, reflFactor: 1.0, materialRefl: 1.0, hasMsdf: false, hasAlpha: false },
-        { mask: 0.5, reflFactor: 1.0, materialRefl: 0.8, hasMsdf: true, hasAlpha: false },
-      ];
-      // With no-halo: sharpened mask = 1.0, so effectiveRefl = 0.8
-      // Total: 1.0 * 0.8 = 0.8 (same as interior!)
-      expect(compoundNoHalo(shapes)).toBe(0.8);
+    it('edge (mask=0.5) is brighter than interior (correct AA)', () => {
+      const goldRefl = 0.8;
+      const edgeValue = blendReflection(goldRefl, 0.5);
+      const interiorValue = blendReflection(goldRefl, 1.0);
+
+      // Edge is brighter - this is CORRECT anti-aliasing behavior
+      expect(edgeValue).toBeGreaterThan(interiorValue);
+      expect(edgeValue).toBeCloseTo(0.9, 5); // mix(1.0, 0.8, 0.5)
+      expect(interiorValue).toBe(0.8);
     });
 
-    it('bg-base + golden square at outer-edge (mask=0.25): smooth transition', () => {
-      const shapes = [
-        { mask: 1.0, reflFactor: 1.0, materialRefl: 1.0, hasMsdf: false, hasAlpha: false },
-        { mask: 0.25, reflFactor: 1.0, materialRefl: 0.8, hasMsdf: true, hasAlpha: false },
-      ];
-      // sharpened mask = 0.5, effectiveRefl = mix(1.0, 0.8, 0.5) = 0.9
-      expect(compoundNoHalo(shapes)).toBeCloseTo(0.9, 5);
+    it('transition is monotonic (no peaks or valleys)', () => {
+      const goldRefl = 0.8;
+      const masks = [0.0, 0.25, 0.5, 0.75, 1.0];
+      const values = masks.map((m) => blendReflection(goldRefl, m));
+
+      // Should decrease monotonically from 1.0 to 0.8
+      for (let i = 1; i < values.length; i++) {
+        expect(values[i]).toBeLessThanOrEqual(values[i - 1]);
+      }
+    });
+
+    it('full transition range equals material contrast', () => {
+      const goldRefl = 0.8;
+      const outside = blendReflection(goldRefl, 0.0);
+      const inside = blendReflection(goldRefl, 1.0);
+
+      // Range should be |1.0 - materialRefl|
+      const range = outside - inside;
+      expect(range).toBeCloseTo(1.0 - goldRefl, 5);
     });
   });
 });
