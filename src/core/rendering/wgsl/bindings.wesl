@@ -5,8 +5,8 @@
  * Organized into 4 bind groups to stay within WebGPU limits.
  */
 
-import spectral::structs::{Params, Shape};
-import spectral::constants::SPECTRAL_SAMPLES;
+import package::wgsl::structs::{Params, Shape};
+import package::wgsl::constants::SPECTRAL_SAMPLES;
 
 // ============================================================
 // Bind Group 0: Main Buffers
@@ -56,7 +56,7 @@ import spectral::constants::SPECTRAL_SAMPLES;
 @group(1) @binding(0) var materialPalette: texture_2d<f32>;
 @group(1) @binding(1) var materialSampler: sampler;
 
-/// Fluorescence excitation efficiency (UV absorption → fluorescence)
+/// Fluorescence excitation efficiency (UV absorption -> fluorescence)
 @group(1) @binding(2) var fluorExcitationPalette: texture_2d<f32>;
 
 /// Fluorescence emission spectrum (normalized)

@@ -1,84 +1,42 @@
-/**
- * SpectralCompute - Main WESL Module
- * 
- * Root module that imports and re-exports all spectral compute pipeline modules.
- * This file serves as the entry point for the WESL linker.
- * 
- * Architecture:
- * - Core: constants, structs, bindings
- * - Physics: planck, scattering, materials, fluorescence, background, layer
- * - Rendering: msdf, color, blur, ambient
- * - Entry Points: main, spectrum, blur-passes, combine
- * 
- * Usage:
- *   import wgsl from "./SpectralCompute.wesl?static";
- *   const shaderModule = device.createShaderModule({ code: wgsl });
- */
+// SpectralCompute - Main WESL Module (Unified Entry Point)
+//
+// This module aggregates all entry points into a single shader.
+// The _forceInclude function references all entry points to prevent tree-shaking.
 
-// ============================================================
-// Core Modules
-// ============================================================
+import package::wgsl::entry::main::{main, integrateSpectrum};
+import package::wgsl::entry::spectrum::{computeSpectrumBox, averageSpectrum, finalCombine};
+import package::wgsl::entry::blur_passes::{blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV};
+import package::wgsl::entry::combine::{
+  initBackgroundSpectrum,
+  applyLayerAbsorption,
+  combineScattered,
+  applyAmbientLight,
+  processLayerTransition,
+  processLayerTransitionFast,
+  processLayerTransitionVec4
+};
 
-// Physical constants and rendering parameters
-import spectral::constants;
-
-// Data structures (Params, Shape, etc.)
-import spectral::structs;
-
-// GPU buffer and texture bindings
-import spectral::bindings;
-
-// ============================================================
-// Physics Modules
-// ============================================================
-
-// Planck radiation and Kirchhoff emission
-import spectral::physics::planck;
-
-// Rayleigh and Mie scattering
-import spectral::physics::scattering;
-
-// Material texture sampling
-import spectral::physics::materials;
-
-// Fluorescence excitation and emission
-import spectral::physics::fluorescence;
-
-// Background illumination modes
-import spectral::physics::background;
-
-// Combined layer physics (SINGLE SOURCE OF TRUTH)
-import spectral::physics::layer;
-
-// ============================================================
-// Rendering Modules
-// ============================================================
-
-// MSDF shape mask rendering
-import spectral::rendering::msdf;
-
-// CIE color matching and XYZ→sRGB conversion
-import spectral::rendering::color;
-
-// Gaussian blur kernels and shared memory operations
-import spectral::rendering::blur;
-
-// Ambient light and pattern rendering
-import spectral::rendering::ambient;
-
-// ============================================================
-// Entry Point Modules
-// ============================================================
-
-// Main compute entry points (integrateSpectrum, main)
-import spectral::entry::main;
-
-// High-resolution spectrum computation
-import spectral::entry::spectrum;
-
-// Separable blur passes
-import spectral::entry::blur_passes;
-
-// Light combination (scattered, transmitted, ambient)
-import spectral::entry::combine;
-
+// This function is never called but prevents WESL from tree-shaking the entry points.
+// It creates references to all entry point functions.
+fn _forceIncludeAllEntryPoints() {
+  // Reference all entry points by "calling" them in dead code
+  // The WESL linker sees these references and includes the functions
+  if (false) {
+    main(vec3<u32>(0u, 0u, 0u));
+    integrateSpectrum(vec3<u32>(0u, 0u, 0u));
+    computeSpectrumBox(vec3<u32>(0u, 0u, 0u));
+    averageSpectrum(vec3<u32>(0u, 0u, 0u));
+    finalCombine(vec3<u32>(0u, 0u, 0u));
+    blurHorizontal(vec3<u32>(0u, 0u, 0u));
+    blurVertical(vec3<u32>(0u, 0u, 0u));
+    blurTransmittedH(vec3<u32>(0u, 0u, 0u));
+    blurTransmittedV(vec3<u32>(0u, 0u, 0u));
+    initBackgroundSpectrum(vec3<u32>(0u, 0u, 0u));
+    applyLayerAbsorption(vec3<u32>(0u, 0u, 0u));
+    combineScattered(vec3<u32>(0u, 0u, 0u));
+    applyAmbientLight(vec3<u32>(0u, 0u, 0u));
+    processLayerTransition(vec3<u32>(0u, 0u, 0u));
+    processLayerTransitionFast(vec3<u32>(0u, 0u, 0u));
+    processLayerTransitionVec4(vec3<u32>(0u, 0u, 0u));
+  }
+}

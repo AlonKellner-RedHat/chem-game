@@ -40,7 +40,8 @@ import {
 } from "./WebGPUContext";
 import { generateCIETextures } from "../physics/cie";
 import { BackgroundMode } from "../physics/config";
-import shaderCode from "./SpectralCompute.wgsl?raw";
+// Import WESL module - wesl-plugin links all imports at build time and produces WGSL
+import shaderCode from "./SpectralCompute.wesl?static";
 import { GPUProfiler, ProfilingReport } from "./GPUProfiler";
 import { OptimizationConfig } from "./OptimizationConfig";
 
@@ -333,12 +334,14 @@ export class SpectralComputePipeline {
   private blurTransmittedVPipeline: GPUComputePipeline | null = null; // Dual-path: blur->mask
   private integrateSpectrumPipeline: GPUComputePipeline | null = null;
   private combineScatteredPipeline: GPUComputePipeline | null = null;
+  private processLayerTransitionPipeline: GPUComputePipeline | null = null; // Optimized: combine+ambient merged
+  private processLayerTransitionVec4Pipeline: GPUComputePipeline | null = null; // vec4<f16> vectorized version
   // Note: blurEmissionAuraH/V removed - emission now unified with scatter aura
 
   // High-res spectrum now uses unified pipelines with mode='spectrum' params
   // All _HighRes pipelines have been removed - use same pipelines with different params
   private finalCombinePipeline: GPUComputePipeline | null = null;
-  private ambientLightPipeline: GPUComputePipeline | null = null;  // Ambient light pass (after all layers)
+  private ambientLightPipeline: GPUComputePipeline | null = null; // Ambient light pass (after all layers)
 
   // Explicit bind group layouts (shared across all pipelines)
   // NOTE: WebGPU has a maximum of 4 bind groups
@@ -404,7 +407,7 @@ export class SpectralComputePipeline {
   // The blur radius is constant (MAX_BLUR_RADIUS=16), sigma controls the Gaussian falloff
   // The amount of scattered light still varies per-shape based on particle density
   private atmosphericScatterSigma: number = 5.0;
-  
+
   // Optimization configuration for shader performance
   private optimizationConfig: OptimizationConfig = OptimizationConfig.default();
   private lastProfilingParams: {
@@ -418,18 +421,18 @@ export class SpectralComputePipeline {
   private materialPaletteTexture: GPUTexture | null = null;
   private fluorExcitationTexture: GPUTexture | null = null;
   private fluorEmissionTexture: GPUTexture | null = null;
-  private reflectionPaletteTexture: GPUTexture | null = null;  // For ambient light reflection
-  
+  private reflectionPaletteTexture: GPUTexture | null = null; // For ambient light reflection
+
   // Textures - Low-res for rendering (32 samples, bin-integrated)
   private renderMaterialTexture: GPUTexture | null = null;
   private renderExcitationTexture: GPUTexture | null = null;
   private renderEmissionTexture: GPUTexture | null = null;
-  private renderReflectionTexture: GPUTexture | null = null;  // For ambient light reflection
-  
+  private renderReflectionTexture: GPUTexture | null = null; // For ambient light reflection
+
   private numMaterials: number = 0;
   // MSDF texture arrays (replacing individual textures for scalability)
-  private msdfArraySmall: GPUTexture | null = null;  // 256x256 masks
-  private msdfArrayLarge: GPUTexture | null = null;  // 1280x720 masks
+  private msdfArraySmall: GPUTexture | null = null; // 256x256 masks
+  private msdfArrayLarge: GPUTexture | null = null; // 1280x720 masks
   private cieTextures: { x: GPUTexture; y: GPUTexture; z: GPUTexture } | null =
     null;
   private cieScalesBuffer: GPUBuffer | null = null;
@@ -473,9 +476,12 @@ export class SpectralComputePipeline {
    */
   async initialize(): Promise<void> {
     // Create shader module (shared by all pipelines)
+    // Prepend "enable f16;" directive for half-precision float support
+    // WESL doesn't support WGSL directives, so we add it here
+    const shaderWithF16 = "enable f16;\n\n" + shaderCode;
     const shaderModule = this.device.createShaderModule({
       label: "Spectral Compute Shader",
-      code: shaderCode,
+      code: shaderWithF16,
     });
 
     // Create explicit bind group layouts (shared across all pipelines)
@@ -607,6 +613,28 @@ export class SpectralComputePipeline {
         entryPoint: "combineScattered",
       },
     });
+
+    // Optimized layer transition pipeline - merges combine + ambient for better performance
+    this.processLayerTransitionPipeline = this.device.createComputePipeline({
+      label: "Process Layer Transition Pipeline",
+      layout: this.blurPipelineLayout,
+      compute: {
+        module: shaderModule,
+        entryPoint: "processLayerTransition",
+      },
+    });
+
+    // Vectorized layer transition pipeline - processes 4 wavelengths at once
+    this.processLayerTransitionVec4Pipeline = this.device.createComputePipeline(
+      {
+        label: "Process Layer Transition Vec4 Pipeline",
+        layout: this.blurPipelineLayout,
+        compute: {
+          module: shaderModule,
+          entryPoint: "processLayerTransitionVec4",
+        },
+      }
+    );
 
     // Note: blurEmissionAuraH/V pipelines removed - emission unified with scatter
 
@@ -893,22 +921,28 @@ export class SpectralComputePipeline {
     // High-res default (for spectrum plot)
     const defaultSpectrum = new Float32Array(100).fill(1.0);
     this.createMaterialPalette([defaultSpectrum]);
-    
+
     // Create default empty fluorescence textures (no fluorescence)
     const defaultFluorescence = new Float32Array(100).fill(0.0);
-    this.createFluorescencePalettes([defaultFluorescence], [defaultFluorescence]);
-    
+    this.createFluorescencePalettes(
+      [defaultFluorescence],
+      [defaultFluorescence]
+    );
+
     // Create default reflection textures (2% baseline for dielectrics)
     const defaultReflection = new Float32Array(100).fill(0.02);
     this.createReflectionPalette([defaultReflection]);
-    
+
     // Low-res default (for rendering - 32 samples)
     const renderSpectrum = new Float32Array(32).fill(1.0);
     this.createRenderingMaterialPalette([renderSpectrum]);
-    
+
     const renderFluorescence = new Float32Array(32).fill(0.0);
-    this.createRenderingFluorescencePalettes([renderFluorescence], [renderFluorescence]);
-    
+    this.createRenderingFluorescencePalettes(
+      [renderFluorescence],
+      [renderFluorescence]
+    );
+
     // Low-res default reflection (for rendering)
     const renderReflection = new Float32Array(32).fill(0.02);
     this.createRenderingReflectionPalette([renderReflection]);
@@ -953,7 +987,11 @@ export class SpectralComputePipeline {
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
-    this.fillDefaultMSDFLayer(this.msdfArraySmall, { width: 256, height: 256 }, 0);
+    this.fillDefaultMSDFLayer(
+      this.msdfArraySmall,
+      { width: 256, height: 256 },
+      0
+    );
 
     // Create default large texture array (1280x720) with 1 layer
     this.msdfArrayLarge = this.device.createTexture({
@@ -962,7 +1000,11 @@ export class SpectralComputePipeline {
       format: "rgba8unorm",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
-    this.fillDefaultMSDFLayer(this.msdfArrayLarge, { width: 1280, height: 720 }, 0);
+    this.fillDefaultMSDFLayer(
+      this.msdfArrayLarge,
+      { width: 1280, height: 720 },
+      0
+    );
   }
 
   /**
@@ -988,7 +1030,7 @@ export class SpectralComputePipeline {
 
   /**
    * Set MSDF texture arrays from loaded mask data
-   * 
+   *
    * @param smallMasks - Array of small masks (256x256)
    * @param largeMasks - Array of large masks (1280x720)
    * @param smallResolution - Resolution for small masks
@@ -1010,7 +1052,10 @@ export class SpectralComputePipeline {
         depthOrArrayLayers: smallLayerCount,
       },
       format: "rgba8unorm",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
     // Create texture array for large masks
@@ -1023,17 +1068,24 @@ export class SpectralComputePipeline {
         depthOrArrayLayers: largeLayerCount,
       },
       format: "rgba8unorm",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
     // Copy small masks into the small array
     const commandEncoder = this.device.createCommandEncoder();
-    
+
     for (let i = 0; i < smallMasks.length; i++) {
       commandEncoder.copyTextureToTexture(
         { texture: smallMasks[i] },
         { texture: this.msdfArraySmall, origin: { x: 0, y: 0, z: i } },
-        { width: smallResolution.width, height: smallResolution.height, depthOrArrayLayers: 1 }
+        {
+          width: smallResolution.width,
+          height: smallResolution.height,
+          depthOrArrayLayers: 1,
+        }
       );
     }
 
@@ -1042,7 +1094,11 @@ export class SpectralComputePipeline {
       commandEncoder.copyTextureToTexture(
         { texture: largeMasks[i] },
         { texture: this.msdfArrayLarge, origin: { x: 0, y: 0, z: i } },
-        { width: largeResolution.width, height: largeResolution.height, depthOrArrayLayers: 1 }
+        {
+          width: largeResolution.width,
+          height: largeResolution.height,
+          depthOrArrayLayers: 1,
+        }
       );
     }
 
@@ -1075,17 +1131,21 @@ export class SpectralComputePipeline {
     // Create a solid white texture (MSDF value 1.0 = fully inside)
     const pixels = new Uint8Array(resolution.width * resolution.height * 4);
     for (let i = 0; i < pixels.length; i += 4) {
-      pixels[i] = 255;     // R
+      pixels[i] = 255; // R
       pixels[i + 1] = 255; // G
       pixels[i + 2] = 255; // B
       pixels[i + 3] = 255; // A
     }
-    
+
     this.device.queue.writeTexture(
       { texture: array, origin: { x: 0, y: 0, z: layer } },
       pixels,
       { bytesPerRow: resolution.width * 4, rowsPerImage: resolution.height },
-      { width: resolution.width, height: resolution.height, depthOrArrayLayers: 1 }
+      {
+        width: resolution.width,
+        height: resolution.height,
+        depthOrArrayLayers: 1,
+      }
     );
   }
 
@@ -1109,7 +1169,7 @@ export class SpectralComputePipeline {
   /**
    * Set fluorescence excitation and emission spectra as 2D palette textures
    * Each row represents one material's fluorescence data
-   * 
+   *
    * @param excitationSpectra - Array of excitation efficiency spectra (0-1)
    * @param emissionSpectra - Array of emission line shape spectra (normalized)
    */
@@ -1153,9 +1213,15 @@ export class SpectralComputePipeline {
   ): void {
     if (excitationSpectra.length === 0 || emissionSpectra.length === 0) {
       const defaultSpectrum = new Float32Array(32).fill(0.0);
-      this.createRenderingFluorescencePalettes([defaultSpectrum], [defaultSpectrum]);
+      this.createRenderingFluorescencePalettes(
+        [defaultSpectrum],
+        [defaultSpectrum]
+      );
     } else {
-      this.createRenderingFluorescencePalettes(excitationSpectra, emissionSpectra);
+      this.createRenderingFluorescencePalettes(
+        excitationSpectra,
+        emissionSpectra
+      );
     }
     this.bindGroup1 = null;
   }
@@ -1164,7 +1230,7 @@ export class SpectralComputePipeline {
    * Set high-res reflection spectra for ambient light simulation
    * Each row represents one material's reflection spectrum (0-1 per wavelength)
    * Unlike transmission, reflection is NOT depth-dependent
-   * 
+   *
    * @param reflectionSpectra - Array of reflection spectra (0-1 for each wavelength)
    */
   setReflectionData(reflectionSpectra: Float32Array[]): void {
@@ -1194,7 +1260,9 @@ export class SpectralComputePipeline {
   /**
    * Create low-res rendering material palette texture (32 samples)
    */
-  private createRenderingMaterialPalette(materials: TransmissionSpectrum[]): void {
+  private createRenderingMaterialPalette(
+    materials: TransmissionSpectrum[]
+  ): void {
     if (materials.length === 0) return;
 
     const spectrumWidth = materials[0].length;
@@ -1211,7 +1279,11 @@ export class SpectralComputePipeline {
 
     this.renderMaterialTexture = this.device.createTexture({
       label: `Render Material Palette (${numMaterials}x${spectrumWidth})`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -1242,21 +1314,30 @@ export class SpectralComputePipeline {
     for (let materialIdx = 0; materialIdx < numMaterials; materialIdx++) {
       const rowOffset = materialIdx * spectrumWidth;
       for (let i = 0; i < spectrumWidth; i++) {
-        excitationData[rowOffset + i] = excitationSpectra[materialIdx][i] ?? 0.0;
+        excitationData[rowOffset + i] =
+          excitationSpectra[materialIdx][i] ?? 0.0;
         emissionData[rowOffset + i] = emissionSpectra[materialIdx][i] ?? 0.0;
       }
     }
 
     this.renderExcitationTexture = this.device.createTexture({
       label: `Render Excitation Palette (${numMaterials}x${spectrumWidth})`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
 
     this.renderEmissionTexture = this.device.createTexture({
       label: `Render Emission Palette (${numMaterials}x${spectrumWidth})`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -1298,7 +1379,11 @@ export class SpectralComputePipeline {
     this.reflectionPaletteTexture?.destroy();
     this.reflectionPaletteTexture = this.device.createTexture({
       label: `Reflection Palette (${numMaterials}x${spectrumWidth})`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -1314,7 +1399,9 @@ export class SpectralComputePipeline {
   /**
    * Create low-res rendering reflection palette texture (32 samples)
    */
-  private createRenderingReflectionPalette(reflectionSpectra: Float32Array[]): void {
+  private createRenderingReflectionPalette(
+    reflectionSpectra: Float32Array[]
+  ): void {
     if (reflectionSpectra.length === 0) return;
 
     const spectrumWidth = reflectionSpectra[0].length;
@@ -1332,7 +1419,11 @@ export class SpectralComputePipeline {
     this.renderReflectionTexture?.destroy();
     this.renderReflectionTexture = this.device.createTexture({
       label: `Render Reflection Palette (${numMaterials}x${spectrumWidth})`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -1382,7 +1473,11 @@ export class SpectralComputePipeline {
     this.fluorExcitationTexture?.destroy();
     this.fluorExcitationTexture = this.device.createTexture({
       label: `Fluorescence Excitation Palette (${numMaterials} materials)`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -1397,7 +1492,11 @@ export class SpectralComputePipeline {
     this.fluorEmissionTexture?.destroy();
     this.fluorEmissionTexture = this.device.createTexture({
       label: `Fluorescence Emission Palette (${numMaterials} materials)`,
-      size: { width: spectrumWidth, height: numMaterials, depthOrArrayLayers: 1 },
+      size: {
+        width: spectrumWidth,
+        height: numMaterials,
+        depthOrArrayLayers: 1,
+      },
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -2185,7 +2284,14 @@ export class SpectralComputePipeline {
 
       // Update shapes buffer with only this layer's shapes
       this.updateShapesBuffer(layerShapes);
-      this.updateParamsBuffer(params, 0, 1.0, layerMaxSigma, "render", layerIndex);
+      this.updateParamsBuffer(
+        params,
+        0,
+        1.0,
+        layerMaxSigma,
+        "render",
+        layerIndex
+      );
       this.bindGroup0 = null; // Invalidate since shapes/params changed
       if (!this.ensureBindGroups()) {
         // Materials not loaded yet, return defaults
@@ -2333,7 +2439,7 @@ export class SpectralComputePipeline {
 
         const combineEncoder = this.device.createCommandEncoder();
         const combinePass = combineEncoder.beginComputePass();
-        combinePass.setPipeline(this.combineScatteredPipeline!);
+        combinePass.setPipeline(this.processLayerTransitionPipeline!);
         combinePass.setBindGroup(0, this.bindGroup0!);
         combinePass.setBindGroup(1, this.bindGroup1!);
         combinePass.setBindGroup(2, this.bindGroup2!);
@@ -2425,9 +2531,9 @@ export class SpectralComputePipeline {
         vBlurPass.dispatchWorkgroups(blurVWorkgroupsX, blurVWorkgroupsY);
         vBlurPass.end();
 
-        // Pass 6: combineScattered
+        // Pass 6: processLayerTransitionVec4 (vectorized: 4 wavelengths at once)
         const combinePass = layerEncoder.beginComputePass();
-        combinePass.setPipeline(this.combineScatteredPipeline!);
+        combinePass.setPipeline(this.processLayerTransitionVec4Pipeline!);
         combinePass.setBindGroup(0, this.bindGroup0!);
         combinePass.setBindGroup(1, this.bindGroup1!);
         combinePass.setBindGroup(2, this.bindGroup2!);
@@ -2655,10 +2761,9 @@ export class SpectralComputePipeline {
       params.boxSize ?? SpectralComputePipeline.DEFAULT_BOX_SIZE;
 
     // Resize spectrum box buffer if boxSize or plotResolution changed
-    const needsBufferResize = 
-      newBoxSize !== this.boxSize || 
-      newPlotResolution !== this.plotResolution;
-    
+    const needsBufferResize =
+      newBoxSize !== this.boxSize || newPlotResolution !== this.plotResolution;
+
     if (needsBufferResize) {
       this.boxSize = newBoxSize;
       this.plotResolution = newPlotResolution;
@@ -2906,7 +3011,14 @@ export class SpectralComputePipeline {
 
           // Update shapes and params buffers (uses unified pipeline with mode='spectrum')
           this.updateShapesBuffer(layerShapes);
-          this.updateParamsBuffer(params, 0, 1.0, layerMaxSigma, "spectrum", layer);
+          this.updateParamsBuffer(
+            params,
+            0,
+            1.0,
+            layerMaxSigma,
+            "spectrum",
+            layer
+          );
           this.bindGroup0 = null; // Invalidate since shapes/params changed
           this.ensureBindGroups();
 
@@ -2948,7 +3060,7 @@ export class SpectralComputePipeline {
           // === Dual-path scattering blur (uses unified pipelines with spectrum params) ===
           // Skip blur passes in draft mode for performance (~8ms saved per layer)
           const skipBlur = params.skipBlur ?? false;
-          
+
           if (!skipBlur) {
             // Path 1 (blur→mask): Blur full transmitted, background bleeds INTO shapes
             dispatchHighRes(
@@ -2972,14 +3084,16 @@ export class SpectralComputePipeline {
 
             // Note: Emission now unified with scatter - blurred together in blurHorizontal/Vertical
 
-            // Combine scattered with transmitted (uses unified pipeline with spectrum params)
+            // Combine scattered with transmitted (optimized pipeline with cached masks)
             dispatchHighRes(
-              this.combineScatteredPipeline!,
+              this.processLayerTransitionPipeline!,
               `High-Res Layer ${layer} Combine`
             );
           } else {
             // Draft mode: Skip blur/combine, absorption output is layer result
-            console.log(`[DEBUG-SPECTRUM] Layer ${layer}: Skipping blur (draft mode)`);
+            console.log(
+              `[DEBUG-SPECTRUM] Layer ${layer}: Skipping blur (draft mode)`
+            );
           }
 
           // DEBUG: Check buffer contents after each layer's combine
@@ -3328,7 +3442,9 @@ export class SpectralComputePipeline {
     const spectrumBoxSize = SpectralComputePipeline.SPECTRUM_BOX_SIZE;
     const bufferWidth = isSpectrum ? spectrumBoxSize : params.width;
     const bufferHeight = isSpectrum ? spectrumBoxSize : params.height;
-    const sampleCount = isSpectrum ? (params.plotResolution ?? 4500) : SpectralComputePipeline.SPECTRAL_SAMPLES;
+    const sampleCount = isSpectrum
+      ? (params.plotResolution ?? 4500)
+      : SpectralComputePipeline.SPECTRAL_SAMPLES;
     const coordOffsetX = isSpectrum
       ? (params.sampleX ?? 0) - Math.floor(spectrumBoxSize / 2)
       : 0;
@@ -3514,7 +3630,8 @@ export class SpectralComputePipeline {
         inputBuffer = spectralInputBuffer || this.maxPerPixelBuffer!;
         outputBuffer = spectralOutputBuffer || this.maxPerPixelBuffer!;
         scatterSrcBuffer = this.scatterSourceBuffer || this.maxPerPixelBuffer!;
-        blurredTransmittedBuffer = this.blurredTransmittedBuffer || this.maxPerPixelBuffer!;
+        blurredTransmittedBuffer =
+          this.blurredTransmittedBuffer || this.maxPerPixelBuffer!;
       }
 
       this.bindGroup0 = this.device.createBindGroup({
@@ -3627,9 +3744,13 @@ export class SpectralComputePipeline {
           format: "rgba8unorm",
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
-        this.fillDefaultMSDFLayer(this.msdfArraySmall, { width: 256, height: 256 }, 0);
+        this.fillDefaultMSDFLayer(
+          this.msdfArraySmall,
+          { width: 256, height: 256 },
+          0
+        );
       }
-      
+
       if (!this.msdfArrayLarge) {
         this.msdfArrayLarge = this.device.createTexture({
           label: "Default MSDF Array Large",
@@ -3637,7 +3758,11 @@ export class SpectralComputePipeline {
           format: "rgba8unorm",
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
-        this.fillDefaultMSDFLayer(this.msdfArrayLarge, { width: 1280, height: 720 }, 0);
+        this.fillDefaultMSDFLayer(
+          this.msdfArrayLarge,
+          { width: 1280, height: 720 },
+          0
+        );
       }
 
       if (!this.msdfSampler || !this.bindGroupLayout3) {
@@ -3651,8 +3776,14 @@ export class SpectralComputePipeline {
         label: "Bind Group 3 (MSDF Arrays)",
         layout: this.bindGroupLayout3,
         entries: [
-          { binding: 0, resource: this.msdfArraySmall.createView({ dimension: "2d-array" }) },
-          { binding: 1, resource: this.msdfArrayLarge.createView({ dimension: "2d-array" }) },
+          {
+            binding: 0,
+            resource: this.msdfArraySmall.createView({ dimension: "2d-array" }),
+          },
+          {
+            binding: 1,
+            resource: this.msdfArrayLarge.createView({ dimension: "2d-array" }),
+          },
           { binding: 2, resource: this.msdfSampler },
         ],
       });

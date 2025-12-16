@@ -9,7 +9,7 @@
  * - D65 normalization: radiance normalized to 1.0 at 550nm, 6500K
  */
 
-import spectral::constants::{C2, D65_REFERENCE};
+import package::wgsl::constants::{C2, D65_REFERENCE};
 
 // ============================================================
 // Raw Planck Radiance

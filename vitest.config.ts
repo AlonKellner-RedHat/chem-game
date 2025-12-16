@@ -12,6 +12,7 @@ export default defineConfig({
   plugins: [
     weslPlugin({
       extensions: [staticBuildExtension, linkBuildExtension],
+      weslToml: 'src/core/rendering/wesl.toml',
     }),
   ],
   test: {

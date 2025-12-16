@@ -156,18 +156,19 @@ describe('Materials', () => {
   });
   
   describe('getAllMaterials', () => {
-    it('returns three materials', () => {
+    it('returns four materials', () => {
       const materials = getAllMaterials();
-      expect(materials).toHaveLength(3);
+      expect(materials).toHaveLength(4);
     });
     
-    it('includes water, crystal, and gas', () => {
+    it('includes water, crystal, gas, and gold', () => {
       const materials = getAllMaterials();
       const ids = materials.map(m => m.id);
       
       expect(ids).toContain('water');
       expect(ids).toContain('crystal');
       expect(ids).toContain('gas');
+      expect(ids).toContain('gold');
     });
     
     it('all materials have base absorption', () => {

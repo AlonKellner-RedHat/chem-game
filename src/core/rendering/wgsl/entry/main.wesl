@@ -8,10 +8,10 @@
  * - Pass 1: Normalize stored XYZ by global max, convert to RGB
  */
 
-import spectral::constants::SPECTRAL_SAMPLES;
-import spectral::structs::Params;
-import spectral::bindings::{params, spectralInput, rgbOutput, maxPerPixel};
-import spectral::rendering::color::{getCIE, xyzToLinearRGB, gammaCorrect};
+import package::wgsl::constants::SPECTRAL_SAMPLES;
+import package::wgsl::structs::Params;
+import package::wgsl::bindings::{params, spectralInput, rgbOutput, maxPerPixel};
+import package::wgsl::rendering::color::{getCIE, xyzToLinearRGB, gammaCorrect};
 
 // ============================================================
 // Helper: Get Wavelength for Index

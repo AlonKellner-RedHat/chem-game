@@ -5,7 +5,7 @@
  * Structs are designed for 16-byte alignment for optimal GPU memory access.
  */
 
-import spectral::constants;
+import package::wgsl::constants;
 
 // ============================================================
 // Uniform Parameters
@@ -105,40 +105,43 @@ struct Shape {
 }
 
 // ============================================================
-// Physics Result Structures
+// Physics Result Structures (f16 optimized)
 // ============================================================
 
 /// Result of processing a wavelength through layer physics
 /// Used by both rendering and spectrum pipelines
+/// f16 is sufficient for 0-1 normalized intensity values
 struct LayerPhysicsResult {
-  /// Light that passes through without scattering
-  transmitted: f32,
+  /// Light that passes through without scattering (0-1)
+  transmitted: f16,
   
-  /// Combined aura source (scatter + emission) for unified blur
-  auraSrc: f32,
+  /// Combined aura source (scatter + emission) for unified blur (0-1)
+  auraSrc: f16,
   
-  /// Emission that stays at the pixel (no blur)
-  directEmission: f32,
+  /// Emission that stays at the pixel (no blur) (0-1)
+  directEmission: f16,
 }
 
 /// Pre-computed shape data for optimized physics
 /// Wavelength-independent values computed once per pixel
+/// f16 is sufficient for coverage (0-1) and typical path lengths (<100cm)
 struct PrecomputedShapeData {
   /// MSDF mask coverage (0-1)
-  mask: f32,
+  mask: f16,
   
   /// Optical path length through shape (cm)
-  pathLength: f32,
+  pathLength: f16,
 }
 
 // ============================================================
-// Scattering LUT
+// Scattering LUT (f16 optimized)
 // ============================================================
 
 /// Pre-computed scattering coefficients for a shape
 /// Stores values at reduced wavelength resolution for interpolation
+/// f16 is sufficient for small scattering coefficient values
 struct ScatterLUT {
   /// Scattering coefficients at SCATTER_LUT_SIZE wavelength samples
-  coefficients: array<f32, 64>,
+  coefficients: array<f16, 64>,
 }
 

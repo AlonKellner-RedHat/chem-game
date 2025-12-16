@@ -9,8 +9,8 @@
  * - Dark (2): No illumination - useful for seeing emission only
  */
 
-import spectral::constants::{VISIBLE_MIN, VISIBLE_MAX};
-import spectral::bindings::params;
+import package::wgsl::constants::{VISIBLE_MIN, VISIBLE_MAX};
+import package::wgsl::bindings::params;
 
 // ============================================================
 // Background Intensity

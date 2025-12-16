@@ -3,10 +3,9 @@
  * 
  * This module exports all physical constants and rendering parameters
  * used throughout the spectral compute pipeline.
+ * 
+ * Note: f16 is enabled in the root SpectralCompute.wesl module
  */
-
-// Enable f16 for half-precision float support
-enable f16;
 
 // ============================================================
 // Physical Constants
@@ -58,10 +57,12 @@ const LARGE_PARTICLE_SIZE: f32 = 1000.0; // Mie scattering
 /// Fraction of scattered light that stays within the shape (visual haze)
 /// Background light bleeds INTO shape, preventing dark edges
 const IN_SHAPE_SCATTER_FRACTION: f32 = 0.95;
+const IN_SHAPE_SCATTER_FRACTION_H: f16 = 0.95h;
 
 /// Fraction of scattered light that escapes as aura (subtle glow)
 /// Shape light bleeds OUT to surrounding pixels
 const AURA_SCATTER_FRACTION: f32 = 0.05;
+const AURA_SCATTER_FRACTION_H: f16 = 0.05h;
 
 // ============================================================
 // Blur Constants
@@ -83,6 +84,14 @@ const BLUR_SHARED_HEIGHT: u32 = 96u;  // BLUR_TILE_HEIGHT + 2*BLUR_HALO
 
 /// Precomputed Gaussian weights for sigma=5.0 (17 weights, symmetric)
 /// Index 0 = center (dx=0), indices 1-16 = offsets dx=1..16
+/// f16 version for optimized blur operations
+const BLUR_WEIGHTS_H: array<f16, 17> = array<f16, 17>(
+  0.0798h,  // dx=0 (center)
+  0.0782h, 0.0736h, 0.0666h, 0.0580h, 0.0484h, 0.0389h, 0.0300h, 0.0222h,  // dx=1..8
+  0.0158h, 0.0108h, 0.0071h, 0.0044h, 0.0027h, 0.0015h, 0.0008h, 0.0004h   // dx=9..16
+);
+
+/// Legacy f32 version for compatibility
 const BLUR_WEIGHTS: array<f32, 17> = array<f32, 17>(
   0.0798,  // dx=0 (center)
   0.0782, 0.0736, 0.0666, 0.0580, 0.0484, 0.0389, 0.0300, 0.0222,  // dx=1..8

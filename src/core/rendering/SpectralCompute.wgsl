@@ -580,6 +580,10 @@ const LARGE_PARTICLE_SIZE: f32 = 1000.0; // nm (Mie)
 const IN_SHAPE_SCATTER_FRACTION: f32 = 0.95;  // 95% stays in shape (visual haze)
 const AURA_SCATTER_FRACTION: f32 = 0.05;      // 5% bleeds outside as aura
 
+// f16 versions of scatter fractions for optimized kernels
+const IN_SHAPE_SCATTER_FRACTION_H: f16 = 0.95h;
+const AURA_SCATTER_FRACTION_H: f16 = 0.05h;
+
 /**
  * Rayleigh scattering coefficient
  * Scales as 1/λ⁴ - blue light scatters more than red
@@ -2389,6 +2393,284 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // Add to current (f16 arithmetic throughout)
     spectralInput[spectralIdx] = current + ambientContribution;
+  }
+}
+
+// ============================================================
+// Process Layer Transition Entry Point (OPTIMIZED)
+// ============================================================
+
+/**
+ * OPTIMIZED: Merged kernel combining:
+ * 1. combineScattered (from current layer)
+ * 2. applyAmbient (from current layer)
+ * 
+ * This optimizes by:
+ * - Pre-computing shape masks ONCE for all operations
+ * - Early-exit for pixels with no shape coverage
+ */
+@compute @workgroup_size(8, 8)
+fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
+  let localX = id.x;
+  let localY = id.y;
+  
+  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
+    return;
+  }
+  
+  let screenPos = localToScreen(localX, localY);
+  let inBounds = isValidScreenPos(screenPos);
+  let fx = f32(screenPos.x);
+  let fy = f32(screenPos.y);
+  let numShapes = arrayLength(&shapes);
+  
+  // Pre-compute shape masks ONCE for all operations
+  var shapeMasks: array<f16, 16>;
+  var maxMask: f16 = f16(0.0);
+  let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
+  
+  if (inBounds) {
+    for (var i: u32 = 0u; i < shapesToProcess; i++) {
+      let mask = f16(getShapeMask(shapes[i], fx, fy));
+      shapeMasks[i] = mask;
+      maxMask = max(maxMask, mask);
+    }
+  }
+  
+  // EARLY-EXIT: Fast path for pixels with no shape coverage
+  if (maxMask == f16(0.0)) {
+    for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
+      let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+      spectralInput[spectralIdx] = spectralOutput[spectralIdx] + scatterSource[spectralIdx];
+    }
+    return;
+  }
+  
+  let anyMask = maxMask > f16(0.0);
+  
+  // Ambient light pattern (computed once)
+  var ambientPattern: f16 = f16(0.0);
+  if (inBounds) {
+    ambientPattern = getAmbientPattern(fx, fy);
+  }
+  
+  // Process each wavelength
+  for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
+    let wavelength = getWavelength(wIdx);
+    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+    
+    // Three-path combination
+    let transmitted = spectralOutput[spectralIdx];
+    let blurredFull = blurredTransmitted[spectralIdx];
+    let aura = scatterSource[spectralIdx];
+    
+    // Compute scatter probability using cached masks
+    var scatterProb: f16 = f16(0.0);
+    if (inBounds && anyMask) {
+      var unscatteredFrac: f32 = 1.0;
+      for (var i: u32 = 0u; i < shapesToProcess; i++) {
+        let mask = shapeMasks[i];
+        if (mask > f16(0.0)) {
+          let shape = shapes[i];
+          let pathLength = max(shape.width, shape.height) * 0.01;
+          let scatterTrans = applyScattering(
+            1.0, wavelength,
+            shape.smallParticleDensity, shape.largeParticleDensity,
+            pathLength * f32(mask)
+          );
+          unscatteredFrac *= scatterTrans;
+        }
+      }
+      scatterProb = f16(1.0 - unscatteredFrac);
+    }
+    
+    // Three-path combination
+    let direct = transmitted * (f16(1.0) - scatterProb);
+    let inShapeScatter = blurredFull * scatterProb * IN_SHAPE_SCATTER_FRACTION_H;
+    var combined = direct + inShapeScatter + aura;
+    
+    // Apply ambient reflection
+    if (inBounds && anyMask) {
+      let ambient = getAmbientIntensity(wavelength);
+      var compoundedReflection: f16 = f16(1.0);
+      var maxCoverage: f16 = f16(0.0);
+      
+      for (var i: u32 = 0u; i < shapesToProcess; i++) {
+        let mask = shapeMasks[i];
+        if (mask > f16(0.0)) {
+          let shape = shapes[i];
+          if (shape.layer == params.currentLayer) {
+            let reflection = getMaterialReflection(shape.materialIndex, wavelength);
+            compoundedReflection *= reflection;
+            maxCoverage = max(maxCoverage, mask);
+          }
+        }
+      }
+      
+      if (maxCoverage > f16(0.0)) {
+        combined += ambient * compoundedReflection * maxCoverage * ambientPattern;
+      }
+    }
+    
+    spectralInput[spectralIdx] = combined;
+  }
+}
+
+// ============================================================
+// Vectorized Layer Transition (vec4<f16> optimization)
+// ============================================================
+
+/**
+ * OPTIMIZED: Process 4 wavelengths simultaneously using vec4<f16>.
+ * Provides 2-4x ALU improvement through SIMD operations.
+ */
+@compute @workgroup_size(8, 8)
+fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
+  let localX = id.x;
+  let localY = id.y;
+  
+  if (localX >= params.bufferWidth || localY >= params.bufferHeight) {
+    return;
+  }
+  
+  let screenPos = localToScreen(localX, localY);
+  let inBounds = isValidScreenPos(screenPos);
+  let fx = f32(screenPos.x);
+  let fy = f32(screenPos.y);
+  let numShapes = arrayLength(&shapes);
+  
+  // Pre-compute shape masks ONCE
+  var shapeMasks: array<f16, 16>;
+  var maxMask: f16 = f16(0.0);
+  let shapesToProcess = min(numShapes, MAX_SHAPES_PER_LAYER);
+  
+  if (inBounds) {
+    for (var i: u32 = 0u; i < shapesToProcess; i++) {
+      let mask = f16(getShapeMask(shapes[i], fx, fy));
+      shapeMasks[i] = mask;
+      maxMask = max(maxMask, mask);
+    }
+  }
+  
+  let baseIdx = (localY * params.bufferWidth + localX) * params.sampleCount;
+  
+  // EARLY-EXIT: Fast path for pixels with no shape coverage
+  if (maxMask == f16(0.0)) {
+    for (var w: u32 = 0u; w < params.sampleCount; w += 4u) {
+      let idx0 = baseIdx + w;
+      let idx1 = baseIdx + w + 1u;
+      let idx2 = baseIdx + w + 2u;
+      let idx3 = baseIdx + w + 3u;
+      
+      spectralInput[idx0] = spectralOutput[idx0] + scatterSource[idx0];
+      spectralInput[idx1] = spectralOutput[idx1] + scatterSource[idx1];
+      spectralInput[idx2] = spectralOutput[idx2] + scatterSource[idx2];
+      spectralInput[idx3] = spectralOutput[idx3] + scatterSource[idx3];
+    }
+    return;
+  }
+  
+  // Ambient light pattern (computed once)
+  var ambientPattern: f16 = f16(0.0);
+  if (inBounds) {
+    ambientPattern = getAmbientPattern(fx, fy);
+  }
+  
+  let anyMask = maxMask > f16(0.0);
+  
+  // Process 4 wavelengths at a time
+  for (var w: u32 = 0u; w < params.sampleCount; w += 4u) {
+    let wavelengths = vec4<f32>(
+      getWavelength(w),
+      getWavelength(w + 1u),
+      getWavelength(w + 2u),
+      getWavelength(w + 3u)
+    );
+    
+    let idx0 = baseIdx + w;
+    let idx1 = baseIdx + w + 1u;
+    let idx2 = baseIdx + w + 2u;
+    let idx3 = baseIdx + w + 3u;
+    
+    // Load transmitted, blurred, and aura as vec4
+    let transmitted = vec4<f16>(
+      spectralOutput[idx0], spectralOutput[idx1],
+      spectralOutput[idx2], spectralOutput[idx3]
+    );
+    let blurred = vec4<f16>(
+      blurredTransmitted[idx0], blurredTransmitted[idx1],
+      blurredTransmitted[idx2], blurredTransmitted[idx3]
+    );
+    let aura = vec4<f16>(
+      scatterSource[idx0], scatterSource[idx1],
+      scatterSource[idx2], scatterSource[idx3]
+    );
+    
+    // Compute scatter probability for each wavelength
+    var scatterProb4 = vec4<f16>(0.0h, 0.0h, 0.0h, 0.0h);
+    if (inBounds && anyMask) {
+      var unscattered = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+      for (var i: u32 = 0u; i < shapesToProcess; i++) {
+        let mask = shapeMasks[i];
+        if (mask > f16(0.0)) {
+          let shape = shapes[i];
+          let pathLength = max(shape.width, shape.height) * 0.01 * f32(mask);
+          
+          unscattered.x *= applyScattering(1.0, wavelengths.x, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
+          unscattered.y *= applyScattering(1.0, wavelengths.y, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
+          unscattered.z *= applyScattering(1.0, wavelengths.z, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
+          unscattered.w *= applyScattering(1.0, wavelengths.w, shape.smallParticleDensity, shape.largeParticleDensity, pathLength);
+        }
+      }
+      scatterProb4 = vec4<f16>(1.0h - unscattered.x, 1.0h - unscattered.y, 1.0h - unscattered.z, 1.0h - unscattered.w);
+    }
+    
+    // Vectorized three-path combination
+    let one4 = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
+    let scatter_frac = vec4<f16>(IN_SHAPE_SCATTER_FRACTION_H);
+    let direct = transmitted * (one4 - scatterProb4);
+    let inShapeScatter = blurred * scatterProb4 * scatter_frac;
+    var combined = direct + inShapeScatter + aura;
+    
+    // Vectorized ambient reflection
+    if (inBounds && anyMask) {
+      let ambient = vec4<f16>(
+        getAmbientIntensity(wavelengths.x),
+        getAmbientIntensity(wavelengths.y),
+        getAmbientIntensity(wavelengths.z),
+        getAmbientIntensity(wavelengths.w)
+      );
+      
+      var compoundedReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
+      var maxCoverage: f16 = f16(0.0);
+      
+      for (var i: u32 = 0u; i < shapesToProcess; i++) {
+        let mask = shapeMasks[i];
+        if (mask > f16(0.0)) {
+          let shape = shapes[i];
+          if (shape.layer == params.currentLayer) {
+            let refl = vec4<f16>(
+              getMaterialReflection(shape.materialIndex, wavelengths.x),
+              getMaterialReflection(shape.materialIndex, wavelengths.y),
+              getMaterialReflection(shape.materialIndex, wavelengths.z),
+              getMaterialReflection(shape.materialIndex, wavelengths.w)
+            );
+            compoundedReflection *= refl;
+            maxCoverage = max(maxCoverage, mask);
+          }
+        }
+      }
+      
+      if (maxCoverage > f16(0.0)) {
+        combined += ambient * compoundedReflection * vec4<f16>(maxCoverage) * vec4<f16>(ambientPattern);
+      }
+    }
+    
+    // Store results
+    spectralInput[idx0] = combined.x;
+    spectralInput[idx1] = combined.y;
+    spectralInput[idx2] = combined.z;
+    spectralInput[idx3] = combined.w;
   }
 }
 

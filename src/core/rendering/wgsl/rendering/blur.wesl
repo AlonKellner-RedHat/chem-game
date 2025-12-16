@@ -9,13 +9,13 @@
  * - Voigt: Gaussian core + Lorentzian tails for scattering
  */
 
-import spectral::constants::{
+import package::wgsl::constants::{
   MAX_BLUR_RADIUS, BLUR_WEIGHTS,
   BLUR_TILE_WIDTH, BLUR_TILE_HEIGHT, BLUR_HALO,
   BLUR_SHARED_WIDTH, BLUR_SHARED_HEIGHT,
   SPECTRAL_SAMPLES, RAYLEIGH_BLUR_SCALE, MIE_BLUR_SCALE
 };
-import spectral::bindings::blurTile;
+import package::wgsl::bindings::blurTile;
 
 // ============================================================
 // Blur Weight Functions

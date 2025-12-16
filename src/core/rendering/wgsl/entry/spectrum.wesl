@@ -7,7 +7,7 @@
  * - averageSpectrum: Average spectrum over circular region
  */
 
-import spectral::bindings::{params, shapes, spectrumBox, spectrumOutput};
+import package::wgsl::bindings::{params, shapes, spectrumBox, spectrumOutput};
 
 // ============================================================
 // Spectrum Box Computation

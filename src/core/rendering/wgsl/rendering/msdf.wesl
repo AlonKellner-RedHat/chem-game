@@ -8,8 +8,8 @@
  * - 0.5 = edge, >0.5 = inside, <0.5 = outside
  */
 
-import spectral::bindings::{params, msdfArraySmall, msdfArrayLarge, msdfSampler};
-import spectral::structs::Shape;
+import package::wgsl::bindings::{params, msdfArraySmall, msdfArrayLarge, msdfSampler};
+import package::wgsl::structs::Shape;
 
 // ============================================================
 // MSDF Sampling Functions

@@ -78,6 +78,36 @@ export interface MemoryProfile {
 }
 
 /**
+ * Pass merge optimization metrics
+ * Tracks the effectiveness of merged pipeline passes
+ */
+export interface PassMergeMetrics {
+  /** Number of dispatches saved by merging passes */
+  dispatchesSaved: number;
+  /** Number of MSDF samples saved through mask caching */
+  msdfSamplesSaved: number;
+  /** Estimated bandwidth saved by avoiding intermediate buffer writes (GB) */
+  bandwidthSavedGB: number;
+  /** Names of merged passes */
+  mergedPasses: string[];
+}
+
+/**
+ * Precision metrics for f16 vs f32 buffer usage
+ * Tracks memory efficiency from half-precision optimization
+ */
+export interface PrecisionMetrics {
+  /** Total bytes used by f16 buffers */
+  f16BufferBytes: number;
+  /** Total bytes used by f32 buffers */
+  f32BufferBytes: number;
+  /** Percentage of buffer memory using f16 */
+  f16Percentage: number;
+  /** Estimated bandwidth savings from f16 (compared to all f32) */
+  bandwidthSavingsPercent: number;
+}
+
+/**
  * Bottleneck classification
  */
 export type BottleneckType = 'compute' | 'memory' | 'latency' | 'balanced';
@@ -124,6 +154,10 @@ export interface ProfilingSession {
   // Resource tracking
   memory: MemoryProfile;
   
+  // Optimization metrics
+  mergeMetrics: PassMergeMetrics;
+  precisionMetrics: PrecisionMetrics;
+  
   // Analysis results
   bottlenecks: BottleneckAnalysis;
   recommendations: Recommendation[];
@@ -154,6 +188,11 @@ export interface ProfilingReport {
   passes: PassProfile[];
   layers: LayerProfile[];
   memory: MemoryProfile;
+  
+  // Optimization metrics
+  mergeMetrics: PassMergeMetrics;
+  precisionMetrics: PrecisionMetrics;
+  
   bottlenecks: BottleneckAnalysis;
   recommendations: Recommendation[];
   rawSessions?: ProfilingSession[];  // Optional: include raw data for deep analysis
@@ -201,6 +240,16 @@ export class GPUProfiler {
   // Buffer tracking
   private trackedBuffers: Map<GPUBuffer, BufferProfile> = new Map();
   private peakMemoryUsage: number = 0;
+  
+  // Precision tracking (f16 vs f32)
+  private f16BufferBytes: number = 0;
+  private f32BufferBytes: number = 0;
+  
+  // Merge optimization tracking
+  private dispatchesSaved: number = 0;
+  private msdfSamplesSaved: number = 0;
+  private bandwidthSavedBytes: number = 0;
+  private mergedPasses: string[] = [];
   
   // Configuration
   private enabled: boolean = true;
@@ -278,6 +327,7 @@ export class GPUProfiler {
   
   /**
    * Track a buffer allocation
+   * @param format - Buffer element format: 'f16', 'f32', 'u32', 'vec4<f32>', etc.
    */
   trackBuffer(buffer: GPUBuffer, name: string, usage: string, format?: string): void {
     if (!this.enabled) return;
@@ -291,6 +341,15 @@ export class GPUProfiler {
     
     this.trackedBuffers.set(buffer, profile);
     
+    // Track precision for f16/f32 buffers
+    if (format) {
+      if (format.includes('f16') || format === 'f16') {
+        this.f16BufferBytes += buffer.size;
+      } else if (format.includes('f32') || format === 'f32' || format.includes('vec4<f32>')) {
+        this.f32BufferBytes += buffer.size;
+      }
+    }
+    
     // Update peak usage
     const totalUsage = Array.from(this.trackedBuffers.values())
       .reduce((sum, b) => sum + b.size, 0);
@@ -301,7 +360,77 @@ export class GPUProfiler {
    * Untrack a destroyed buffer
    */
   untrackBuffer(buffer: GPUBuffer): void {
+    const profile = this.trackedBuffers.get(buffer);
+    if (profile?.format) {
+      // Remove from precision tracking
+      if (profile.format.includes('f16') || profile.format === 'f16') {
+        this.f16BufferBytes -= profile.size;
+      } else if (profile.format.includes('f32') || profile.format === 'f32') {
+        this.f32BufferBytes -= profile.size;
+      }
+    }
     this.trackedBuffers.delete(buffer);
+  }
+  
+  /**
+   * Record merge optimization metrics
+   * Call this after each merged dispatch to track savings
+   * 
+   * @param dispatchesSaved - Number of dispatches avoided by merging
+   * @param msdfSamplesSaved - Number of MSDF texture samples avoided by mask caching
+   * @param bandwidthSavedBytes - Bytes of intermediate buffer writes avoided
+   * @param mergedPassName - Name of the merged pass
+   */
+  recordMergeMetrics(
+    dispatchesSaved: number,
+    msdfSamplesSaved: number,
+    bandwidthSavedBytes: number,
+    mergedPassName?: string
+  ): void {
+    if (!this.enabled) return;
+    
+    this.dispatchesSaved += dispatchesSaved;
+    this.msdfSamplesSaved += msdfSamplesSaved;
+    this.bandwidthSavedBytes += bandwidthSavedBytes;
+    
+    if (mergedPassName && !this.mergedPasses.includes(mergedPassName)) {
+      this.mergedPasses.push(mergedPassName);
+    }
+  }
+  
+  /**
+   * Get current precision metrics
+   */
+  getPrecisionMetrics(): PrecisionMetrics {
+    const totalBytes = this.f16BufferBytes + this.f32BufferBytes;
+    const f16Percentage = totalBytes > 0 ? (this.f16BufferBytes / totalBytes) * 100 : 0;
+    
+    // Bandwidth savings: f16 uses half the bandwidth of f32 for same data
+    // If everything were f32, bandwidth would be 2x for the f16 portion
+    const potentialF32Bytes = this.f16BufferBytes * 2;
+    const actualSavings = potentialF32Bytes - this.f16BufferBytes;
+    const bandwidthSavingsPercent = totalBytes > 0 
+      ? (actualSavings / (this.f32BufferBytes + potentialF32Bytes)) * 100 
+      : 0;
+    
+    return {
+      f16BufferBytes: this.f16BufferBytes,
+      f32BufferBytes: this.f32BufferBytes,
+      f16Percentage,
+      bandwidthSavingsPercent,
+    };
+  }
+  
+  /**
+   * Get current merge metrics
+   */
+  getMergeMetrics(): PassMergeMetrics {
+    return {
+      dispatchesSaved: this.dispatchesSaved,
+      msdfSamplesSaved: this.msdfSamplesSaved,
+      bandwidthSavedGB: this.bandwidthSavedBytes / (1024 * 1024 * 1024),
+      mergedPasses: [...this.mergedPasses],
+    };
   }
   
   /**
@@ -309,6 +438,12 @@ export class GPUProfiler {
    */
   startSession(frameId: number): void {
     if (!this.enabled) return;
+    
+    // Reset per-session merge metrics
+    this.dispatchesSaved = 0;
+    this.msdfSamplesSaved = 0;
+    this.bandwidthSavedBytes = 0;
+    this.mergedPasses = [];
     
     this.currentSession = {
       frameId,
@@ -319,6 +454,8 @@ export class GPUProfiler {
       layers: [],
       dispatches: [],
       memory: this.getMemoryProfile(),
+      mergeMetrics: this.getMergeMetrics(),
+      precisionMetrics: this.getPrecisionMetrics(),
       bottlenecks: this.createEmptyBottleneckAnalysis(),
       recommendations: [],
     };
@@ -338,6 +475,10 @@ export class GPUProfiler {
     
     // Update memory profile with current state
     this.currentSession.memory = this.getMemoryProfile();
+    
+    // Update optimization metrics
+    this.currentSession.mergeMetrics = this.getMergeMetrics();
+    this.currentSession.precisionMetrics = this.getPrecisionMetrics();
     
     // Analyze bottlenecks
     this.currentSession.bottlenecks = this.analyzeBottlenecks(this.currentSession);
@@ -813,6 +954,14 @@ export class GPUProfiler {
       }
     }
     
+    // Aggregate merge metrics across sessions
+    const avgMergeMetrics: PassMergeMetrics = {
+      dispatchesSaved: this.sessions.reduce((sum, s) => sum + s.mergeMetrics.dispatchesSaved, 0) / this.sessions.length,
+      msdfSamplesSaved: this.sessions.reduce((sum, s) => sum + s.mergeMetrics.msdfSamplesSaved, 0) / this.sessions.length,
+      bandwidthSavedGB: this.sessions.reduce((sum, s) => sum + s.mergeMetrics.bandwidthSavedGB, 0) / this.sessions.length,
+      mergedPasses: latestSession.mergeMetrics.mergedPasses,
+    };
+    
     // Build report
     const report: ProfilingReport = {
       metadata: {
@@ -836,6 +985,11 @@ export class GPUProfiler {
       passes: avgPasses,
       layers: latestSession.layers,
       memory: latestSession.memory,
+      
+      // Optimization metrics
+      mergeMetrics: avgMergeMetrics,
+      precisionMetrics: latestSession.precisionMetrics,
+      
       bottlenecks: {
         ...latestSession.bottlenecks,
         primaryBottleneck,

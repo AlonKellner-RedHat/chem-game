@@ -14,12 +14,12 @@
  * - Creates white clouds, milk, fog
  */
 
-import spectral::constants::{
+import package::wgsl::constants::{
   RAYLEIGH_COEFF, MIE_COEFF,
   SMALL_PARTICLE_SIZE, LARGE_PARTICLE_SIZE,
   SCATTER_LUT_SIZE
 };
-import spectral::bindings::params;
+import package::wgsl::bindings::params;
 
 // ============================================================
 // Rayleigh Scattering
@@ -58,7 +58,7 @@ fn getRayleighScattering(wavelengthNm: f32, density: f32) -> f32 {
  * 
  * For large particles, uses size parameter x = πd/λ:
  * - Small x: approaches Rayleigh (1/λ⁴)
- * - Large x: Q_sca → 2 (extinction paradox)
+ * - Large x: Q_sca -> 2 (extinction paradox)
  * 
  * @param wavelengthNm - Wavelength in nanometers
  * @param density - Particle density (particles/cm³)

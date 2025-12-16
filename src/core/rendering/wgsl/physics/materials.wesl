@@ -9,7 +9,7 @@
  * - Low-res (32 samples): Used for rendering (bin-integrated)
  */
 
-import spectral::bindings::{
+import package::wgsl::bindings::{
   params,
   materialPalette, materialSampler,
   fluorExcitationPalette, fluorEmissionPalette,

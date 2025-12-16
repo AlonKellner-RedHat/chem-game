@@ -16,7 +16,7 @@
  * - UV light at 300nm can cause visible emission at 589nm
  */
 
-import spectral::physics::materials::{
+import package::wgsl::physics::materials::{
   getMaterialTransmission,
   getFluorescenceExcitation,
   getFluorescenceEmission

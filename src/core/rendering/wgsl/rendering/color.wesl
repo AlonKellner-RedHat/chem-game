@@ -12,8 +12,8 @@
  * - sRGB gamma correction (~2.4)
  */
 
-import spectral::constants::{VISIBLE_MIN, VISIBLE_MAX};
-import spectral::bindings::{cieXTexture, cieYTexture, cieZTexture, cieSampler, cieScales};
+import package::wgsl::constants::{VISIBLE_MIN, VISIBLE_MAX};
+import package::wgsl::bindings::{cieXTexture, cieYTexture, cieZTexture, cieSampler, cieScales};
 
 // ============================================================
 // CIE Color Matching Functions

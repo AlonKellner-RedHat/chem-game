@@ -9,10 +9,10 @@
  * - Uses diagonal-circle-grid pattern for spatial variation
  */
 
-import spectral::constants::{VISIBLE_MIN, VISIBLE_MAX};
-import spectral::bindings::{params, msdfArrayLarge, msdfSampler};
-import spectral::physics::background::getBackgroundIntensity;
-import spectral::rendering::msdf::msdfMedian;
+import package::wgsl::constants::{VISIBLE_MIN, VISIBLE_MAX};
+import package::wgsl::bindings::{params, msdfArrayLarge, msdfSampler};
+import package::wgsl::physics::background::getBackgroundIntensity;
+import package::wgsl::rendering::msdf::msdfMedian;
 
 // ============================================================
 // Ambient Pattern
