@@ -7,7 +7,7 @@
  * - averageSpectrum: Average spectrum over circular region
  */
 
-import package::wgsl::bindings::{params, shapes, spectrumBox, spectrumOutput};
+import package::wgsl::bindings::{params, shapes, spectrumBox, spectrumOutput, spectralInput};
 
 // ============================================================
 // Spectrum Box Computation
@@ -121,12 +121,23 @@ fn averageSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 // ============================================================
+// Helper Functions
+// ============================================================
+
+/**
+ * Get linear index into spectral buffer for a given pixel and wavelength.
+ */
+fn getSpectralIdx(localX: u32, localY: u32, wIdx: u32) -> u32 {
+  return (localY * params.bufferWidth + localX) * params.sampleCount + wIdx;
+}
+
+// ============================================================
 // Final Combine Entry Point
 // ============================================================
 
 /**
  * Final combination for high-res spectrum.
- * Writes result to spectrumBox for averaging.
+ * Reads from spectralInput (where combineScattered wrote) and writes to spectrumBox for averaging.
  */
 @compute @workgroup_size(8, 8)
 fn finalCombine(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -140,12 +151,14 @@ fn finalCombine(@builtin(global_invocation_id) id: vec3<u32>) {
   let boxIndex = localY * params.bufferWidth + localX;
   let outputOffset = boxIndex * params.sampleCount;
   
-  // Import spectralInput for reading
-  // Note: This would need proper binding in full implementation
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
-    // Read from spectralInput and write to spectrumBox
-    // Placeholder - actual implementation would read from buffer
-    spectrumBox[outputOffset + wIdx] = f16(0.0);
+    let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+    
+    // Read from spectralInput (where combineScattered wrote) - already f16
+    let combined = spectralInput[spectralIdx];
+    
+    // Write to spectrumBox for averaging (f16 to f16, no conversion needed)
+    spectrumBox[outputOffset + wIdx] = combined;
   }
 }
 

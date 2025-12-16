@@ -375,6 +375,8 @@ export class SpectralComputePipeline {
   // Note: emissionAuraBuffer removed - now unified with scatterSource
   private scatterSourceBuffer: GPUBuffer | null = null; // Unified aura (scatter + emission)
   private blurredTransmittedBuffer: GPUBuffer | null = null; // Blurred transmitted for in-shape scatter
+  private scatterBuffersAllocated = false; // Lazy allocation flag for scatter buffers
+  private cachedSpectralBufferSize = 0; // Cached size for lazy allocation
   // 16 samples across 100-1000nm for efficient rendering
   private static readonly SPECTRAL_SAMPLES = 16;
 
@@ -480,10 +482,10 @@ export class SpectralComputePipeline {
     // WESL tree-shakes unused code, so we link from each module containing @compute entry points
     // This gives us all entry points plus their transitive dependencies
     const entryModules = [
-      "package::wgsl::entry::main",        // main, integrateSpectrum
-      "package::wgsl::entry::spectrum",    // computeSpectrumBox, averageSpectrum, finalCombine
+      "package::wgsl::entry::main", // main, integrateSpectrum
+      "package::wgsl::entry::spectrum", // computeSpectrumBox, averageSpectrum, finalCombine
       "package::wgsl::entry::blur_passes", // blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV
-      "package::wgsl::entry::combine",     // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
+      "package::wgsl::entry::combine", // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
     ];
 
     // Link all modules and collect unique WGSL declarations
@@ -495,7 +497,9 @@ export class SpectralComputePipeline {
 
     // Combine linked modules, deduplicating common declarations
     // WESL mangles names to avoid conflicts, so we can safely concatenate
-    const combinedWgsl = this.combineLinkedModules(linkedModules.map(m => m.dest));
+    const combinedWgsl = this.combineLinkedModules(
+      linkedModules.map((m) => m.dest)
+    );
 
     // Create shader module (shared by all pipelines)
     // Prepend "enable f16;" directive for half-precision float support
@@ -749,33 +753,146 @@ export class SpectralComputePipeline {
   }
 
   /**
+   * Extract a brace-balanced block starting at position
+   */
+  private extractBracedBlock(code: string, startIdx: number): string {
+    let depth = 0;
+    let i = startIdx;
+
+    // Find the opening brace
+    while (i < code.length && code[i] !== "{") i++;
+    if (i >= code.length) return "";
+
+    const blockStart = startIdx;
+    depth = 1;
+    i++;
+
+    while (i < code.length && depth > 0) {
+      if (code[i] === "{") depth++;
+      else if (code[i] === "}") depth--;
+      i++;
+    }
+
+    return code.substring(blockStart, i);
+  }
+
+  /**
    * Combine multiple linked WESL modules into a single WGSL shader
-   * 
-   * WESL's tree-shaking means each module only includes code reachable from its entry points.
-   * When linking multiple modules, we get duplicate declarations for shared code.
-   * This deduplicates by comparing full declaration content.
+   *
+   * Strategy: Parse declarations properly handling nested braces,
+   * then deduplicate by name.
    */
   private combineLinkedModules(modules: string[]): string {
-    const seenContent = new Set<string>();
-    const result: string[] = [];
+    // Collect all declarations from all modules
+    const declarations = new Map<string, string>(); // name -> full declaration
 
     for (const moduleCode of modules) {
-      // Split module into blocks separated by double newlines (WGSL convention)
-      const blocks = moduleCode.split(/\n\n+/);
-      
-      for (const block of blocks) {
-        const trimmed = block.trim();
-        if (!trimmed) continue;
-        
-        // Use full content as hash to detect exact duplicates
-        if (!seenContent.has(trimmed)) {
-          seenContent.add(trimmed);
-          result.push(trimmed);
+      let pos = 0;
+
+      while (pos < moduleCode.length) {
+        // Skip whitespace
+        while (pos < moduleCode.length && /\s/.test(moduleCode[pos])) pos++;
+        if (pos >= moduleCode.length) break;
+
+        // Check for doc comment
+        let docComment = "";
+        if (moduleCode.substring(pos, pos + 3) === "/**") {
+          const endComment = moduleCode.indexOf("*/", pos);
+          if (endComment !== -1) {
+            docComment = moduleCode.substring(pos, endComment + 2) + "\n";
+            pos = endComment + 2;
+            while (pos < moduleCode.length && /\s/.test(moduleCode[pos])) pos++;
+          }
         }
+
+        // Check for // comment line
+        if (moduleCode.substring(pos, pos + 2) === "//") {
+          const endLine = moduleCode.indexOf("\n", pos);
+          pos = endLine !== -1 ? endLine + 1 : moduleCode.length;
+          continue;
+        }
+
+        // Check for @attribute (including @compute, @workgroup_size, @group, @binding)
+        let attributes = "";
+        while (moduleCode[pos] === "@") {
+          // Match @attr or @attr(params)
+          const attrMatch = moduleCode
+            .substring(pos)
+            .match(/^@\w+(?:\s*\([^)]*\))?\s*/);
+          if (attrMatch) {
+            attributes += attrMatch[0];
+            pos += attrMatch[0].length;
+            // Skip whitespace between attributes
+            while (pos < moduleCode.length && /\s/.test(moduleCode[pos])) pos++;
+          } else break;
+        }
+
+        // Check declaration type
+        const remaining = moduleCode.substring(pos);
+
+        // Function
+        const fnMatch = remaining.match(/^fn\s+(\w+)/);
+        if (fnMatch) {
+          const fullDecl =
+            docComment + attributes + this.extractBracedBlock(moduleCode, pos);
+          if (!declarations.has(fnMatch[1])) {
+            declarations.set(fnMatch[1], fullDecl);
+          }
+          pos += this.extractBracedBlock(moduleCode, pos).length;
+          continue;
+        }
+
+        // Struct
+        const structMatch = remaining.match(/^struct\s+(\w+)/);
+        if (structMatch) {
+          const fullDecl =
+            docComment + attributes + this.extractBracedBlock(moduleCode, pos);
+          if (!declarations.has(structMatch[1])) {
+            declarations.set(structMatch[1], fullDecl);
+          }
+          pos += this.extractBracedBlock(moduleCode, pos).length;
+          continue;
+        }
+
+        // Const
+        const constMatch = remaining.match(/^const\s+(\w+)[^;]*;/);
+        if (constMatch) {
+          const fullDecl = docComment + attributes + constMatch[0];
+          if (!declarations.has(constMatch[1])) {
+            declarations.set(constMatch[1], fullDecl);
+          }
+          pos += constMatch[0].length;
+          continue;
+        }
+
+        // Var (with optional @group/@binding)
+        const varMatch = remaining.match(/^var(?:<[^>]+>)?\s+(\w+)[^;]*;/);
+        if (varMatch) {
+          const fullDecl = docComment + attributes + varMatch[0];
+          if (!declarations.has(varMatch[1])) {
+            declarations.set(varMatch[1], fullDecl);
+          }
+          pos += varMatch[0].length;
+          continue;
+        }
+
+        // Workgroup var
+        const wgMatch = remaining.match(/^var<workgroup>\s+(\w+)[^;]*;/);
+        if (wgMatch) {
+          const fullDecl = docComment + attributes + wgMatch[0];
+          if (!declarations.has(wgMatch[1])) {
+            declarations.set(wgMatch[1], fullDecl);
+          }
+          pos += wgMatch[0].length;
+          continue;
+        }
+
+        // Skip any other character
+        pos++;
       }
     }
 
-    return result.join('\n\n');
+    return Array.from(declarations.values()).join("\n\n");
   }
 
   /**
@@ -1709,8 +1826,43 @@ export class SpectralComputePipeline {
 
     // Note: scatteringSigmaBuffer removed - per-pixel sigma replaced by global atmospheric sigma
 
-    // Scatter source buffer (light to be blurred)
+    // Scatter buffers are allocated lazily on first use
+    // This saves ~48MB for scenes without blur/scattering
     this.scatterSourceBuffer?.destroy();
+    this.scatterSourceBuffer = null;
+    this.blurredTransmittedBuffer?.destroy();
+    this.blurredTransmittedBuffer = null;
+    this.scatterBuffersAllocated = false;
+    this.cachedSpectralBufferSize = spectralBufferSize;
+
+    // Reset frame count on resize
+    this.frameCount = 0;
+    this.spectralBufferSwapped = false;
+
+    // Invalidate bind groups (need recreation for new buffers)
+    this.bindGroup0 = null;
+  }
+
+  /**
+   * Ensure scatter/blur buffers are allocated (lazy allocation).
+   * Called before blur passes to allocate on first use.
+   * This saves ~48MB when blur is not needed.
+   */
+  private ensureScatterBuffers(): void {
+    if (this.scatterBuffersAllocated) return;
+
+    const spectralBufferSize = this.cachedSpectralBufferSize;
+    if (spectralBufferSize === 0) {
+      console.warn(
+        "[SpectralCompute] ensureScatterBuffers called before resize"
+      );
+      return;
+    }
+
+    console.log(
+      `[SpectralCompute] Lazy allocating scatter buffers: ${(spectralBufferSize / 1024 / 1024).toFixed(2)} MB each`
+    );
+
     this.scatterSourceBuffer = this.device.createBuffer({
       label: "Scatter Source Buffer",
       size: spectralBufferSize,
@@ -1723,10 +1875,6 @@ export class SpectralComputePipeline {
       "f16"
     );
 
-    // Note: emissionAuraBuffer removed - now unified with scatterSource
-
-    // Blurred transmitted buffer (for in-shape scattering)
-    this.blurredTransmittedBuffer?.destroy();
     this.blurredTransmittedBuffer = this.device.createBuffer({
       label: "Blurred Transmitted Buffer",
       size: spectralBufferSize,
@@ -1739,11 +1887,8 @@ export class SpectralComputePipeline {
       "f16"
     );
 
-    // Reset frame count on resize
-    this.frameCount = 0;
-    this.spectralBufferSwapped = false;
-
-    // Invalidate bind groups (need recreation for new buffers)
+    this.scatterBuffersAllocated = true;
+    // Invalidate bind groups since new buffers need to be bound
     this.bindGroup0 = null;
   }
 
@@ -2407,6 +2552,10 @@ export class SpectralComputePipeline {
       const pixelCount = params.width * params.height;
       const spectralBufferBytes =
         pixelCount * SpectralComputePipeline.SPECTRAL_SAMPLES * 2;
+
+      // Ensure scatter buffers are allocated (lazy allocation)
+      // This saves ~48MB when blur is not needed
+      this.ensureScatterBuffers();
 
       // Debug mode: use separate submits for buffer inspection
       // Production mode: batch all 6 passes into single command encoder

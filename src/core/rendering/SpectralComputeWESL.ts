@@ -84,7 +84,7 @@ export async function createSpectralComputeModuleWithConditions(
  * These correspond to the @compute entry points in the WESL modules:
  * - entry/main.wesl: main, integrateSpectrum
  * - entry/spectrum.wesl: computeSpectrumBox, averageSpectrum, finalCombine
- * - entry/blur-passes.wesl: blurHorizontal, blurVertical, etc.
+ * - entry/blur_passes.wesl: blurHorizontal, blurVertical, etc.
  * - entry/combine.wesl: combineScattered, initBackgroundSpectrum, applyAmbientLight
  */
 export const ENTRY_POINTS = {

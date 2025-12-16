@@ -10,10 +10,10 @@ import linkConfig from "../../core/rendering/SpectralCompute.wesl?link";
 
 // Entry point modules that contain @compute functions
 const ENTRY_MODULES = [
-  "package::wgsl::entry::main",        // main, integrateSpectrum
-  "package::wgsl::entry::spectrum",    // computeSpectrumBox, averageSpectrum, finalCombine
+  "package::wgsl::entry::main", // main, integrateSpectrum
+  "package::wgsl::entry::spectrum", // computeSpectrumBox, averageSpectrum, finalCombine
   "package::wgsl::entry::blur_passes", // blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV
-  "package::wgsl::entry::combine",     // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
+  "package::wgsl::entry::combine", // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
 ];
 
 /**

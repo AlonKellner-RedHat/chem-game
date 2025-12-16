@@ -11,10 +11,10 @@ import linkConfig from "../../core/rendering/SpectralCompute.wesl?link";
 
 // Entry point modules that contain @compute functions
 const ENTRY_MODULES = [
-  "package::wgsl::entry::main",        // main, integrateSpectrum
-  "package::wgsl::entry::spectrum",    // computeSpectrumBox, averageSpectrum, finalCombine
+  "package::wgsl::entry::main", // main, integrateSpectrum
+  "package::wgsl::entry::spectrum", // computeSpectrumBox, averageSpectrum, finalCombine
   "package::wgsl::entry::blur_passes", // blurHorizontal, blurVertical, blurTransmittedH, blurTransmittedV
-  "package::wgsl::entry::combine",     // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
+  "package::wgsl::entry::combine", // initBackgroundSpectrum, applyLayerAbsorption, combineScattered, etc.
 ];
 
 // Helper to get WebGPU - works in both Node.js (via webgpu package) and browser
@@ -36,33 +36,145 @@ async function getGPU(): Promise<GPU | null> {
 }
 
 /**
+ * Extract a brace-balanced block starting at position
+ */
+function extractBracedBlock(code: string, startIdx: number): string {
+  let depth = 0;
+  let i = startIdx;
+
+  // Find the opening brace
+  while (i < code.length && code[i] !== "{") i++;
+  if (i >= code.length) return "";
+
+  const blockStart = startIdx;
+  depth = 1;
+  i++;
+
+  while (i < code.length && depth > 0) {
+    if (code[i] === "{") depth++;
+    else if (code[i] === "}") depth--;
+    i++;
+  }
+
+  return code.substring(blockStart, i);
+}
+
+/**
  * Combine multiple linked WESL modules into a single WGSL shader
- * 
- * WESL mangles names to be unique, but we still get duplicate declarations
- * for shared code (structs, bindings, helper functions). This simple approach
- * tracks seen declarations by their full content hash to deduplicate.
+ *
+ * Strategy: Parse declarations properly handling nested braces,
+ * then deduplicate by name.
  */
 function combineLinkedModules(modules: string[]): string {
-  const seenContent = new Set<string>();
-  const result: string[] = [];
+  // Collect all declarations from all modules
+  const declarations = new Map<string, string>(); // name -> full declaration
+  const otherContent: string[] = [];
 
   for (const moduleCode of modules) {
-    // Split module into blocks separated by double newlines (WGSL convention)
-    const blocks = moduleCode.split(/\n\n+/);
-    
-    for (const block of blocks) {
-      const trimmed = block.trim();
-      if (!trimmed) continue;
-      
-      // Use full content as hash to detect exact duplicates
-      if (!seenContent.has(trimmed)) {
-        seenContent.add(trimmed);
-        result.push(trimmed);
+    let pos = 0;
+
+    while (pos < moduleCode.length) {
+      // Skip whitespace
+      while (pos < moduleCode.length && /\s/.test(moduleCode[pos])) pos++;
+      if (pos >= moduleCode.length) break;
+
+      // Check for doc comment
+      let docComment = "";
+      if (moduleCode.substring(pos, pos + 3) === "/**") {
+        const endComment = moduleCode.indexOf("*/", pos);
+        if (endComment !== -1) {
+          docComment = moduleCode.substring(pos, endComment + 2) + "\n";
+          pos = endComment + 2;
+          while (pos < moduleCode.length && /\s/.test(moduleCode[pos])) pos++;
+        }
       }
+
+      // Check for // comment line
+      if (moduleCode.substring(pos, pos + 2) === "//") {
+        const endLine = moduleCode.indexOf("\n", pos);
+        pos = endLine !== -1 ? endLine + 1 : moduleCode.length;
+        continue;
+      }
+
+      // Check for @attribute (including @compute, @workgroup_size, @group, @binding)
+      let attributes = "";
+      while (moduleCode[pos] === "@") {
+        // Match @attr or @attr(params)
+        const attrMatch = moduleCode
+          .substring(pos)
+          .match(/^@\w+(?:\s*\([^)]*\))?\s*/);
+        if (attrMatch) {
+          attributes += attrMatch[0];
+          pos += attrMatch[0].length;
+          // Skip whitespace between attributes
+          while (pos < moduleCode.length && /\s/.test(moduleCode[pos])) pos++;
+        } else break;
+      }
+
+      // Check declaration type
+      const remaining = moduleCode.substring(pos);
+
+      // Function
+      const fnMatch = remaining.match(/^fn\s+(\w+)/);
+      if (fnMatch) {
+        const fullDecl = docComment + attributes + extractBracedBlock(moduleCode, pos);
+        if (!declarations.has(fnMatch[1])) {
+          declarations.set(fnMatch[1], fullDecl);
+        }
+        pos += extractBracedBlock(moduleCode, pos).length;
+        continue;
+      }
+
+      // Struct
+      const structMatch = remaining.match(/^struct\s+(\w+)/);
+      if (structMatch) {
+        const fullDecl = docComment + attributes + extractBracedBlock(moduleCode, pos);
+        if (!declarations.has(structMatch[1])) {
+          declarations.set(structMatch[1], fullDecl);
+        }
+        pos += extractBracedBlock(moduleCode, pos).length;
+        continue;
+      }
+
+      // Const
+      const constMatch = remaining.match(/^const\s+(\w+)[^;]*;/);
+      if (constMatch) {
+        const fullDecl = docComment + attributes + constMatch[0];
+        if (!declarations.has(constMatch[1])) {
+          declarations.set(constMatch[1], fullDecl);
+        }
+        pos += constMatch[0].length;
+        continue;
+      }
+
+      // Var (with optional @group/@binding)
+      const varMatch = remaining.match(/^var(?:<[^>]+>)?\s+(\w+)[^;]*;/);
+      if (varMatch) {
+        const fullDecl = docComment + attributes + varMatch[0];
+        if (!declarations.has(varMatch[1])) {
+          declarations.set(varMatch[1], fullDecl);
+        }
+        pos += varMatch[0].length;
+        continue;
+      }
+
+      // Workgroup var
+      const wgMatch = remaining.match(/^var<workgroup>\s+(\w+)[^;]*;/);
+      if (wgMatch) {
+        const fullDecl = docComment + attributes + wgMatch[0];
+        if (!declarations.has(wgMatch[1])) {
+          declarations.set(wgMatch[1], fullDecl);
+        }
+        pos += wgMatch[0].length;
+        continue;
+      }
+
+      // Skip any other character
+      pos++;
     }
   }
 
-  return result.join('\n\n');
+  return Array.from(declarations.values()).join("\n\n");
 }
 
 // Helper to link all entry point modules
@@ -72,8 +184,9 @@ async function linkAllModules(): Promise<string> {
       link({ ...linkConfig, rootModuleName })
     )
   );
-  
-  const combined = combineLinkedModules(linkedModules.map(m => m.dest));
+
+  const combined = combineLinkedModules(linkedModules.map((m) => m.dest));
+
   return "enable f16;\n\n" + combined;
 }
 
@@ -85,7 +198,10 @@ describe("Shader Compilation E2E", () => {
     // Link the shader code first
     try {
       shaderCode = await linkAllModules();
-      console.log("[Shader Compilation] Linked shader length:", shaderCode.length);
+      console.log(
+        "[Shader Compilation] Linked shader length:",
+        shaderCode.length
+      );
     } catch (error) {
       console.warn("[Shader Compilation] Failed to link WESL:", error);
       return;

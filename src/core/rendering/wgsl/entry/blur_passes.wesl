@@ -17,7 +17,7 @@ import package::wgsl::constants::{
   BLUR_SHARED_WIDTH, BLUR_SHARED_HEIGHT, BLUR_WEIGHTS_H
 };
 import package::wgsl::bindings::{
-  params, blurTile,
+  params, blurTile, shapes,
   scatterSource, spectralInput, spectralOutput, blurredTransmitted
 };
 
@@ -30,12 +30,63 @@ fn getSpectralIdx(localX: u32, localY: u32, wIdx: u32) -> u32 {
 }
 
 // ============================================================
+// Helper: Shape Proximity Check
+// ============================================================
+
+/**
+ * Check if any shape is within blur radius of a pixel.
+ * Uses bounding box check expanded by blur radius (3-sigma coverage).
+ * 
+ * This enables early-exit for pixels far from any shape content,
+ * significantly reducing blur computation for sparse scenes.
+ * 
+ * @param localX - Local buffer X coordinate
+ * @param localY - Local buffer Y coordinate
+ * @param blurRadius - Blur radius in pixels (typically 3*sigma)
+ * @returns true if any shape is within blur range
+ */
+fn hasShapeWithinBlurRadius(localX: u32, localY: u32, blurRadius: i32) -> bool {
+  // Convert local coords to screen coords
+  let screenX = f32(i32(localX) + params.coordOffsetX);
+  let screenY = f32(i32(localY) + params.coordOffsetY);
+  let blurRadiusF = f32(blurRadius);
+  
+  let numShapes = arrayLength(&shapes);
+  
+  // Check each shape's expanded bounding box
+  for (var i: u32 = 0u; i < numShapes; i++) {
+    let shape = shapes[i];
+    
+    // Only check shapes in current layer
+    if (shape.layer != params.currentLayer) {
+      continue;
+    }
+    
+    // Expand bounding box by blur radius
+    let minX = shape.x - blurRadiusF;
+    let maxX = shape.x + shape.width + blurRadiusF;
+    let minY = shape.y - blurRadiusF;
+    let maxY = shape.y + shape.height + blurRadiusF;
+    
+    // Check if pixel is within expanded bounds
+    if (screenX >= minX && screenX <= maxX && 
+        screenY >= minY && screenY <= maxY) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// ============================================================
 // Horizontal Scatter Blur
 // ============================================================
 
 /**
  * Apply horizontal Gaussian blur to scatter source using shared memory.
  * Reads from scatterSource, writes to spectralInput.
+ * 
+ * OPTIMIZATION: Skip blur computation for pixels far from any shape.
  */
 @compute @workgroup_size(64, 1)
 fn blurHorizontal(
@@ -50,16 +101,11 @@ fn blurHorizontal(
   let outX = tileStartX + localIdx;
   let validOut = validY && outX < params.bufferWidth;
   
-  // Skip blur if sigma is zero
-  if (params.globalMaxScatterSigma <= 0.0) {
-    if (validOut) {
-      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-        let idx = getSpectralIdx(outX, y, w);
-        spectralInput[idx] = scatterSource[idx];
-      }
-    }
-    return;
-  }
+  // Determine if this pixel needs blur computation
+  // Check shape proximity (blur radius is 3*sigma for 99.7% coverage)
+  let blurRadius = i32(ceil(params.globalMaxScatterSigma * 3.0));
+  let needsBlur = validOut && params.globalMaxScatterSigma > 0.0 && 
+                  hasShapeWithinBlurRadius(outX, y, blurRadius);
   
   // Load tile + halo into shared memory
   for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
@@ -85,22 +131,31 @@ fn blurHorizontal(
   
   workgroupBarrier();
   
-  // Blur from shared memory
+  // Blur from shared memory (or passthrough if no shapes nearby)
   if (validOut) {
-    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-      var sum = f16(0.0);
-      var weightSum = f16(0.0);
-      let sharedBase = w * BLUR_SHARED_WIDTH;
-      let centerIdx = localIdx + BLUR_HALO;
-      
-      for (var dx: i32 = -MAX_BLUR_RADIUS; dx <= MAX_BLUR_RADIUS; dx++) {
-        let sharedX = i32(centerIdx) + dx;
-        let weight = BLUR_WEIGHTS_H[abs(dx)];
-        sum += blurTile[sharedBase + u32(sharedX)] * weight;
-        weightSum += weight;
+    if (needsBlur) {
+      // Full blur computation
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        var sum = f16(0.0);
+        var weightSum = f16(0.0);
+        let sharedBase = w * BLUR_SHARED_WIDTH;
+        let centerIdx = localIdx + BLUR_HALO;
+        
+        for (var dx: i32 = -MAX_BLUR_RADIUS; dx <= MAX_BLUR_RADIUS; dx++) {
+          let sharedX = i32(centerIdx) + dx;
+          let weight = BLUR_WEIGHTS_H[abs(dx)];
+          sum += blurTile[sharedBase + u32(sharedX)] * weight;
+          weightSum += weight;
+        }
+        
+        spectralInput[getSpectralIdx(outX, y, w)] = sum / weightSum;
       }
-      
-      spectralInput[getSpectralIdx(outX, y, w)] = sum / weightSum;
+    } else {
+      // Passthrough: no blur needed (no shapes nearby or sigma=0)
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(outX, y, w);
+        spectralInput[idx] = scatterSource[idx];
+      }
     }
   }
 }
@@ -112,6 +167,8 @@ fn blurHorizontal(
 /**
  * Apply vertical Gaussian blur using shared memory.
  * Reads from spectralInput (H-blurred), writes to scatterSource.
+ * 
+ * OPTIMIZATION: Skip blur computation for pixels far from any shape.
  */
 @compute @workgroup_size(1, 64)
 fn blurVertical(
@@ -126,16 +183,10 @@ fn blurVertical(
   let outY = tileStartY + localIdx;
   let validOut = validX && outY < params.bufferHeight;
   
-  // Skip blur if sigma is zero
-  if (params.globalMaxScatterSigma <= 0.0) {
-    if (validOut) {
-      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-        let idx = getSpectralIdx(x, outY, w);
-        scatterSource[idx] = spectralInput[idx];
-      }
-    }
-    return;
-  }
+  // Determine if this pixel needs blur computation
+  let blurRadius = i32(ceil(params.globalMaxScatterSigma * 3.0));
+  let needsBlur = validOut && params.globalMaxScatterSigma > 0.0 && 
+                  hasShapeWithinBlurRadius(x, outY, blurRadius);
   
   // Load tile + halo into shared memory
   for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
@@ -161,22 +212,31 @@ fn blurVertical(
   
   workgroupBarrier();
   
-  // Blur from shared memory
+  // Blur from shared memory (or passthrough if no shapes nearby)
   if (validOut) {
-    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-      var sum = f16(0.0);
-      var weightSum = f16(0.0);
-      let sharedBase = w * BLUR_SHARED_HEIGHT;
-      let centerIdx = localIdx + BLUR_HALO;
-      
-      for (var dy: i32 = -MAX_BLUR_RADIUS; dy <= MAX_BLUR_RADIUS; dy++) {
-        let sharedY = i32(centerIdx) + dy;
-        let weight = BLUR_WEIGHTS_H[abs(dy)];
-        sum += blurTile[sharedBase + u32(sharedY)] * weight;
-        weightSum += weight;
+    if (needsBlur) {
+      // Full blur computation
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        var sum = f16(0.0);
+        var weightSum = f16(0.0);
+        let sharedBase = w * BLUR_SHARED_HEIGHT;
+        let centerIdx = localIdx + BLUR_HALO;
+        
+        for (var dy: i32 = -MAX_BLUR_RADIUS; dy <= MAX_BLUR_RADIUS; dy++) {
+          let sharedY = i32(centerIdx) + dy;
+          let weight = BLUR_WEIGHTS_H[abs(dy)];
+          sum += blurTile[sharedBase + u32(sharedY)] * weight;
+          weightSum += weight;
+        }
+        
+        scatterSource[getSpectralIdx(x, outY, w)] = sum / weightSum;
       }
-      
-      scatterSource[getSpectralIdx(x, outY, w)] = sum / weightSum;
+    } else {
+      // Passthrough: no blur needed
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(x, outY, w);
+        scatterSource[idx] = spectralInput[idx];
+      }
     }
   }
 }
@@ -188,6 +248,8 @@ fn blurVertical(
 /**
  * Apply horizontal blur to transmitted light.
  * Reads from spectralOutput, writes to spectralInput (temp).
+ * 
+ * OPTIMIZATION: Skip blur computation for pixels far from any shape.
  */
 @compute @workgroup_size(64, 1)
 fn blurTransmittedH(
@@ -202,15 +264,10 @@ fn blurTransmittedH(
   let outX = tileStartX + localIdx;
   let validOut = validY && outX < params.bufferWidth;
   
-  if (params.globalMaxScatterSigma <= 0.0) {
-    if (validOut) {
-      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-        let idx = getSpectralIdx(outX, y, w);
-        spectralInput[idx] = spectralOutput[idx];
-      }
-    }
-    return;
-  }
+  // Determine if this pixel needs blur computation
+  let blurRadius = i32(ceil(params.globalMaxScatterSigma * 3.0));
+  let needsBlur = validOut && params.globalMaxScatterSigma > 0.0 && 
+                  hasShapeWithinBlurRadius(outX, y, blurRadius);
   
   // Load and blur (similar pattern to blurHorizontal)
   for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
@@ -235,21 +292,31 @@ fn blurTransmittedH(
   
   workgroupBarrier();
   
+  // Blur from shared memory (or passthrough if no shapes nearby)
   if (validOut) {
-    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-      var sum = f16(0.0);
-      var weightSum = f16(0.0);
-      let sharedBase = w * BLUR_SHARED_WIDTH;
-      let centerIdx = localIdx + BLUR_HALO;
-      
-      for (var dx: i32 = -MAX_BLUR_RADIUS; dx <= MAX_BLUR_RADIUS; dx++) {
-        let sharedX = i32(centerIdx) + dx;
-        let weight = BLUR_WEIGHTS_H[abs(dx)];
-        sum += blurTile[sharedBase + u32(sharedX)] * weight;
-        weightSum += weight;
+    if (needsBlur) {
+      // Full blur computation
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        var sum = f16(0.0);
+        var weightSum = f16(0.0);
+        let sharedBase = w * BLUR_SHARED_WIDTH;
+        let centerIdx = localIdx + BLUR_HALO;
+        
+        for (var dx: i32 = -MAX_BLUR_RADIUS; dx <= MAX_BLUR_RADIUS; dx++) {
+          let sharedX = i32(centerIdx) + dx;
+          let weight = BLUR_WEIGHTS_H[abs(dx)];
+          sum += blurTile[sharedBase + u32(sharedX)] * weight;
+          weightSum += weight;
+        }
+        
+        spectralInput[getSpectralIdx(outX, y, w)] = sum / weightSum;
       }
-      
-      spectralInput[getSpectralIdx(outX, y, w)] = sum / weightSum;
+    } else {
+      // Passthrough: no blur needed
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(outX, y, w);
+        spectralInput[idx] = spectralOutput[idx];
+      }
     }
   }
 }
@@ -261,6 +328,8 @@ fn blurTransmittedH(
 /**
  * Apply vertical blur to transmitted light.
  * Reads from spectralInput (H-blurred), writes to blurredTransmitted.
+ * 
+ * OPTIMIZATION: Skip blur computation for pixels far from any shape.
  */
 @compute @workgroup_size(1, 64)
 fn blurTransmittedV(
@@ -275,15 +344,10 @@ fn blurTransmittedV(
   let outY = tileStartY + localIdx;
   let validOut = validX && outY < params.bufferHeight;
   
-  if (params.globalMaxScatterSigma <= 0.0) {
-    if (validOut) {
-      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-        let idx = getSpectralIdx(x, outY, w);
-        blurredTransmitted[idx] = spectralInput[idx];
-      }
-    }
-    return;
-  }
+  // Determine if this pixel needs blur computation
+  let blurRadius = i32(ceil(params.globalMaxScatterSigma * 3.0));
+  let needsBlur = validOut && params.globalMaxScatterSigma > 0.0 && 
+                  hasShapeWithinBlurRadius(x, outY, blurRadius);
   
   // Load and blur (similar pattern to blurVertical)
   for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
@@ -308,21 +372,31 @@ fn blurTransmittedV(
   
   workgroupBarrier();
   
+  // Blur from shared memory (or passthrough if no shapes nearby)
   if (validOut) {
-    for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
-      var sum = f16(0.0);
-      var weightSum = f16(0.0);
-      let sharedBase = w * BLUR_SHARED_HEIGHT;
-      let centerIdx = localIdx + BLUR_HALO;
-      
-      for (var dy: i32 = -MAX_BLUR_RADIUS; dy <= MAX_BLUR_RADIUS; dy++) {
-        let sharedY = i32(centerIdx) + dy;
-        let weight = BLUR_WEIGHTS_H[abs(dy)];
-        sum += blurTile[sharedBase + u32(sharedY)] * weight;
-        weightSum += weight;
+    if (needsBlur) {
+      // Full blur computation
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        var sum = f16(0.0);
+        var weightSum = f16(0.0);
+        let sharedBase = w * BLUR_SHARED_HEIGHT;
+        let centerIdx = localIdx + BLUR_HALO;
+        
+        for (var dy: i32 = -MAX_BLUR_RADIUS; dy <= MAX_BLUR_RADIUS; dy++) {
+          let sharedY = i32(centerIdx) + dy;
+          let weight = BLUR_WEIGHTS_H[abs(dy)];
+          sum += blurTile[sharedBase + u32(sharedY)] * weight;
+          weightSum += weight;
+        }
+        
+        blurredTransmitted[getSpectralIdx(x, outY, w)] = sum / weightSum;
       }
-      
-      blurredTransmitted[getSpectralIdx(x, outY, w)] = sum / weightSum;
+    } else {
+      // Passthrough: no blur needed
+      for (var w: u32 = 0u; w < SPECTRAL_SAMPLES; w++) {
+        let idx = getSpectralIdx(x, outY, w);
+        blurredTransmitted[idx] = spectralInput[idx];
+      }
     }
   }
 }
