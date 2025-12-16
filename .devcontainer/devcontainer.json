@@ -66,5 +66,5 @@
     }
   },
 
-  "postCreateCommand": "npm install -g npm@latest && node --version && npm --version && .devcontainer/setup-msdfgen.sh"
+  "postCreateCommand": "npm install -g npm@latest && node --version && npm --version && .devcontainer/setup-msdfgen.sh && npm install && .devcontainer/setup-webgpu.sh"
 }

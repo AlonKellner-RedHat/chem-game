@@ -1,0 +1,171 @@
+# Build Dawn WebGPU bindings for linux-arm64
+# This workflow compiles node-webgpu from source and uploads the binary
+# as a release asset for use in ARM64 devcontainers.
+
+name: Build Dawn ARM64
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-dawn-arm64.yml'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if cached'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  NODE_WEBGPU_VERSION: "0.3.8"
+  GO_VERSION: "1.23.4"
+
+jobs:
+  build:
+    name: Build Dawn for linux-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for existing release
+        id: check_release
+        if: github.event.inputs.force_rebuild != 'true'
+        run: |
+          ASSET_URL=$(gh release view dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} --json assets -q '.assets[] | select(.name=="linux-arm64.dawn.node") | .url' 2>/dev/null || echo "")
+          if [ -n "$ASSET_URL" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Binary already exists in release, skipping build"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install system dependencies
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            python3 \
+            python3-pip \
+            pkg-config \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            mesa-common-dev \
+            libx11-xcb-dev \
+            libxi-dev \
+            clang-18 \
+            lld-18
+
+      - name: Setup Go
+        if: steps.check_release.outputs.exists != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache depot_tools
+        if: steps.check_release.outputs.exists != 'true'
+        id: cache-depot-tools
+        uses: actions/cache@v4
+        with:
+          path: depot_tools
+          key: depot-tools-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Clone depot_tools
+        if: steps.check_release.outputs.exists != 'true' && steps.cache-depot-tools.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
+
+      - name: Add depot_tools to PATH
+        if: steps.check_release.outputs.exists != 'true'
+        run: echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+
+      - name: Clone node-webgpu
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
+          git clone --depth 1 --branch v${{ env.NODE_WEBGPU_VERSION }} https://github.com/dawn-gpu/node-webgpu.git
+          cd node-webgpu
+          git submodule update --init --depth 1
+
+      - name: Cache Dawn build
+        if: steps.check_release.outputs.exists != 'true'
+        id: cache-dawn
+        uses: actions/cache@v4
+        with:
+          path: |
+            node-webgpu/third_party/dawn
+            node-webgpu/out
+          key: dawn-build-${{ runner.os }}-${{ runner.arch }}-${{ env.NODE_WEBGPU_VERSION }}-v2
+
+      - name: Fetch Dawn dependencies
+        if: steps.check_release.outputs.exists != 'true' && steps.cache-dawn.outputs.cache-hit != 'true'
+        run: |
+          cd node-webgpu/third_party/dawn
+          cp scripts/standalone-with-node.gclient .gclient
+          gclient sync -D --no-history
+
+      - name: Build Dawn node bindings
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
+          cd node-webgpu
+          export CC=clang-18
+          export CXX=clang++-18
+          npm run build
+        env:
+          CMAKE_BUILD_TYPE: Release
+
+      - name: Verify binary
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
+          ls -la node-webgpu/dist/
+          file node-webgpu/dist/linux-arm64.dawn.node
+
+      - name: Create or update release
+        if: steps.check_release.outputs.exists != 'true'
+        run: |
+          # Create release if it doesn't exist
+          gh release create dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} \
+            --title "Dawn ARM64 v${{ env.NODE_WEBGPU_VERSION }}" \
+            --notes "Pre-built Dawn WebGPU bindings for linux-arm64.
+
+          This binary is built from [node-webgpu](https://github.com/dawn-gpu/node-webgpu) v${{ env.NODE_WEBGPU_VERSION }}.
+
+          ## Usage
+
+          Download and place in \`node_modules/webgpu/dist/\`:
+          \`\`\`bash
+          curl -L -o node_modules/webgpu/dist/linux-arm64.dawn.node \\
+            https://github.com/${{ github.repository }}/releases/download/dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }}/linux-arm64.dawn.node
+          \`\`\`" \
+            --latest=false \
+            2>/dev/null || true
+
+          # Upload the binary
+          gh release upload dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }} \
+            node-webgpu/dist/linux-arm64.dawn.node \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        if: steps.check_release.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64.dawn.node
+          path: node-webgpu/dist/linux-arm64.dawn.node
+          retention-days: 30
+

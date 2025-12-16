@@ -1,0 +1,90 @@
+# Run tests on push and pull requests
+# Downloads Dawn ARM64 binary when available for GPU tests
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_WEBGPU_VERSION: "0.3.8"
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint || true
+
+      - name: Type check
+        run: npm run type-check || true
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  test-gpu:
+    name: Run GPU Tests (ARM64)
+    runs-on: ubuntu-24.04-arm
+    # Only run if Dawn binary is available
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Dawn ARM64 binary
+        id: download-dawn
+        run: |
+          mkdir -p node_modules/webgpu/dist
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/dawn-arm64-v${{ env.NODE_WEBGPU_VERSION }}/linux-arm64.dawn.node"
+          if curl -L -f -o node_modules/webgpu/dist/linux-arm64.dawn.node "$DOWNLOAD_URL"; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "Downloaded Dawn ARM64 binary successfully"
+            ls -la node_modules/webgpu/dist/
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "Dawn ARM64 binary not available yet"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GPU tests
+        if: steps.download-dawn.outputs.success == 'true'
+        run: |
+          # Run the shader compilation tests specifically
+          npm test -- --reporter=verbose src/tests/wgsl/shader-compilation.test.ts
+
+      - name: Skip GPU tests notice
+        if: steps.download-dawn.outputs.success != 'true'
+        run: |
+          echo "::notice::GPU tests skipped - Dawn ARM64 binary not available. Run the 'Build Dawn ARM64' workflow first."
+
