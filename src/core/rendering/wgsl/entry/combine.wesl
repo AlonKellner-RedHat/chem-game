@@ -140,12 +140,15 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
         }
         anyShapeOnLayer = true;
 
-        // Get reflection factor: 1.0 outside circles, 1-alpha inside
-        let reflFactor = getReflectionFactor(shape, fx, fy);
-        let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+        // Mask gating: only contribute if inside shape or full-coverage shape
+        let mask = getShapeMask(shape, fx, fy);
+        let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-        // Compound: each shape reduces reflection multiplicatively
-        totalReflection *= f16(reflFactor) * materialRefl;
+        if (mask > 0.0 || isFullCoverage) {
+          let reflFactor = getReflectionFactor(shape, fx, fy);
+          let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+          totalReflection *= f16(reflFactor) * materialRefl;
+        }
       }
 
       if (anyShapeOnLayer) {
@@ -336,12 +339,15 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
       let shape = shapes[i];
       anyShapeOnLayer = true;
 
-      // Get reflection factor: 1.0 outside circles, 1-alpha inside
-      let reflFactor = getReflectionFactor(shape, fx, fy);
-      let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+      // Mask gating: only contribute if inside shape or full-coverage shape
+      let mask = getShapeMask(shape, fx, fy);
+      let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-      // Compound: each shape reduces reflection multiplicatively
-      totalReflection *= f16(reflFactor) * materialRefl;
+      if (mask > 0.0 || isFullCoverage) {
+        let reflFactor = getReflectionFactor(shape, fx, fy);
+        let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+        totalReflection *= f16(reflFactor) * materialRefl;
+      }
     }
 
     if (!anyShapeOnLayer) {
@@ -473,13 +479,15 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
         if (shape.layer == params.currentLayer) {
           anyShapeOnLayer = true;
 
-          // Get reflection factor: 1.0 outside circles, 1-alpha inside
-          // Note: We compute this directly rather than using shapeMasks (which are for absorption)
-          let reflFactor = getReflectionFactor(shape, fx, fy);
-          let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+          // Mask gating: only contribute if inside shape or full-coverage shape
+          let mask = getShapeMask(shape, fx, fy);
+          let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-          // Compound: each shape reduces reflection multiplicatively
-          totalReflection *= f16(reflFactor) * materialRefl;
+          if (mask > 0.0 || isFullCoverage) {
+            let reflFactor = getReflectionFactor(shape, fx, fy);
+            let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
+            totalReflection *= f16(reflFactor) * materialRefl;
+          }
         }
       }
 
@@ -677,19 +685,23 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         if (shape.layer == params.currentLayer) {
           anyShapeOnLayer = true;
 
-          // Get reflection factor: 1.0 outside circles, 1-alpha inside
-          let reflFactor = f16(getReflectionFactor(shape, fx, fy));
+          // Mask gating: only contribute if inside shape or full-coverage shape
+          let mask = getShapeMask(shape, fx, fy);
+          let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
-          // Get material reflection for each wavelength
-          let materialRefl = vec4<f16>(
-            getMaterialReflection(shape.materialIndex, wavelengths.x),
-            getMaterialReflection(shape.materialIndex, wavelengths.y),
-            getMaterialReflection(shape.materialIndex, wavelengths.z),
-            getMaterialReflection(shape.materialIndex, wavelengths.w)
-          );
+          if (mask > 0.0 || isFullCoverage) {
+            let reflFactor = f16(getReflectionFactor(shape, fx, fy));
 
-          // Compound: each shape reduces reflection multiplicatively
-          totalReflection *= vec4<f16>(reflFactor) * materialRefl;
+            // Get material reflection for each wavelength
+            let materialRefl = vec4<f16>(
+              getMaterialReflection(shape.materialIndex, wavelengths.x),
+              getMaterialReflection(shape.materialIndex, wavelengths.y),
+              getMaterialReflection(shape.materialIndex, wavelengths.z),
+              getMaterialReflection(shape.materialIndex, wavelengths.w)
+            );
+
+            totalReflection *= vec4<f16>(reflFactor) * materialRefl;
+          }
         }
       }
 

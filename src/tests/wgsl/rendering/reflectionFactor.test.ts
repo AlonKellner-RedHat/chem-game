@@ -178,3 +178,215 @@ describe('Multiplicative Compounding', () => {
     });
   });
 });
+
+describe('Mask Gating for Ambient Contribution', () => {
+  /**
+   * Reference implementation: determines if a shape should contribute to ambient
+   * Shapes only contribute when:
+   * 1. The pixel is inside the shape (mask > 0), OR
+   * 2. The shape has no mask (full-coverage shape like bg-base)
+   */
+  function shouldContribute(mask: number, hasMsdf: boolean, hasAlpha: boolean): boolean {
+    const isFullCoverageShape = !hasMsdf && !hasAlpha;
+    return mask > 0 || isFullCoverageShape;
+  }
+
+  /**
+   * Get mask value (coverage) for a shape at a pixel
+   * This is what getShapeMask() returns in WGSL
+   */
+  function getMask(
+    msdfCoverage: number,
+    alpha: number,
+    hasMsdf: boolean,
+    hasAlpha: boolean
+  ): number {
+    // No textures = full coverage
+    if (!hasMsdf && !hasAlpha) {
+      return 1.0;
+    }
+    const effectiveMsdf = hasMsdf ? msdfCoverage : 1.0;
+    const effectiveAlpha = hasAlpha ? alpha : 1.0;
+    return effectiveMsdf * effectiveAlpha;
+  }
+
+  /**
+   * Compound reflections with mask gating
+   * Only shapes that "shouldContribute" are included in the multiplication
+   */
+  function compoundWithGating(
+    shapes: Array<{
+      mask: number;
+      reflFactor: number;
+      materialRefl: number;
+      hasMsdf: boolean;
+      hasAlpha: boolean;
+    }>
+  ): number {
+    let totalReflection = 1.0;
+    for (const shape of shapes) {
+      if (shouldContribute(shape.mask, shape.hasMsdf, shape.hasAlpha)) {
+        totalReflection *= shape.reflFactor * shape.materialRefl;
+      }
+    }
+    return totalReflection;
+  }
+
+  describe('Full-coverage shapes (no mask)', () => {
+    it('bg-base always contributes regardless of mask value', () => {
+      // bg-base: no MSDF, no alpha → full-coverage shape
+      const bgBase = {
+        mask: 1.0,
+        reflFactor: 1.0,
+        materialRefl: 1.0,
+        hasMsdf: false,
+        hasAlpha: false,
+      };
+      expect(shouldContribute(bgBase.mask, bgBase.hasMsdf, bgBase.hasAlpha)).toBe(true);
+    });
+  });
+
+  describe('Material shapes (MSDF, no alpha)', () => {
+    it('should NOT contribute when outside shape (mask = 0)', () => {
+      // Golden circle: MSDF but no alpha, outside the shape
+      const goldenCircle = {
+        mask: 0.0, // Outside shape
+        reflFactor: 1.0, // getReflectionFactor returns 1.0
+        materialRefl: 0.8, // Gold reflection
+        hasMsdf: true,
+        hasAlpha: false,
+      };
+      expect(shouldContribute(goldenCircle.mask, goldenCircle.hasMsdf, goldenCircle.hasAlpha)).toBe(
+        false
+      );
+    });
+
+    it('should contribute when inside shape (mask > 0)', () => {
+      // Golden circle: MSDF but no alpha, inside the shape
+      const goldenCircle = {
+        mask: 1.0, // Inside shape
+        reflFactor: 1.0,
+        materialRefl: 0.8,
+        hasMsdf: true,
+        hasAlpha: false,
+      };
+      expect(shouldContribute(goldenCircle.mask, goldenCircle.hasMsdf, goldenCircle.hasAlpha)).toBe(
+        true
+      );
+    });
+
+    it('material shapes outside their bounds should not affect total reflection', () => {
+      // Scenario: bg-base + golden circle (pixel outside golden circle)
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0, // 100% reflection
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 0.0, // Outside golden circle
+          reflFactor: 1.0,
+          materialRefl: 0.5, // 50% reflection (should NOT affect result)
+          hasMsdf: true,
+          hasAlpha: false,
+        },
+      ];
+      // Only bg-base contributes, golden circle is gated out
+      expect(compoundWithGating(shapes)).toBe(1.0);
+    });
+
+    it('material shapes inside their bounds should affect total reflection', () => {
+      // Scenario: bg-base + golden circle (pixel inside golden circle)
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0,
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 1.0, // Inside golden circle
+          reflFactor: 1.0,
+          materialRefl: 0.5, // 50% reflection
+          hasMsdf: true,
+          hasAlpha: false,
+        },
+      ];
+      // Both contribute: 1.0 * 1.0 * 1.0 * 0.5 = 0.5
+      expect(compoundWithGating(shapes)).toBe(0.5);
+    });
+  });
+
+  describe('Background grid (MSDF + alpha)', () => {
+    it('should NOT contribute outside circles (mask = 0)', () => {
+      const bgGrid = {
+        mask: 0.0, // Outside circles (msdf=0)
+        reflFactor: 1.0, // Full reflection outside
+        materialRefl: 0.6,
+        hasMsdf: true,
+        hasAlpha: true,
+      };
+      expect(shouldContribute(bgGrid.mask, bgGrid.hasMsdf, bgGrid.hasAlpha)).toBe(false);
+    });
+
+    it('should contribute inside circles (mask > 0)', () => {
+      const bgGrid = {
+        mask: 0.5, // Inside circle with alpha=0.5
+        reflFactor: 0.5, // 1 - alpha = 0.5
+        materialRefl: 0.6,
+        hasMsdf: true,
+        hasAlpha: true,
+      };
+      expect(shouldContribute(bgGrid.mask, bgGrid.hasMsdf, bgGrid.hasAlpha)).toBe(true);
+    });
+  });
+
+  describe('Full layer scenario', () => {
+    it('outside circles: only bg-base contributes', () => {
+      // Layer 0: bg-base + bg-grid, pixel outside circles
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0,
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 0.0, // Outside circles
+          reflFactor: 1.0,
+          materialRefl: 0.6,
+          hasMsdf: true,
+          hasAlpha: true,
+        },
+      ];
+      // Only bg-base contributes: 1.0 * 1.0 = 1.0
+      expect(compoundWithGating(shapes)).toBe(1.0);
+    });
+
+    it('inside circles: both bg-base and bg-grid contribute', () => {
+      // Layer 0: bg-base + bg-grid, pixel inside circle with alpha=0.3
+      const shapes = [
+        {
+          mask: 1.0,
+          reflFactor: 1.0,
+          materialRefl: 1.0,
+          hasMsdf: false,
+          hasAlpha: false,
+        },
+        {
+          mask: 0.7, // Inside circle, msdf=1 * alpha=0.7
+          reflFactor: 0.3, // 1 - alpha = 1 - 0.7 = 0.3
+          materialRefl: 0.6,
+          hasMsdf: true,
+          hasAlpha: true,
+        },
+      ];
+      // Both contribute: 1.0 * 1.0 * 0.3 * 0.6 = 0.18
+      expect(compoundWithGating(shapes)).toBeCloseTo(0.18, 5);
+    });
+  });
+});
