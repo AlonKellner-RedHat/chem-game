@@ -522,6 +522,13 @@ export class WebGPURenderer implements Renderer {
     console.log(
       `[WebGPURenderer] Loaded masks: MSDF small=${smallMsdfs.length}, large=${largeMsdfs.length}; Alpha small=${smallAlphas.length}, large=${largeAlphas.length}`
     );
+
+    // Debug: Log which shapes have alpha textures
+    if (largeAlphas.length > 0) {
+      console.log(
+        `[WebGPURenderer] Large alpha textures available: ${largeAlphas.map((t) => t.label).join(', ')}`
+      );
+    }
   }
 
   /**

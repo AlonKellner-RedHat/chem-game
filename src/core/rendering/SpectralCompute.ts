@@ -3655,12 +3655,26 @@ export class SpectralComputePipeline {
       view.setFloat32(offset + 40, shape.texHeight ?? 256, true);
 
       // Alpha texture properties (8 bytes)
+      // Ensure layer index is valid (>= 0) when hasAlpha is true
+      const alphaLayerIdx =
+        shape.hasAlpha && shape.alphaLayerIndex >= 0 ? shape.alphaLayerIndex : 0;
       view.setUint32(offset + 44, shape.alphaArrayIndex ?? 0, true);
-      view.setUint32(offset + 48, shape.alphaLayerIndex ?? 0, true);
+      view.setUint32(offset + 48, alphaLayerIdx, true);
 
       // Texture existence flags (8 bytes)
+      // hasAlpha should only be true if we have a valid layer index
+      const actualHasAlpha = shape.hasAlpha && shape.alphaLayerIndex >= 0;
       view.setUint32(offset + 52, shape.hasMsdf ? 1 : 0, true);
-      view.setUint32(offset + 56, shape.hasAlpha ? 1 : 0, true);
+      view.setUint32(offset + 56, actualHasAlpha ? 1 : 0, true);
+
+      // Debug: Log alpha state for shapes with alpha
+      if (shape.hasAlpha) {
+        console.log(
+          `[SpectralCompute] Shape buffer write: alphaArrayIndex=${shape.alphaArrayIndex}, ` +
+            `alphaLayerIndex=${shape.alphaLayerIndex}, hasAlpha=${shape.hasAlpha} -> ` +
+            `actualHasAlpha=${actualHasAlpha}, written layerIdx=${alphaLayerIdx}`
+        );
+      }
 
       // Scattering properties (8 bytes)
       view.setFloat32(offset + 60, shape.smallParticleDensity ?? 0, true);

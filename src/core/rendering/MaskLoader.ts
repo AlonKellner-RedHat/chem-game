@@ -307,6 +307,16 @@ export class MaskManager {
         `category=${isSmall ? 'small' : 'large'}, ` +
         `msdf=${loaded.hasMsdf}, alpha=${loaded.hasAlpha})`
     );
+
+    // Debug: Log current alpha array state
+    if (loaded.hasAlpha) {
+      console.log(
+        `[MaskManager] Alpha arrays after loading ${name}: ` +
+          `smallAlphas=[${this.smallAlphas.join(', ')}], ` +
+          `largeAlphas=[${this.largeAlphas.join(', ')}]`
+      );
+    }
+
     return loaded;
   }
 
@@ -467,6 +477,14 @@ export class MaskManager {
       if (shape.hasAlpha) {
         const smallAlphaIndex = this.smallAlphas.indexOf(name);
         const largeAlphaIndex = this.largeAlphas.indexOf(name);
+
+        console.log(
+          `[MaskManager] getMaskIndex alpha lookup for ${name}: ` +
+            `shape.hasAlpha=${shape.hasAlpha}, ` +
+            `smallAlphaIndex=${smallAlphaIndex}, largeAlphaIndex=${largeAlphaIndex}, ` +
+            `smallAlphas=[${this.smallAlphas.join(', ')}], ` +
+            `largeAlphas=[${this.largeAlphas.join(', ')}]`
+        );
 
         if (smallAlphaIndex >= 0) {
           result.alphaArrayIndex = 0;
