@@ -26,7 +26,7 @@ import package::wgsl::rendering::msdf::{getShapeMask, getMsdfCoverage, getAlphaV
 import package::wgsl::rendering::ambient::{getAmbientPattern, getAmbientIntensity};
 
 // DEBUG: Set to 1 to enable debug output in processLayerTransition
-const COMBINE_DEBUG_MODE: u32 = 1u;
+const COMBINE_DEBUG_MODE: u32 = 0u;
 
 // ============================================================
 // Helper Functions

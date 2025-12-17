@@ -20,7 +20,7 @@ import package::wgsl::physics::materials::getMaterialReflection;
 // DEBUG: Full-screen color band visualization for GPU values
 // ============================================================
 // Set to 1 to enable debug mode, 0 for normal rendering
-const DEBUG_MODE: u32 = 0u;
+const DEBUG_MODE: u32 = 1u;
 
 // Distinct colors for easy identification (no gradients!)
 const COLOR_BLACK: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
@@ -249,41 +249,35 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
         debugColor = COLOR_PURPLE; // Error: no shapes
       }
     } else if (bandIndex == 2u) {
-      // Band 2: ACTUAL material reflection for shape[0] (bg-base)
-      // Using getMaterialReflection at 550nm (green light)
-      // BLACK=0, RED<0.5, GRAY=0.5-0.8, WHITE>0.8
+      // Band 2: shape[0].width - is it > 0?
+      // BLACK=0, GRAY=1-100, RED=100-500, WHITE=500+
       if (numShapes > 0u) {
-        let wavelength = 550.0;
-        let materialIdx = shapes[0].materialIndex;
-        let refl = f32(getMaterialReflection(materialIdx, wavelength));
-        if (refl > 0.8) {
-          debugColor = COLOR_WHITE;   // 100% (EXPECTED for bg-base!)
-        } else if (refl > 0.5) {
-          debugColor = COLOR_GRAY;    // 60%
-        } else if (refl > 0.2) {
-          debugColor = COLOR_RED;     // Low
+        let w = shapes[0].width;
+        if (w > 500.0) {
+          debugColor = COLOR_WHITE;   // Expected: full screen width
+        } else if (w > 100.0) {
+          debugColor = COLOR_RED;     // Medium
+        } else if (w > 1.0) {
+          debugColor = COLOR_GRAY;    // Small
         } else {
-          debugColor = COLOR_BLACK;   // Very low
+          debugColor = COLOR_BLACK;   // ZERO or very small - BUG!
         }
       } else {
         debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 3u) {
-      // Band 3: ACTUAL material reflection for shape[1] (bg-grid)
-      // Using getMaterialReflection at 550nm (green light)
-      // BLACK=0, RED<0.5, GRAY=0.5-0.8, WHITE>0.8
+      // Band 3: shape[1].width - is it > 0?
+      // BLACK=0, GRAY=1-100, RED=100-500, WHITE=500+
       if (numShapes > 1u) {
-        let wavelength = 550.0;  // Green light
-        let materialIdx = shapes[1].materialIndex;
-        let refl = f32(getMaterialReflection(materialIdx, wavelength));
-        if (refl > 0.8) {
-          debugColor = COLOR_WHITE;   // 100%
-        } else if (refl > 0.5) {
-          debugColor = COLOR_GRAY;    // 60% (EXPECTED!)
-        } else if (refl > 0.2) {
-          debugColor = COLOR_RED;     // Low
+        let w = shapes[1].width;
+        if (w > 500.0) {
+          debugColor = COLOR_WHITE;   // Expected: full screen width
+        } else if (w > 100.0) {
+          debugColor = COLOR_RED;     // Medium
+        } else if (w > 1.0) {
+          debugColor = COLOR_GRAY;    // Small
         } else {
-          debugColor = COLOR_BLACK;   // Very low
+          debugColor = COLOR_BLACK;   // ZERO or very small - BUG!
         }
       } else {
         debugColor = COLOR_PURPLE;
