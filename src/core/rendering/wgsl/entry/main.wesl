@@ -16,63 +16,23 @@ import package::wgsl::rendering::msdf::{getMsdfCoverage, getAlphaValue};
 import package::wgsl::rendering::ambient::getAmbientPattern;
 
 // ============================================================
-// DEBUG: Color band visualization for GPU values
+// DEBUG: Full-screen color band visualization for GPU values
 // ============================================================
 // Set to 1 to enable debug mode, 0 for normal rendering
 const DEBUG_MODE: u32 = 1u;
-const DEBUG_BAND_HEIGHT: u32 = 15u;  // Height of each debug band in pixels
 
-/// Convert a value to a debug color using bands
-/// Each 10-pixel vertical band shows a different value range
-fn valueToDebugColor(value: f32, bandIndex: u32) -> vec3<f32> {
-  // Color scheme for different value ranges:
-  // Band 0: numShapes (cyan scale)
-  // Band 1: bg-base coverage (red scale)
-  // Band 2: bg-grid coverage (green scale)
-  // Band 3: bg-grid alpha (blue scale)
-  // Band 4: ambientPattern (yellow scale)
-  // Band 5: shape.hasMsdf for bg-grid (magenta if 1, black if 0)
-  // Band 6: shape.hasAlpha for bg-grid (cyan if 1, black if 0)
-  // Band 7: totalReflection computed (white scale)
-  
-  if (bandIndex == 0u) {
-    // numShapes: 0=black, 1=dark cyan, 2=cyan, 3+=bright cyan
-    let v = clamp(value / 3.0, 0.0, 1.0);
-    return vec3<f32>(0.0, v, v);
-  } else if (bandIndex == 1u) {
-    // bg-base coverage: 0=black, 1=red
-    return vec3<f32>(value, 0.0, 0.0);
-  } else if (bandIndex == 2u) {
-    // bg-grid coverage: 0=black, 1=green
-    return vec3<f32>(0.0, value, 0.0);
-  } else if (bandIndex == 3u) {
-    // bg-grid alpha: 0=black, 1=blue
-    return vec3<f32>(0.0, 0.0, value);
-  } else if (bandIndex == 4u) {
-    // ambientPattern: 0=black, 1=yellow
-    return vec3<f32>(value, value, 0.0);
-  } else if (bandIndex == 5u) {
-    // hasMsdf flag: 0=black, 1=magenta
-    if (value > 0.5) {
-      return vec3<f32>(1.0, 0.0, 1.0);
-    } else {
-      return vec3<f32>(0.0, 0.0, 0.0);
-    }
-  } else if (bandIndex == 6u) {
-    // hasAlpha flag: 0=black, 1=cyan
-    if (value > 0.5) {
-      return vec3<f32>(0.0, 1.0, 1.0);
-    } else {
-      return vec3<f32>(0.0, 0.0, 0.0);
-    }
-  } else if (bandIndex == 7u) {
-    // totalReflection: 0=black, 1=white
-    return vec3<f32>(value, value, value);
-  } else {
-    // Fallback: gray
-    return vec3<f32>(0.5, 0.5, 0.5);
-  }
-}
+// Distinct colors for easy identification (no gradients!)
+const COLOR_BLACK: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
+const COLOR_WHITE: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+const COLOR_RED: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0);
+const COLOR_GREEN: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
+const COLOR_BLUE: vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
+const COLOR_YELLOW: vec3<f32> = vec3<f32>(1.0, 1.0, 0.0);
+const COLOR_CYAN: vec3<f32> = vec3<f32>(0.0, 1.0, 1.0);
+const COLOR_MAGENTA: vec3<f32> = vec3<f32>(1.0, 0.0, 1.0);
+const COLOR_ORANGE: vec3<f32> = vec3<f32>(1.0, 0.5, 0.0);
+const COLOR_PURPLE: vec3<f32> = vec3<f32>(0.5, 0.0, 1.0);
+const COLOR_GRAY: vec3<f32> = vec3<f32>(0.5, 0.5, 0.5);
 
 // ============================================================
 // Helper: Get Wavelength for Index
@@ -193,16 +153,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
  * Integrate the final spectral buffer to XYZ and convert to RGB.
  * Reads from spectralInput (final blurred result).
  * 
- * DEBUG MODE: When DEBUG_MODE == 1u, the top portion of the screen
- * shows color-coded diagnostic bands:
- * - Band 0 (y=0-14): numShapes (cyan scale, 0-3)
- * - Band 1 (y=15-29): bg-base coverage (red scale, 0-1)
- * - Band 2 (y=30-44): bg-grid coverage (green scale, 0-1)
- * - Band 3 (y=45-59): bg-grid alpha (blue scale, 0-1)
- * - Band 4 (y=60-74): ambientPattern (yellow scale, 0-1)
- * - Band 5 (y=75-89): bg-grid hasMsdf flag (magenta=1, black=0)
- * - Band 6 (y=90-104): bg-grid hasAlpha flag (cyan=1, black=0)
- * - Band 7 (y=105-119): computed totalReflection (white scale, 0-1)
+ * DEBUG MODE: Full-screen diagnostic with solid colors.
+ * Screen is divided into 8 horizontal bands.
+ * Each band is split into LEFT half (outside circles) and RIGHT half (inside circles).
+ * 
+ * BAND LEGEND (top to bottom):
+ * Band 0: numShapes - BLACK=0, RED=1, GREEN=2, BLUE=3+
+ * Band 1: bg-base (shape[0]) coverage - BLACK=0, WHITE=1
+ * Band 2: bg-grid (shape[1]) coverage - BLACK=0, GREEN=has pattern
+ * Band 3: bg-grid (shape[1]) alpha - BLACK=0, BLUE=has alpha
+ * Band 4: ambientPattern - BLACK=0, YELLOW=1
+ * Band 5: shape[1].hasMsdf - BLACK=0, MAGENTA=1
+ * Band 6: shape[1].hasAlpha - BLACK=0, CYAN=1  
+ * Band 7: shape[1].width - BLACK=0, ORANGE=>0, WHITE=>100
  */
 @compute @workgroup_size(8, 8)
 fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -215,8 +178,12 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let pixelIndex = y * params.width + x;
 
-  // Pass 1: Normalize
+  // Pass 1: Skip in debug mode, just copy
   if (params.isNormalizationPass == 1u) {
+    if (DEBUG_MODE == 1u) {
+      // In debug mode, colors are already set - just pass through
+      return;
+    }
     let xyz = rgbOutput[pixelIndex].xyz;
     let globalMax = params.globalMaxIntensity;
 
@@ -235,65 +202,121 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
   }
 
   // ============================================================
-  // DEBUG MODE: Output color bands for GPU value inspection
+  // DEBUG MODE: Full-screen solid color diagnostic
   // ============================================================
-  if (DEBUG_MODE == 1u && y < DEBUG_BAND_HEIGHT * 8u) {
-    let bandIndex = y / DEBUG_BAND_HEIGHT;
-    let fx = f32(x);
-    let fy = f32(y);
+  if (DEBUG_MODE == 1u) {
+    let numBands = 8u;
+    let bandHeight = params.height / numBands;
+    let bandIndex = y / bandHeight;
     
     let numShapes = arrayLength(&shapes);
-    var debugValue: f32 = 0.0;
+    var debugColor: vec3<f32> = COLOR_GRAY;
     
-    // Compute values based on band
+    // Use center of screen for consistent sampling
+    let sampleX = f32(params.width / 2u);
+    let sampleY = f32(params.height / 2u);
+    
+    // LEFT half: sample at (100, center_y) - likely outside circle
+    // RIGHT half: sample at (center_x, center_y) - may be inside circle
+    let isRightHalf = x >= params.width / 2u;
+    let fx = select(100.0, sampleX, isRightHalf);
+    let fy = sampleY;
+    
     if (bandIndex == 0u) {
-      // Band 0: numShapes
-      debugValue = f32(numShapes);
+      // Band 0: numShapes count
+      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
+      if (numShapes == 0u) {
+        debugColor = COLOR_BLACK;
+      } else if (numShapes == 1u) {
+        debugColor = COLOR_RED;
+      } else if (numShapes == 2u) {
+        debugColor = COLOR_GREEN;
+      } else if (numShapes == 3u) {
+        debugColor = COLOR_BLUE;
+      } else if (numShapes == 4u) {
+        debugColor = COLOR_YELLOW;
+      } else {
+        debugColor = COLOR_CYAN;
+      }
     } else if (bandIndex == 1u) {
-      // Band 1: bg-base coverage (shape 0)
+      // Band 1: bg-base (shape[0]) coverage
+      // BLACK=0 or no shape, WHITE=1
       if (numShapes > 0u) {
-        debugValue = getMsdfCoverage(shapes[0], fx, fy);
+        let cov = getMsdfCoverage(shapes[0], fx, fy);
+        debugColor = select(COLOR_BLACK, COLOR_WHITE, cov > 0.5);
+      } else {
+        debugColor = COLOR_PURPLE; // Error: no shapes
       }
     } else if (bandIndex == 2u) {
-      // Band 2: bg-grid coverage (shape 1)
+      // Band 2: bg-grid (shape[1]) MSDF coverage
+      // BLACK=0, GREEN=1 (should show pattern if circles work)
       if (numShapes > 1u) {
-        debugValue = getMsdfCoverage(shapes[1], fx, fy);
+        let cov = getMsdfCoverage(shapes[1], fx, fy);
+        debugColor = select(COLOR_BLACK, COLOR_GREEN, cov > 0.5);
+      } else {
+        debugColor = COLOR_PURPLE; // Error: only 1 shape
       }
     } else if (bandIndex == 3u) {
-      // Band 3: bg-grid alpha (shape 1)
+      // Band 3: bg-grid (shape[1]) alpha value
+      // BLACK=0, BLUE=1
       if (numShapes > 1u) {
-        debugValue = getAlphaValue(shapes[1], fx, fy);
+        let alpha = getAlphaValue(shapes[1], fx, fy);
+        debugColor = select(COLOR_BLACK, COLOR_BLUE, alpha > 0.5);
+      } else {
+        debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 4u) {
-      // Band 4: ambientPattern
-      debugValue = f32(getAmbientPattern(fx, fy));
+      // Band 4: ambientPattern value
+      // BLACK=low, YELLOW=high
+      let pattern = f32(getAmbientPattern(fx, fy));
+      debugColor = select(COLOR_BLACK, COLOR_YELLOW, pattern > 0.5);
     } else if (bandIndex == 5u) {
-      // Band 5: bg-grid hasMsdf flag
+      // Band 5: shape[1].hasMsdf flag
+      // BLACK=0, MAGENTA=1
       if (numShapes > 1u) {
-        debugValue = f32(shapes[1].hasMsdf);
+        debugColor = select(COLOR_BLACK, COLOR_MAGENTA, shapes[1].hasMsdf == 1u);
+      } else {
+        debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 6u) {
-      // Band 6: bg-grid hasAlpha flag
+      // Band 6: shape[1].hasAlpha flag
+      // BLACK=0, CYAN=1
       if (numShapes > 1u) {
-        debugValue = f32(shapes[1].hasAlpha);
+        debugColor = select(COLOR_BLACK, COLOR_CYAN, shapes[1].hasAlpha == 1u);
+      } else {
+        debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 7u) {
-      // Band 7: totalReflection (simulate the ambient loop)
-      var totalRefl: f32 = 1.0;
-      for (var i: u32 = 0u; i < numShapes; i++) {
-        let shape = shapes[i];
-        let coverage = getMsdfCoverage(shape, fx, fy);
-        let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
-        if (coverage > 0.0 || isFullCoverage) {
-          // Simulate 100% reflection for shape 0, 60% for shape 1
-          let materialRefl = select(0.6, 1.0, i == 0u);
-          totalRefl *= materialRefl;
+      // Band 7: shape[1].width (should be ~869)
+      // BLACK=0, RED=1-99, ORANGE=100-499, YELLOW=500-999, WHITE=1000+
+      if (numShapes > 1u) {
+        let w = shapes[1].width;
+        if (w < 1.0) {
+          debugColor = COLOR_BLACK;
+        } else if (w < 100.0) {
+          debugColor = COLOR_RED;
+        } else if (w < 500.0) {
+          debugColor = COLOR_ORANGE;
+        } else if (w < 1000.0) {
+          debugColor = COLOR_YELLOW;
+        } else {
+          debugColor = COLOR_WHITE;
         }
+      } else {
+        debugColor = COLOR_PURPLE;
       }
-      debugValue = totalRefl;
     }
     
-    let debugColor = valueToDebugColor(debugValue, bandIndex);
+    // Add vertical separator line between left/right halves
+    if (x == params.width / 2u || x == params.width / 2u + 1u) {
+      debugColor = COLOR_GRAY;
+    }
+    
+    // Add horizontal separator lines between bands
+    if (y % bandHeight < 2u) {
+      debugColor = COLOR_GRAY;
+    }
+    
     rgbOutput[pixelIndex] = vec4<f32>(debugColor, 1.0);
     maxPerPixel[pixelIndex] = 1.0;
     return;
