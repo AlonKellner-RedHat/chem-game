@@ -266,10 +266,35 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
         debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 4u) {
-      // Band 4: ambientPattern value
-      // BLACK=low, YELLOW=high
-      let pattern = f32(getAmbientPattern(fx, fy));
-      debugColor = select(COLOR_BLACK, COLOR_YELLOW, pattern > 0.5);
+      // Band 4: Simulated totalReflection (ambient loop result)
+      // Should be: WHITE=1.0 (outside circles), GRAY=0.6 (inside circles)
+      var totalRefl: f32 = 1.0;
+      for (var i: u32 = 0u; i < numShapes; i++) {
+        let shape = shapes[i];
+        // Only process shapes on layer 0
+        if (shape.layer == 0u) {
+          let coverage = getMsdfCoverage(shape, fx, fy);
+          let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
+          if (coverage > 0.0 || isFullCoverage) {
+            // Simulate material reflection: shape 0 = 100%, shape 1 = 60%
+            var materialRefl: f32 = 1.0;
+            if (shape.hasMsdf == 1u) {
+              materialRefl = 0.6;  // bg-grid has 60% reflection
+            }
+            totalRefl *= materialRefl;
+          }
+        }
+      }
+      // Color based on totalRefl: WHITE=1.0, GRAY~0.6, BLACK=0
+      if (totalRefl > 0.9) {
+        debugColor = COLOR_WHITE;  // 1.0 = outside circles
+      } else if (totalRefl > 0.5) {
+        debugColor = COLOR_GRAY;   // 0.6 = inside circles
+      } else if (totalRefl > 0.1) {
+        debugColor = COLOR_ORANGE; // unexpected low value
+      } else {
+        debugColor = COLOR_BLACK;  // 0 = something wrong
+      }
     } else if (bandIndex == 5u) {
       // Band 5: shape[0].layer value
       // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
