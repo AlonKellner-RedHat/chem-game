@@ -5,7 +5,7 @@
  * Organized into 4 bind groups to stay within WebGPU limits.
  */
 
-import package::wgsl::structs::{Params, Shape};
+import package::wgsl::structs::{Params, Shape, TextureShape, AmbientShape, AmbientShapesUniform, MAX_AMBIENT_SHAPES};
 import package::wgsl::constants::SPECTRAL_SAMPLES;
 
 // ============================================================
@@ -47,6 +47,13 @@ import package::wgsl::constants::SPECTRAL_SAMPLES;
 /// Blurred transmitted light for in-shape scatter
 @group(0) @binding(9) var<storage, read_write> blurredTransmitted: array<f16>;
 
+/// Texture shape array (storage buffer, read-only)
+@group(0) @binding(10) var<storage, read> textureShapes: array<TextureShape>;
+
+/// Ambient shapes uniform buffer (fixed max count to stay within storage buffer limits)
+/// Uses uniform instead of storage to keep storage buffer count at 10
+@group(0) @binding(11) var<uniform> ambientShapesUniform: AmbientShapesUniform;
+
 // ============================================================
 // Bind Group 1: Material Textures
 // ============================================================
@@ -72,18 +79,32 @@ import package::wgsl::constants::SPECTRAL_SAMPLES;
 @group(1) @binding(8) var renderReflectionPalette: texture_2d<f32>; // Low-res
 
 // ============================================================
+// Bind Group 1: Texture Shape Palette Arrays (bindings 9-10)
+// ============================================================
+// Uses texture arrays for unlimited texture materials (hundreds supported)
+// Each layer = one texture material, RGB packed:
+// R = transmission, G = emission, B = reflection
+// X = wavelength, layer index = texture material index
+
+/// Texture shape palette array (high-res, 4500 samples per layer, RGB packed)
+/// Supports hundreds of texture materials via array layers
+@group(1) @binding(9) var texturePaletteArray: texture_2d_array<f32>;
+
+/// Texture shape palette array (low-res, 32 samples per layer, RGB packed)
+@group(1) @binding(10) var renderTexturePaletteArray: texture_2d_array<f32>;
+
+// ============================================================
 // Bind Group 2: CIE Color Matching Functions
 // ============================================================
 // 2D textures with height=1 for wavelength lookup
 
-/// CIE X, Y, Z color matching functions
-@group(2) @binding(0) var cieXTexture: texture_2d<f32>;
-@group(2) @binding(1) var cieYTexture: texture_2d<f32>;
-@group(2) @binding(2) var cieZTexture: texture_2d<f32>;
-@group(2) @binding(3) var cieSampler: sampler;
+/// CIE X, Y, Z color matching functions (packed into RGB channels)
+/// R = CIE X, G = CIE Y, B = CIE Z
+@group(2) @binding(0) var cieTexture: texture_2d<f32>;
+@group(2) @binding(1) var cieSampler: sampler;
 
 /// CIE scale factors (x, y, z, unused)
-@group(2) @binding(4) var<uniform> cieScales: vec4<f32>;
+@group(2) @binding(2) var<uniform> cieScales: vec4<f32>;
 
 // ============================================================
 // Bind Group 3: Shape Mask Texture Arrays

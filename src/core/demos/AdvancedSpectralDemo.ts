@@ -16,6 +16,7 @@ export class AdvancedSpectralDemo extends SpectralDemo {
   // Enable advanced features
   protected enableEmission = true;
   protected enableDarkMode = true;
+  protected enableBacklight = true;
 
   // Emission aura parameters
   protected emissionSpreadFactor = 0.3; // Default: 30% of emission spreads sideways

@@ -174,3 +174,110 @@ struct ScatterLUT {
   /// Scattering coefficients at SCATTER_LUT_SIZE wavelength samples
   coefficients: array<f16, 64>,
 }
+
+// ============================================================
+// Texture Shape Definition
+// ============================================================
+
+/// TextureShape data structure (64 bytes, 16-byte aligned)
+/// Represents a texture overlay with spectral distribution properties.
+///
+/// Texture shapes differ from material shapes:
+/// - Support MSDF + alpha (materials only support MSDF)
+/// - Have 3 spectral distributions (transmission, emission, reflection)
+/// - Overlap interactions: transmission=multiplicative, emission/reflection=additive
+/// - Applied AFTER material shapes in each layer (material reflection absorbed by texture transmission)
+struct TextureShape {
+  // Position and bounds (16 bytes)
+  x: f32,              // Position X
+  y: f32,              // Position Y
+  width: f32,          // Bounding box width
+  height: f32,         // Bounding box height
+
+  // Layer and palette indices (16 bytes)
+  layer: u32,                   // Render order (0=background, higher=foreground)
+  transmissionIndex: u32,       // Index into texture transmission palette
+  emissionIndex: u32,           // Index into texture emission palette
+  reflectionIndex: u32,         // Index into texture reflection palette
+
+  // MSDF and alpha texture indices (16 bytes)
+  msdfArrayIndex: u32,          // MSDF array: 0=small (256x256), 1=large (1280x720)
+  msdfLayerIndex: u32,          // Layer within MSDF texture array
+  alphaArrayIndex: u32,         // Alpha array: 0=small, 1=large
+  alphaLayerIndex: u32,         // Layer within alpha texture array
+
+  // Texture existence flags and dimensions (16 bytes)
+  hasMsdf: u32,                 // 1 if MSDF texture exists, 0 otherwise
+  hasAlpha: u32,                // 1 if alpha texture exists, 0 otherwise
+  texWidth: f32,                // Texture width (for screenPxRange)
+  texHeight: f32,               // Texture height
+}
+
+// ============================================================
+// Ambient Shape Definition
+// ============================================================
+
+/// AmbientShape data structure (64 bytes, 16-byte aligned)
+/// Represents a light source shape with brightness property.
+///
+/// Ambient shapes provide the light that gets reflected by material and texture shapes.
+/// - Brightness is a scalar (uniform across the spectrum)
+/// - Overlap interaction: additive (brightness values sum)
+/// - Supports MSDF + alpha for spatial variation
+///
+/// Note: Stored in uniform buffer with fixed max count (MAX_AMBIENT_SHAPES)
+struct AmbientShape {
+  // Position and bounds (16 bytes)
+  x: f32,              // Position X
+  y: f32,              // Position Y
+  width: f32,          // Bounding box width
+  height: f32,         // Bounding box height
+
+  // Brightness property (4 bytes)
+  brightness: f32,     // Brightness scalar (uniform across spectrum)
+
+  // MSDF texture indices (8 bytes)
+  msdfArrayIndex: u32,          // MSDF array: 0=small (256x256), 1=large (1280x720)
+  msdfLayerIndex: u32,          // Layer within MSDF texture array
+
+  // Alpha texture indices (8 bytes)
+  alphaArrayIndex: u32,         // Alpha array: 0=small, 1=large
+  alphaLayerIndex: u32,         // Layer within alpha texture array
+
+  // Texture existence flags (8 bytes)
+  hasMsdf: u32,                 // 1 if MSDF texture exists, 0 otherwise
+  hasAlpha: u32,                // 1 if alpha texture exists, 0 otherwise
+
+  // Texture dimensions (8 bytes)
+  texWidth: f32,                // Texture width (for screenPxRange)
+  texHeight: f32,               // Texture height
+
+  // Padding for 16-byte alignment (12 bytes)
+  _padding: vec3<f32>,
+}
+
+/// Maximum number of ambient shapes (uniform buffer limit)
+const MAX_AMBIENT_SHAPES: u32 = 8u;
+
+/// Ambient shapes uniform buffer container
+/// Uses fixed-size array to fit in uniform buffer (reduces storage buffer count)
+struct AmbientShapesUniform {
+  /// Number of active ambient shapes (0 = use legacy ambient)
+  count: u32,
+  _padding: vec3<u32>,
+  /// Fixed-size array of ambient shapes
+  shapes: array<AmbientShape, 8>,  // MAX_AMBIENT_SHAPES
+}
+
+// ============================================================
+// Texture Physics Result Structure
+// ============================================================
+
+/// Result of processing texture shapes at a pixel
+struct TexturePhysicsResult {
+  /// Light after texture absorption (transmitted + emission)
+  output: f16,
+
+  /// Accumulated reflection factor for ambient light
+  reflection: f16,
+}

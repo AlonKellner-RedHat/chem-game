@@ -191,3 +191,52 @@ export function generateCIETextures(
 
   return { x: xData, y: yData, z: zData, scales };
 }
+
+/**
+ * Generate packed CIE color matching function texture data (RGB format)
+ *
+ * @param wavelengthMin - Minimum wavelength (nm)
+ * @param wavelengthMax - Maximum wavelength (nm)
+ * @param resolution - Number of samples
+ * @returns Object with packed RGBA array and scale factors
+ */
+export function generatePackedCIETexture(
+  wavelengthMin: number,
+  wavelengthMax: number,
+  resolution: number
+): {
+  data: Float32Array; // RGBA packed: R=X, G=Y, B=Z, A=1
+  scales: { x: number; y: number; z: number };
+} {
+  const data = new Float32Array(resolution * 4); // RGBA
+  const step = (wavelengthMax - wavelengthMin) / (resolution - 1);
+
+  let maxX = 0,
+    maxY = 0,
+    maxZ = 0;
+
+  // First pass: find max values
+  for (let i = 0; i < resolution; i++) {
+    const wavelength = wavelengthMin + i * step;
+    maxX = Math.max(maxX, getCIE_X(wavelength));
+    maxY = Math.max(maxY, getCIE_Y(wavelength));
+    maxZ = Math.max(maxZ, getCIE_Z(wavelength));
+  }
+
+  const scales = {
+    x: maxX || 1,
+    y: maxY || 1,
+    z: maxZ || 1,
+  };
+
+  // Second pass: normalize and pack
+  for (let i = 0; i < resolution; i++) {
+    const wavelength = wavelengthMin + i * step;
+    data[i * 4 + 0] = getCIE_X(wavelength) / scales.x; // R = X
+    data[i * 4 + 1] = getCIE_Y(wavelength) / scales.y; // G = Y
+    data[i * 4 + 2] = getCIE_Z(wavelength) / scales.z; // B = Z
+    data[i * 4 + 3] = 1.0; // A = unused
+  }
+
+  return { data, scales };
+}

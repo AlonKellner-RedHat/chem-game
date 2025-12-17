@@ -13,7 +13,7 @@
  */
 
 import package::wgsl::constants::{VISIBLE_MIN, VISIBLE_MAX};
-import package::wgsl::bindings::{cieXTexture, cieYTexture, cieZTexture, cieSampler, cieScales};
+import package::wgsl::bindings::{cieTexture, cieSampler, cieScales};
 
 // ============================================================
 // CIE Color Matching Functions
@@ -38,12 +38,10 @@ fn getCIE(wavelengthNm: f32) -> vec3<f32> {
   let u = (wavelengthNm - VISIBLE_MIN) / (VISIBLE_MAX - VISIBLE_MIN);
   let uv = vec2<f32>(u, 0.5); // 2D texture with height=1
 
-  // Sample each color matching function
-  let x = textureSampleLevel(cieXTexture, cieSampler, uv, 0.0).r * cieScales.x;
-  let y = textureSampleLevel(cieYTexture, cieSampler, uv, 0.0).r * cieScales.y;
-  let z = textureSampleLevel(cieZTexture, cieSampler, uv, 0.0).r * cieScales.z;
+  // Sample packed CIE texture (R=X, G=Y, B=Z)
+  let cie = textureSampleLevel(cieTexture, cieSampler, uv, 0.0).rgb;
 
-  return vec3<f32>(x, y, z);
+  return vec3<f32>(cie.r * cieScales.x, cie.g * cieScales.y, cie.b * cieScales.z);
 }
 
 // ============================================================

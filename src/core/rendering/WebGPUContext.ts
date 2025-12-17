@@ -73,9 +73,10 @@ export async function initWebGPU(): Promise<WebGPUContext | null> {
   const adapterLimits = adapter.limits;
   // We need 10 storage buffers for the spectral pipeline (bindings 1-10)
   // Binding 0 is a uniform buffer (params), not counted as storage
+  // Binding 11 is a uniform buffer (ambientShapesUniform), not counted as storage
   // Bindings: shapes, rgbOutput, spectrumOutput, maxPerPixel, spectrumBox,
-  // spectralInput, spectralOutput, scatterSource, emissionAura, blurredTransmitted
-  // Note: scatteringSigma was removed (unused - per-pixel sigma replaced by global atmospheric sigma)
+  // spectralInput, spectralOutput, scatterSource, blurredTransmitted, textureShapes
+  // Note: ambientShapes moved to uniform buffer to stay within default 10 storage buffer limit
   const requiredStorageBuffers = 10;
 
   if (adapterLimits.maxStorageBuffersPerShaderStage < requiredStorageBuffers) {

@@ -22,8 +22,10 @@ import package::wgsl::physics::materials::{
 };
 import package::wgsl::physics::planck::getKirchhoffEmission;
 import package::wgsl::physics::layer::computeLayerPhysicsWithFluorescence;
+import package::wgsl::physics::texture::{applyTextureShapes, hasTextureShapesAtLayer};
 import package::wgsl::rendering::msdf::{getShapeMask, getMsdfCoverage, getAlphaValue};
 import package::wgsl::rendering::ambient::{getAmbientPattern, getAmbientAlpha, getAmbientIntensity};
+import package::wgsl::rendering::ambient_shapes::{getAmbientBrightness, hasAmbientShapes};
 
 // DEBUG: Set to 1 to enable debug output in processLayerTransition
 const COMBINE_DEBUG_MODE: u32 = 0u;
@@ -190,6 +192,14 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
 
 /**
  * Initialize spectral buffer with background illumination.
+ *
+ * Background layer is special:
+ * - Contains only texture shapes (no material shapes)
+ * - Texture emission provides the scene illumination
+ * - Texture reflection interacts with ambient shapes
+ * - Transmission is ignored (nothing behind background)
+ *
+ * Falls back to legacy getAmbientIntensity() if no texture shapes present.
  */
 @compute @workgroup_size(8, 8)
 fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -202,14 +212,38 @@ fn initBackgroundSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let screenPos = localToScreen(localX, localY);
   let inBounds = isValidScreenPos(screenPos);
+  let fx = f32(screenPos.x);
+  let fy = f32(screenPos.y);
+
+  // Check if background uses texture shapes (layer 0)
+  let useTextureBackground = inBounds && hasTextureShapesAtLayer(0u);
+
+  // Get ambient brightness for reflection (if ambient shapes exist)
+  var ambientBright: f16 = f16(0.0);
+  if (inBounds && hasAmbientShapes()) {
+    ambientBright = getAmbientBrightness(fx, fy);
+  }
 
   for (var wIdx: u32 = 0u; wIdx < params.sampleCount; wIdx++) {
     let spectralIdx = getSpectralIdx(localX, localY, wIdx);
+    let wavelength = getWavelength(wIdx);
 
     var intensity: f16 = f16(0.0);
+
     if (inBounds) {
-      let wavelength = getWavelength(wIdx);
-      intensity = getAmbientIntensity(wavelength);
+      if (useTextureBackground) {
+        // New behavior: Background from texture shapes
+        // Input light is 0 (nothing behind background)
+        // Texture emission provides the scene illumination
+        // Texture reflection reflects ambient brightness
+        let textureResult = applyTextureShapes(f16(0.0), wavelength, fx, fy, 0u);
+
+        // Output = emission + (ambient brightness × reflection)
+        intensity = textureResult.output + ambientBright * textureResult.reflection;
+      } else {
+        // Legacy fallback: Use getAmbientIntensity
+        intensity = getAmbientIntensity(wavelength);
+      }
     }
 
     spectralOutput[spectralIdx] = intensity;
@@ -585,12 +619,19 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
     var combined = direct + inShapeScatter + aura;
 
     // ============================================================
-    // STEP 2: Apply ambient reflection (multiplicative compounding)
-    // Uses original formula: compound reflections, then multiply by maxCoverage
-    // Ambient alpha gradient modulates intensity (lower alpha = less reflection)
+    // STEP 2: Apply material reflection
+    // Uses ambient brightness from ambient shapes (or legacy fallback)
     // ============================================================
+    var materialReflected: f16 = f16(0.0);
     if (inBounds) {
-      let ambient = getAmbientIntensity(wavelength);
+      // Get ambient brightness from ambient shapes, or fallback to legacy
+      var ambientBright: f16;
+      if (hasAmbientShapes()) {
+        ambientBright = getAmbientBrightness(fx, fy);
+      } else {
+        // Legacy fallback: use background intensity with pattern/alpha
+        ambientBright = getAmbientIntensity(wavelength) * ambientPattern * ambientAlpha;
+      }
 
       // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection: f16 = f16(1.0);
@@ -627,9 +668,33 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       }
 
       if (anyShapeOnLayer) {
-        // Apply coverage and ambient alpha modulation at the end
-        combined += ambient * totalReflection * maxCoverage * ambientPattern * ambientAlpha;
+        // Compute material reflected light (will be absorbed by texture transmission)
+        materialReflected = ambientBright * totalReflection * maxCoverage;
+        combined += materialReflected;
       }
+    }
+
+    // ============================================================
+    // STEP 2.5: Apply texture shapes (transmission, emission, reflection)
+    // Texture transmission absorbs BOTH transmitted light AND material reflection
+    // ============================================================
+    if (inBounds && hasTextureShapesAtLayer(params.currentLayer)) {
+      // Get ambient brightness for texture reflection
+      var ambientBright: f16;
+      if (hasAmbientShapes()) {
+        ambientBright = getAmbientBrightness(fx, fy);
+      } else {
+        ambientBright = getAmbientIntensity(wavelength) * ambientPattern * ambientAlpha;
+      }
+
+      // Apply texture shapes: transmission absorbs combined light, emission adds
+      let textureResult = applyTextureShapes(combined, wavelength, fx, fy, params.currentLayer);
+
+      // Update combined with texture output (transmitted + emitted)
+      combined = textureResult.output;
+
+      // Add texture reflection (ambient × texture reflection factor)
+      combined += ambientBright * textureResult.reflection;
     }
 
     // ============================================================
@@ -807,18 +872,20 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
     let inShapeScatter = blurred * scatterProb4 * scatter_frac;
     var combined = direct + inShapeScatter + aura;
 
+    // Get ambient brightness (scalar, same for all wavelengths in vec4)
+    var ambientBright: f16 = f16(0.0);
+    if (inBounds) {
+      if (hasAmbientShapes()) {
+        ambientBright = getAmbientBrightness(fx, fy);
+      } else {
+        // Legacy fallback - use mid-range wavelength
+        ambientBright = getAmbientIntensity(wavelengths.y) * ambientPattern * ambientAlpha;
+      }
+    }
+
     // Vectorized ambient reflection (multiplicative compounding)
     // Uses original formula: compound reflections, then multiply by maxCoverage
-    // Ambient alpha gradient modulates intensity (lower alpha = less reflection)
     if (inBounds) {
-      // Get ambient intensity for each wavelength
-      let ambient = vec4<f16>(
-        getAmbientIntensity(wavelengths.x),
-        getAmbientIntensity(wavelengths.y),
-        getAmbientIntensity(wavelengths.z),
-        getAmbientIntensity(wavelengths.w)
-      );
-
       // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
       var maxCoverage: f16 = f16(0.0);
@@ -861,9 +928,27 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       }
 
       if (anyShapeOnLayer) {
-        // Apply coverage and ambient alpha modulation at the end
-        combined += ambient * totalReflection * maxCoverage * vec4<f16>(ambientPattern) * vec4<f16>(ambientAlpha);
+        // Add material reflected light (will be absorbed by texture transmission)
+        combined += vec4<f16>(ambientBright) * totalReflection * maxCoverage;
       }
+    }
+
+    // Apply texture shapes (non-vectorized for simplicity)
+    // Texture transmission absorbs BOTH transmitted light AND material reflection
+    if (inBounds && hasTextureShapesAtLayer(params.currentLayer)) {
+      // Process each wavelength
+      let textureResult0 = applyTextureShapes(combined.x, wavelengths.x, fx, fy, params.currentLayer);
+      let textureResult1 = applyTextureShapes(combined.y, wavelengths.y, fx, fy, params.currentLayer);
+      let textureResult2 = applyTextureShapes(combined.z, wavelengths.z, fx, fy, params.currentLayer);
+      let textureResult3 = applyTextureShapes(combined.w, wavelengths.w, fx, fy, params.currentLayer);
+
+      // Update combined with texture output
+      combined = vec4<f16>(
+        textureResult0.output + ambientBright * textureResult0.reflection,
+        textureResult1.output + ambientBright * textureResult1.reflection,
+        textureResult2.output + ambientBright * textureResult2.reflection,
+        textureResult3.output + ambientBright * textureResult3.reflection
+      );
     }
 
     // Store results

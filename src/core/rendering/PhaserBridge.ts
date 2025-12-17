@@ -15,12 +15,13 @@ import {
   type ComputeParams,
   type DebugCollector,
   type GPUShape,
+  type GPUTextureShape,
   SpectralComputePipeline,
 } from './SpectralCompute';
 import { initWebGPU, type WebGPUContext } from './WebGPUContext';
 
-// Re-export GPUShape for convenience
-export type { GPUShape } from './SpectralCompute';
+// Re-export GPUShape and GPUTextureShape for convenience
+export type { GPUShape, GPUTextureShape } from './SpectralCompute';
 
 /**
  * Renderer interface (abstracts Phaser version)
@@ -52,6 +53,12 @@ export interface Renderer {
 
   /** Set rendering reflection spectra (low-res for rendering) */
   setRenderingReflectionData?(reflectionSpectra: Float32Array[]): void;
+
+  /** Set texture shapes with emission/transmission/reflection spectra */
+  setTextureShapes?(shapes: GPUTextureShape[]): void;
+
+  /** Set texture palette data (packed RGB: R=transmission, G=emission, B=reflection) */
+  setTexturePaletteData?(spectra: Float32Array[], renderSpectra: Float32Array[]): void;
 
   /** Set shapes to render */
   setShapes(shapes: GPUShape[]): void;
@@ -221,6 +228,29 @@ export class WebGPURenderer implements Renderer {
   setRenderingReflectionData(reflectionSpectra: Float32Array[]): void {
     if (this.pipeline) {
       this.pipeline.setRenderingReflectionData(reflectionSpectra);
+    }
+    this.invalidateSpectrumCache();
+  }
+
+  /**
+   * Set texture shapes with spectral properties
+   * Used for backlight emission from patterns like circle-grid
+   */
+  setTextureShapes(shapes: GPUTextureShape[]): void {
+    if (this.pipeline) {
+      this.pipeline.setTextureShapes(shapes);
+    }
+    this.invalidateSpectrumCache();
+  }
+
+  /**
+   * Set texture palette data (packed RGB: R=transmission, G=emission, B=reflection)
+   * @param spectra - High-res spectra arrays for spectral plot
+   * @param renderSpectra - Low-res spectra arrays for rendering
+   */
+  setTexturePaletteData(spectra: Float32Array[], renderSpectra: Float32Array[]): void {
+    if (this.pipeline) {
+      this.pipeline.setTexturePaletteData(spectra, renderSpectra);
     }
     this.invalidateSpectrumCache();
   }

@@ -21,6 +21,12 @@ import {
 export type BackgroundMode = 'normal' | 'uv' | 'dark';
 
 /**
+ * Backlight modes (texture shape emission)
+ * Same values as BackgroundMode but independent control
+ */
+export type BacklightMode = 'normal' | 'uv' | 'dark';
+
+/**
  * Output mode for spectrum calculation
  */
 export type OutputMode = 'rgb' | 'spectrum';

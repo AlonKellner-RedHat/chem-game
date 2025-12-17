@@ -15,9 +15,9 @@
  * - Right side: high alpha (linear gradient)
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 
-describe("Ambient Alpha Gradient", () => {
+describe('Ambient Alpha Gradient', () => {
   // Simulated alpha sampling based on the gradient definition
   // Linear: x1=100%, x2=0% (right to left), opacity 1.0 -> 0.0
   // Radial: center at (128, 648), radius 1200, focal at (64, 684)
@@ -82,19 +82,13 @@ describe("Ambient Alpha Gradient", () => {
     return screenBlend(linear, radial);
   }
 
-  describe("Alpha Gradient Spatial Variation", () => {
-    it("getAmbientAlpha returns different values at different positions", () => {
+  describe('Alpha Gradient Spatial Variation', () => {
+    it('getAmbientAlpha returns different values at different positions', () => {
       const topLeft = simulateGetAmbientAlpha(0, 0);
       const topRight = simulateGetAmbientAlpha(SCREEN_WIDTH - 1, 0);
       const bottomLeft = simulateGetAmbientAlpha(0, SCREEN_HEIGHT - 1);
-      const bottomRight = simulateGetAmbientAlpha(
-        SCREEN_WIDTH - 1,
-        SCREEN_HEIGHT - 1
-      );
-      const center = simulateGetAmbientAlpha(
-        SCREEN_WIDTH / 2,
-        SCREEN_HEIGHT / 2
-      );
+      const bottomRight = simulateGetAmbientAlpha(SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+      const center = simulateGetAmbientAlpha(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 
       // All positions should have different alpha values
       const values = [topLeft, topRight, bottomLeft, bottomRight, center];
@@ -104,7 +98,7 @@ describe("Ambient Alpha Gradient", () => {
       expect(uniqueValues.size).toBeGreaterThanOrEqual(3);
     });
 
-    it("top-left corner has low alpha (darkest region)", () => {
+    it('top-left corner has low alpha (darkest region)', () => {
       const topLeft = simulateGetAmbientAlpha(10, 10);
 
       // Top-left: far from radial center, left side of linear gradient
@@ -112,18 +106,15 @@ describe("Ambient Alpha Gradient", () => {
       expect(topLeft).toBeLessThan(0.3);
     });
 
-    it("bottom-right corner has high alpha (brightest region)", () => {
-      const bottomRight = simulateGetAmbientAlpha(
-        SCREEN_WIDTH - 10,
-        SCREEN_HEIGHT - 10
-      );
+    it('bottom-right corner has high alpha (brightest region)', () => {
+      const bottomRight = simulateGetAmbientAlpha(SCREEN_WIDTH - 10, SCREEN_HEIGHT - 10);
 
       // Bottom-right: right side of linear (bright) + some radial
       // Should be bright
       expect(bottomRight).toBeGreaterThan(0.8);
     });
 
-    it("bottom-left has moderate alpha (radial center)", () => {
+    it('bottom-left has moderate alpha (radial center)', () => {
       // Near the radial gradient center
       const bottomLeft = simulateGetAmbientAlpha(100, 650);
 
@@ -131,7 +122,7 @@ describe("Ambient Alpha Gradient", () => {
       expect(bottomLeft).toBeGreaterThan(0.5);
     });
 
-    it("right side has high alpha (linear gradient)", () => {
+    it('right side has high alpha (linear gradient)', () => {
       const rightSide = simulateGetAmbientAlpha(SCREEN_WIDTH - 50, 360);
 
       // Right side: linear gradient is at maximum
@@ -139,19 +130,17 @@ describe("Ambient Alpha Gradient", () => {
     });
   });
 
-  describe("Alpha Modulates Ambient Contribution", () => {
+  describe('Alpha Modulates Ambient Contribution', () => {
     const AMBIENT_INTENSITY = 1.0;
     const TOTAL_REFLECTION = 0.8;
     const MAX_COVERAGE = 1.0;
     const AMBIENT_PATTERN = 0.6; // Inside circles
 
     function calculateAmbientContribution(alpha: number): number {
-      return (
-        AMBIENT_INTENSITY * TOTAL_REFLECTION * MAX_COVERAGE * AMBIENT_PATTERN * alpha
-      );
+      return AMBIENT_INTENSITY * TOTAL_REFLECTION * MAX_COVERAGE * AMBIENT_PATTERN * alpha;
     }
 
-    it("low alpha reduces ambient contribution", () => {
+    it('low alpha reduces ambient contribution', () => {
       const lowAlpha = 0.1;
       const highAlpha = 0.9;
 
@@ -163,21 +152,20 @@ describe("Ambient Alpha Gradient", () => {
       expect(lowContrib / highContrib).toBeCloseTo(lowAlpha / highAlpha, 1);
     });
 
-    it("alpha=0 results in zero ambient contribution", () => {
+    it('alpha=0 results in zero ambient contribution', () => {
       const contrib = calculateAmbientContribution(0);
       expect(contrib).toBe(0);
     });
 
-    it("alpha=1 maintains full ambient contribution", () => {
+    it('alpha=1 maintains full ambient contribution', () => {
       const contrib = calculateAmbientContribution(1.0);
-      const expected =
-        AMBIENT_INTENSITY * TOTAL_REFLECTION * MAX_COVERAGE * AMBIENT_PATTERN;
+      const expected = AMBIENT_INTENSITY * TOTAL_REFLECTION * MAX_COVERAGE * AMBIENT_PATTERN;
       expect(contrib).toBe(expected);
     });
   });
 
-  describe("getAmbientAlpha Contract", () => {
-    it("returns values in range [0, 1]", () => {
+  describe('getAmbientAlpha Contract', () => {
+    it('returns values in range [0, 1]', () => {
       // Sample many positions
       for (let x = 0; x < SCREEN_WIDTH; x += 100) {
         for (let y = 0; y < SCREEN_HEIGHT; y += 100) {
@@ -188,7 +176,7 @@ describe("Ambient Alpha Gradient", () => {
       }
     });
 
-    it("alpha varies continuously (no sudden jumps)", () => {
+    it('alpha varies continuously (no sudden jumps)', () => {
       // Sample along a diagonal
       let prevAlpha = simulateGetAmbientAlpha(0, 0);
 
@@ -204,4 +192,3 @@ describe("Ambient Alpha Gradient", () => {
     });
   });
 });
-

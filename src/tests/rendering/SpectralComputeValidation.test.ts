@@ -77,11 +77,12 @@ describe('SpectralCompute Validation', () => {
     }
 
     // SpectralCompute uses 10 storage buffers in bind group 0
-    // Default limit is 8, so we need to request the adapter's max
+    // (ambientShapes moved to uniform buffer to stay within default limit)
     const adapterLimits = adapter.limits;
+    const requiredStorageBuffers = 10;
     const maxStorageBuffers = Math.min(
       adapterLimits.maxStorageBuffersPerShaderStage,
-      10 // We need at least 10
+      requiredStorageBuffers
     );
 
     device = await adapter.requestDevice({
