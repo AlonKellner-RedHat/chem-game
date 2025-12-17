@@ -400,6 +400,38 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
 
+  // DEBUG: Show raw spectral value at wavelength index 8 (middle of spectrum)
+  // This bypasses all XYZ conversion to see the RAW spectral buffer content
+  if (DEBUG_MODE == 1u) {
+    // Sample spectral buffer at wavelength 8 (roughly 550nm - green)
+    let spectralIdx = getSpectralIndex(x, y, 8u);
+    let intensity = f32(spectralInput[spectralIdx]);
+    
+    // Color band by row to show variation
+    let bandHeight = params.height / 4u;
+    let bandIndex = y / bandHeight;
+    
+    var debugColor = vec3<f32>(0.0, 0.0, 0.0);
+    
+    if (bandIndex == 0u) {
+      // Band 0: Raw intensity as grayscale (0=black, 1=white)
+      debugColor = vec3<f32>(intensity, intensity, intensity);
+    } else if (bandIndex == 1u) {
+      // Band 1: Is intensity > 0.5? GREEN=yes, RED=no
+      debugColor = select(COLOR_RED, COLOR_GREEN, intensity > 0.5);
+    } else if (bandIndex == 2u) {
+      // Band 2: Is intensity > 0.3? CYAN=yes, ORANGE=no
+      debugColor = select(COLOR_ORANGE, COLOR_CYAN, intensity > 0.3);
+    } else {
+      // Band 3: Is intensity > 0.1? WHITE=yes, BLACK=no
+      debugColor = select(COLOR_BLACK, COLOR_WHITE, intensity > 0.1);
+    }
+    
+    rgbOutput[pixelIndex] = vec4<f32>(debugColor, 1.0);
+    maxPerPixel[pixelIndex] = intensity;
+    return;
+  }
+
   // Pass 0: Integrate spectrum to XYZ
   let dLambda = (params.wavelengthMax - params.wavelengthMin) / f32(SPECTRAL_SAMPLES - 1u);
   var xyz = vec3<f32>(0.0, 0.0, 0.0);
