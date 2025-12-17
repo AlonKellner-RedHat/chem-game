@@ -157,17 +157,17 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
           anyShapeOnLayer = true;
 
           let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-          // Blend material reflection based on coverage for anti-aliased edges
-          // Full-coverage shapes apply full reflection, MSDF shapes blend at edges
+          // Compound material reflections (NOT blended with coverage)
+          totalReflection *= materialRefl;
+          // Track max coverage for final scaling
           let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-          let blendedRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
-          totalReflection *= blendedRefl;
+          maxCoverage = max(maxCoverage, f16(effectiveCoverage));
         }
       }
 
       if (anyShapeOnLayer) {
-        // Apply ambient alpha modulation at the end
-        result += ambient * totalReflection * pattern * ambientAlpha;
+        // Apply coverage and ambient alpha modulation at the end
+        result += ambient * totalReflection * maxCoverage * pattern * ambientAlpha;
       }
     }
 
@@ -366,17 +366,18 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
         anyShapeOnLayer = true;
 
         let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-        // Blend material reflection based on coverage for anti-aliased edges
+        // Compound material reflections (NOT blended with coverage)
+        totalReflection *= materialRefl;
+        // Track max coverage for final scaling
         let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-        let blendedRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
-        totalReflection *= blendedRefl;
+        maxCoverage = max(maxCoverage, f16(effectiveCoverage));
       }
     }
 
     var ambientContribution: f16 = f16(0.0);
     if (anyShapeOnLayer) {
-      // Apply ambient alpha modulation at the end
-      ambientContribution = ambient * totalReflection * pattern * ambientAlpha;
+      // Apply coverage and ambient alpha modulation at the end
+      ambientContribution = ambient * totalReflection * maxCoverage * pattern * ambientAlpha;
     }
 
     spectralInput[spectralIdx] = current + ambientContribution;
@@ -578,6 +579,7 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
 
       // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection: f16 = f16(1.0);
+      var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
@@ -594,17 +596,18 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
             anyShapeOnLayer = true;
 
             let materialRefl = getMaterialReflection(shape.materialIndex, wavelength);
-            // Blend material reflection based on coverage for anti-aliased edges
+            // Compound material reflections (NOT blended with coverage)
+            totalReflection *= materialRefl;
+            // Track max coverage for final scaling
             let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-            let blendedRefl = mix(f16(1.0), materialRefl, f16(effectiveCoverage));
-            totalReflection *= blendedRefl;
+            maxCoverage = max(maxCoverage, f16(effectiveCoverage));
           }
         }
       }
 
       if (anyShapeOnLayer) {
-        // Apply ambient alpha modulation at the end
-        combined += ambient * totalReflection * ambientPattern * ambientAlpha;
+        // Apply coverage and ambient alpha modulation at the end
+        combined += ambient * totalReflection * maxCoverage * ambientPattern * ambientAlpha;
       }
     }
 
@@ -795,8 +798,9 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
         getAmbientIntensity(wavelengths.w)
       );
 
-      // Multiplicative compounding: compound material reflections
+      // Multiplicative compounding: compound material reflections, track max coverage
       var totalReflection = vec4<f16>(1.0h, 1.0h, 1.0h, 1.0h);
+      var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
@@ -820,17 +824,19 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
               getMaterialReflection(shape.materialIndex, wavelengths.w)
             );
 
-            // Blend material reflection based on coverage for anti-aliased edges
+            // Compound material reflections (NOT blended with coverage)
+            totalReflection *= materialRefl;
+            // Track max coverage for final scaling
             let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
-            let blendedRefl = mix(vec4<f16>(1.0h), materialRefl, vec4<f16>(f16(effectiveCoverage)));
-            totalReflection *= blendedRefl;
+            maxCoverage = max(maxCoverage, f16(effectiveCoverage));
           }
         }
       }
 
       if (anyShapeOnLayer) {
-        // Apply ambient alpha modulation at the end
-        combined += ambient * totalReflection * vec4<f16>(ambientPattern) * vec4<f16>(ambientAlpha);
+        // Apply coverage and ambient alpha modulation at the end
+        // Ambient alpha reduces intensity: lower alpha = less ambient reflection
+        combined += ambient * totalReflection * maxCoverage * vec4<f16>(ambientPattern) * vec4<f16>(ambientAlpha);
       }
     }
 
