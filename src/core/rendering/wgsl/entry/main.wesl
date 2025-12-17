@@ -296,63 +296,75 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
         debugColor = COLOR_BLACK;  // 0 = something wrong
       }
     } else if (bandIndex == 5u) {
-      // Band 5: shape[0].layer value
-      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
-      if (numShapes > 0u) {
-        let layer = shapes[0].layer;
-        if (layer == 0u) {
-          debugColor = COLOR_BLACK;
-        } else if (layer == 1u) {
-          debugColor = COLOR_RED;
-        } else if (layer == 2u) {
-          debugColor = COLOR_GREEN;
-        } else if (layer == 3u) {
-          debugColor = COLOR_BLUE;
-        } else if (layer == 4u) {
-          debugColor = COLOR_YELLOW;
-        } else {
-          debugColor = COLOR_CYAN;
+      // Band 5: maxCoverage (should always be 1.0 due to bg-base)
+      // BLACK=0, GRAY=0.5, WHITE=1.0
+      var maxCov: f32 = 0.0;
+      for (var i: u32 = 0u; i < numShapes; i++) {
+        let shape = shapes[i];
+        if (shape.layer == 0u) {
+          let coverage = getMsdfCoverage(shape, fx, fy);
+          let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
+          if (coverage > 0.0 || isFullCoverage) {
+            let effCov = select(coverage, 1.0, isFullCoverage);
+            maxCov = max(maxCov, effCov);
+          }
         }
+      }
+      if (maxCov > 0.9) {
+        debugColor = COLOR_WHITE;
+      } else if (maxCov > 0.4) {
+        debugColor = COLOR_GRAY;
       } else {
-        debugColor = COLOR_PURPLE;
+        debugColor = COLOR_BLACK;
       }
     } else if (bandIndex == 6u) {
-      // Band 6: shape[1].layer value
-      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
-      if (numShapes > 1u) {
-        let layer = shapes[1].layer;
-        if (layer == 0u) {
-          debugColor = COLOR_BLACK;
-        } else if (layer == 1u) {
-          debugColor = COLOR_RED;
-        } else if (layer == 2u) {
-          debugColor = COLOR_GREEN;
-        } else if (layer == 3u) {
-          debugColor = COLOR_BLUE;
-        } else if (layer == 4u) {
-          debugColor = COLOR_YELLOW;
-        } else {
-          debugColor = COLOR_CYAN;
-        }
+      // Band 6: ambientPattern value
+      // BLACK=0, GRAY=0.5, YELLOW=1.0
+      let pattern = f32(getAmbientPattern(fx, fy));
+      if (pattern > 0.9) {
+        debugColor = COLOR_YELLOW;  // 1.0 = outside circles
+      } else if (pattern > 0.5) {
+        debugColor = COLOR_GRAY;    // 0.6 = inside circles
       } else {
-        debugColor = COLOR_PURPLE;
+        debugColor = COLOR_BLACK;
       }
     } else if (bandIndex == 7u) {
-      // Band 7: params.currentLayer
-      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
-      let layer = params.currentLayer;
-      if (layer == 0u) {
-        debugColor = COLOR_BLACK;
-      } else if (layer == 1u) {
-        debugColor = COLOR_RED;
-      } else if (layer == 2u) {
-        debugColor = COLOR_GREEN;
-      } else if (layer == 3u) {
-        debugColor = COLOR_BLUE;
-      } else if (layer == 4u) {
+      // Band 7: FULL ambient contribution = totalRefl * maxCov * pattern
+      // (ambient intensity assumed constant)
+      // WHITE=1.0, GRAY=0.6, ORANGE=0.36, BLACK=0
+      var totalRefl: f32 = 1.0;
+      var maxCov: f32 = 0.0;
+      for (var i: u32 = 0u; i < numShapes; i++) {
+        let shape = shapes[i];
+        if (shape.layer == 0u) {
+          let coverage = getMsdfCoverage(shape, fx, fy);
+          let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
+          if (coverage > 0.0 || isFullCoverage) {
+            var materialRefl: f32 = 1.0;
+            if (shape.hasMsdf == 1u) {
+              materialRefl = 0.6;
+            }
+            totalRefl *= materialRefl;
+            let effCov = select(coverage, 1.0, isFullCoverage);
+            maxCov = max(maxCov, effCov);
+          }
+        }
+      }
+      let pattern = f32(getAmbientPattern(fx, fy));
+      let fullResult = totalRefl * maxCov * pattern;
+      // WHITE=1.0, YELLOW=0.8-1.0, GRAY=0.5-0.8, ORANGE=0.2-0.5, RED=0.1-0.2, BLACK=0
+      if (fullResult > 0.9) {
+        debugColor = COLOR_WHITE;
+      } else if (fullResult > 0.7) {
         debugColor = COLOR_YELLOW;
+      } else if (fullResult > 0.5) {
+        debugColor = COLOR_GRAY;
+      } else if (fullResult > 0.3) {
+        debugColor = COLOR_ORANGE;
+      } else if (fullResult > 0.1) {
+        debugColor = COLOR_RED;
       } else {
-        debugColor = COLOR_CYAN;
+        debugColor = COLOR_BLACK;
       }
     }
     
