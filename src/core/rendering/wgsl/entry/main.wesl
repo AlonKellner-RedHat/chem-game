@@ -20,7 +20,7 @@ import package::wgsl::physics::materials::getMaterialReflection;
 // DEBUG: Full-screen color band visualization for GPU values
 // ============================================================
 // Set to 1 to enable debug mode, 0 for normal rendering
-const DEBUG_MODE: u32 = 0u;
+const DEBUG_MODE: u32 = 1u;
 
 // Distinct colors for easy identification (no gradients!)
 const COLOR_BLACK: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
@@ -400,35 +400,43 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
 
-  // DEBUG: Show raw spectral value at wavelength index 8 (middle of spectrum)
-  // This bypasses all XYZ conversion to see the RAW spectral buffer content
+  // DEBUG: Show ambient pattern directly
+  // This checks if getAmbientPattern() returns varying values
   if (DEBUG_MODE == 1u) {
-    // Sample spectral buffer at wavelength 8 (roughly 550nm - green)
-    let spectralIdx = getSpectralIndex(x, y, 8u);
-    let intensity = f32(spectralInput[spectralIdx]);
+    let fx = f32(x);
+    let fy = f32(y);
     
-    // Color band by row to show variation
+    // Color band by row to show different debug info
     let bandHeight = params.height / 4u;
     let bandIndex = y / bandHeight;
     
     var debugColor = vec3<f32>(0.0, 0.0, 0.0);
     
     if (bandIndex == 0u) {
-      // Band 0: Raw intensity as grayscale (0=black, 1=white)
-      debugColor = vec3<f32>(intensity, intensity, intensity);
+      // Band 0: getAmbientPattern as grayscale (0.6 inside circles, 1.0 outside)
+      let pattern = f32(getAmbientPattern(fx, fy));
+      debugColor = vec3<f32>(pattern, pattern, pattern);
     } else if (bandIndex == 1u) {
-      // Band 1: Is intensity > 0.5? GREEN=yes, RED=no
-      debugColor = select(COLOR_RED, COLOR_GREEN, intensity > 0.5);
+      // Band 1: Is pattern < 0.8? GREEN (inside circle) vs WHITE (outside)
+      let pattern = f32(getAmbientPattern(fx, fy));
+      debugColor = select(COLOR_WHITE, COLOR_GREEN, pattern < 0.8);
     } else if (bandIndex == 2u) {
-      // Band 2: Is intensity > 0.3? CYAN=yes, ORANGE=no
-      debugColor = select(COLOR_ORANGE, COLOR_CYAN, intensity > 0.3);
+      // Band 2: bg-grid (shape[1]) MSDF coverage - BLACK=0 (outside), GREEN=1 (inside)
+      if (arrayLength(&shapes) > 1u) {
+        let coverage = getMsdfCoverage(shapes[1], fx, fy);
+        debugColor = select(COLOR_BLACK, COLOR_GREEN, coverage > 0.5);
+      } else {
+        debugColor = COLOR_PURPLE;
+      }
     } else {
-      // Band 3: Is intensity > 0.1? WHITE=yes, BLACK=no
-      debugColor = select(COLOR_BLACK, COLOR_WHITE, intensity > 0.1);
+      // Band 3: Raw spectral intensity
+      let spectralIdx = getSpectralIndex(x, y, 8u);
+      let intensity = f32(spectralInput[spectralIdx]);
+      debugColor = vec3<f32>(intensity, intensity, intensity);
     }
     
     rgbOutput[pixelIndex] = vec4<f32>(debugColor, 1.0);
-    maxPerPixel[pixelIndex] = intensity;
+    maxPerPixel[pixelIndex] = 1.0;
     return;
   }
 
