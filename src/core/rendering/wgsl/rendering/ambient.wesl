@@ -10,7 +10,7 @@
  */
 
 import package::wgsl::constants::{VISIBLE_MIN, VISIBLE_MAX};
-import package::wgsl::bindings::{params, msdfArrayLarge, msdfSampler};
+import package::wgsl::bindings::{params, msdfArrayLarge, alphaArrayLarge, msdfSampler};
 import package::wgsl::physics::background::getBackgroundIntensity;
 import package::wgsl::rendering::msdf::msdfMedian;
 
@@ -56,6 +56,31 @@ fn getAmbientPattern(x: f32, y: f32) -> f16 {
 
   // Map to ambient light contribution: inside circles = 0.6, outside = 1.0
   return f16(1.0 - 0.4 * coverage);
+}
+
+/**
+ * Sample ambient alpha from the diagonal-circle-grid alpha texture.
+ *
+ * The alpha texture contains gradients that modulate ambient light intensity:
+ * - Linear gradient: bright on right (1.0), black on left (0.0)
+ * - Radial gradient: bright spot at bottom-left corner
+ * - Combined with screen blend for additive light mixing
+ *
+ * @param x - Screen X coordinate
+ * @param y - Screen Y coordinate
+ * @returns Alpha value (0.0-1.0) for ambient intensity modulation
+ */
+fn getAmbientAlpha(x: f32, y: f32) -> f16 {
+  // Compute UV coordinates that scale to full screen (responsive)
+  let u = x / f32(params.width);
+  let v = y / f32(params.height);
+  let uv = vec2<f32>(u, v);
+
+  // Sample alpha from diagonal-circle-grid (alphaArrayLarge, layer 0)
+  // The alpha texture stores the pre-blended gradient result
+  let alpha = textureSampleLevel(alphaArrayLarge, msdfSampler, uv, 0i, 0.0).r;
+
+  return f16(alpha);
 }
 
 // ============================================================
