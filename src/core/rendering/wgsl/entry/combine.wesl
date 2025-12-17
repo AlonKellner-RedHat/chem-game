@@ -13,8 +13,12 @@ import package::wgsl::constants::{
 import package::wgsl::structs::PrecomputedShapeData;
 import package::wgsl::bindings::{
   params, shapes,
-  spectralInput, spectralOutput, scatterSource, blurredTransmitted
+  spectralInput, spectralOutput, scatterSource, blurredTransmitted,
+  rgbOutput
 };
+
+// DEBUG: Set to 1 to enable debug output in processLayerTransition
+const COMBINE_DEBUG_MODE: u32 = 1u;
 import package::wgsl::physics::scattering::applyScattering;
 import package::wgsl::physics::materials::{
   getMaterialReflection, getMaterialTransmission, getFluorescenceExcitation
@@ -429,6 +433,80 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       shapeAlphas[i] = alpha;
       maxMask = max(maxMask, coverage * alpha);  // Combined mask for fast-path decision
     }
+  }
+
+  // ============================================================
+  // DEBUG: Write diagnostic colors to RGB buffer during layer 0
+  // ============================================================
+  if (COMBINE_DEBUG_MODE == 1u && params.currentLayer == 0u && inBounds) {
+    let pixelIndex = u32(screenPos.y) * params.width + u32(screenPos.x);
+    let bandHeight = params.height / 8u;
+    let bandIndex = u32(screenPos.y) / bandHeight;
+    
+    var debugColor = vec3<f32>(0.5, 0.5, 0.5);  // Gray default
+    
+    if (bandIndex == 0u) {
+      // Band 0: numShapes - BLACK=0, RED=1, GREEN=2, CYAN=5+
+      if (numShapes == 0u) { debugColor = vec3<f32>(0.0, 0.0, 0.0); }
+      else if (numShapes == 1u) { debugColor = vec3<f32>(1.0, 0.0, 0.0); }
+      else if (numShapes == 2u) { debugColor = vec3<f32>(0.0, 1.0, 0.0); }
+      else { debugColor = vec3<f32>(0.0, 1.0, 1.0); }
+    } else if (bandIndex == 1u) {
+      // Band 1: shape[0] coverage - BLACK=0, WHITE=1
+      if (numShapes > 0u) {
+        debugColor = select(vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0), shapeCoverages[0] > f16(0.5));
+      }
+    } else if (bandIndex == 2u) {
+      // Band 2: shape[1] coverage - BLACK=0, GREEN=1
+      if (numShapes > 1u) {
+        debugColor = select(vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0), shapeCoverages[1] > f16(0.5));
+      } else {
+        debugColor = vec3<f32>(1.0, 0.0, 1.0);  // Purple = only 1 shape
+      }
+    } else if (bandIndex == 3u) {
+      // Band 3: shape[0].hasMsdf - BLACK=0, MAGENTA=1
+      if (numShapes > 0u) {
+        debugColor = select(vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 0.0, 1.0), shapes[0].hasMsdf == 1u);
+      }
+    } else if (bandIndex == 4u) {
+      // Band 4: shape[1].hasMsdf - BLACK=0, MAGENTA=1
+      if (numShapes > 1u) {
+        debugColor = select(vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 0.0, 1.0), shapes[1].hasMsdf == 1u);
+      } else {
+        debugColor = vec3<f32>(1.0, 0.0, 1.0);  // Purple = only 1 shape
+      }
+    } else if (bandIndex == 5u) {
+      // Band 5: shape[0].layer - BLACK=0, RED=1, etc
+      if (numShapes > 0u) {
+        let layer = shapes[0].layer;
+        if (layer == 0u) { debugColor = vec3<f32>(0.0, 0.0, 0.0); }
+        else if (layer == 1u) { debugColor = vec3<f32>(1.0, 0.0, 0.0); }
+        else { debugColor = vec3<f32>(0.0, 1.0, 1.0); }
+      }
+    } else if (bandIndex == 6u) {
+      // Band 6: shape[1].layer - BLACK=0, RED=1, etc
+      if (numShapes > 1u) {
+        let layer = shapes[1].layer;
+        if (layer == 0u) { debugColor = vec3<f32>(0.0, 0.0, 0.0); }
+        else if (layer == 1u) { debugColor = vec3<f32>(1.0, 0.0, 0.0); }
+        else { debugColor = vec3<f32>(0.0, 1.0, 1.0); }
+      } else {
+        debugColor = vec3<f32>(1.0, 0.0, 1.0);  // Purple
+      }
+    } else if (bandIndex == 7u) {
+      // Band 7: maxMask - BLACK=0, GRAY=0.5, WHITE=1
+      if (maxMask > f16(0.9)) { debugColor = vec3<f32>(1.0, 1.0, 1.0); }
+      else if (maxMask > f16(0.1)) { debugColor = vec3<f32>(0.5, 0.5, 0.5); }
+      else { debugColor = vec3<f32>(0.0, 0.0, 0.0); }
+    }
+    
+    // Add separators
+    if (u32(screenPos.y) % bandHeight < 2u) {
+      debugColor = vec3<f32>(0.3, 0.3, 0.3);
+    }
+    
+    rgbOutput[pixelIndex] = vec4<f32>(debugColor, 1.0);
+    return;  // Skip normal processing for debug
   }
 
   // ============================================================
