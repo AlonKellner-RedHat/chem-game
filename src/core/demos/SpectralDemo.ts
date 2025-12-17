@@ -195,7 +195,7 @@ export class SpectralDemo implements Demo {
       {
         id: 'bg-grid',
         name: 'Background Grid',
-        maskName: 'diagonal-circle-grid', // Diagonal grid with alpha gradients (RTL + radial from bottom-left)
+        maskName: 'circle-grid', // Circle-grid pattern for background (distinct from diagonal-circle-grid ambient pattern)
         // Normalized: full screen
         nx: 0,
         ny: 0,
