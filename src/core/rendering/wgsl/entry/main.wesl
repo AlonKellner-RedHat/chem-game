@@ -271,39 +271,63 @@ fn integrateSpectrum(@builtin(global_invocation_id) id: vec3<u32>) {
       let pattern = f32(getAmbientPattern(fx, fy));
       debugColor = select(COLOR_BLACK, COLOR_YELLOW, pattern > 0.5);
     } else if (bandIndex == 5u) {
-      // Band 5: shape[1].hasMsdf flag
-      // BLACK=0, MAGENTA=1
-      if (numShapes > 1u) {
-        debugColor = select(COLOR_BLACK, COLOR_MAGENTA, shapes[1].hasMsdf == 1u);
+      // Band 5: shape[0].layer value
+      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
+      if (numShapes > 0u) {
+        let layer = shapes[0].layer;
+        if (layer == 0u) {
+          debugColor = COLOR_BLACK;
+        } else if (layer == 1u) {
+          debugColor = COLOR_RED;
+        } else if (layer == 2u) {
+          debugColor = COLOR_GREEN;
+        } else if (layer == 3u) {
+          debugColor = COLOR_BLUE;
+        } else if (layer == 4u) {
+          debugColor = COLOR_YELLOW;
+        } else {
+          debugColor = COLOR_CYAN;
+        }
       } else {
         debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 6u) {
-      // Band 6: shape[1].hasAlpha flag
-      // BLACK=0, CYAN=1
+      // Band 6: shape[1].layer value
+      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
       if (numShapes > 1u) {
-        debugColor = select(COLOR_BLACK, COLOR_CYAN, shapes[1].hasAlpha == 1u);
+        let layer = shapes[1].layer;
+        if (layer == 0u) {
+          debugColor = COLOR_BLACK;
+        } else if (layer == 1u) {
+          debugColor = COLOR_RED;
+        } else if (layer == 2u) {
+          debugColor = COLOR_GREEN;
+        } else if (layer == 3u) {
+          debugColor = COLOR_BLUE;
+        } else if (layer == 4u) {
+          debugColor = COLOR_YELLOW;
+        } else {
+          debugColor = COLOR_CYAN;
+        }
       } else {
         debugColor = COLOR_PURPLE;
       }
     } else if (bandIndex == 7u) {
-      // Band 7: shape[1].width (should be ~869)
-      // BLACK=0, RED=1-99, ORANGE=100-499, YELLOW=500-999, WHITE=1000+
-      if (numShapes > 1u) {
-        let w = shapes[1].width;
-        if (w < 1.0) {
-          debugColor = COLOR_BLACK;
-        } else if (w < 100.0) {
-          debugColor = COLOR_RED;
-        } else if (w < 500.0) {
-          debugColor = COLOR_ORANGE;
-        } else if (w < 1000.0) {
-          debugColor = COLOR_YELLOW;
-        } else {
-          debugColor = COLOR_WHITE;
-        }
+      // Band 7: params.currentLayer
+      // BLACK=0, RED=1, GREEN=2, BLUE=3, YELLOW=4, CYAN=5+
+      let layer = params.currentLayer;
+      if (layer == 0u) {
+        debugColor = COLOR_BLACK;
+      } else if (layer == 1u) {
+        debugColor = COLOR_RED;
+      } else if (layer == 2u) {
+        debugColor = COLOR_GREEN;
+      } else if (layer == 3u) {
+        debugColor = COLOR_BLUE;
+      } else if (layer == 4u) {
+        debugColor = COLOR_YELLOW;
       } else {
-        debugColor = COLOR_PURPLE;
+        debugColor = COLOR_CYAN;
       }
     }
     
