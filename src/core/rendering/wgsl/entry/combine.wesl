@@ -138,6 +138,7 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
       var totalReflection: f16 = f16(1.0);
       var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
+      var minAlpha: f16 = f16(1.0);  // Track minimum alpha for intensity modulation
 
       for (var i: u32 = 0u; i < numShapes; i++) {
         let shape = shapes[i];
@@ -147,10 +148,11 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
 
         // Compute coverage (MSDF only) - alpha does NOT affect visibility gate
         let coverage = getMsdfCoverage(shape, fx, fy);
+        let alpha = getAlphaValue(shape, fx, fy);
         let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
         // Gate check uses COVERAGE only, not alpha
-        // Alpha affects absorption intensity, not reflection visibility
+        // Alpha modulates intensity, not visibility
         if (coverage > 0.0 || isFullCoverage) {
           // Only count as "on layer" when shape ACTUALLY covers this pixel
           anyShapeOnLayer = true;
@@ -161,12 +163,14 @@ fn combineScattered(@builtin(global_invocation_id) id: vec3<u32>) {
           // Track max coverage for final scaling
           let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
           maxCoverage = max(maxCoverage, f16(effectiveCoverage));
+          // Track minimum alpha - shapes with alpha reduce ambient intensity
+          minAlpha = min(minAlpha, f16(alpha));
         }
       }
 
       if (anyShapeOnLayer) {
-        // Apply coverage at the end: reflection * coverage
-        result += ambient * totalReflection * maxCoverage * pattern;
+        // Apply coverage and alpha modulation at the end
+        result += ambient * totalReflection * maxCoverage * pattern * minAlpha;
       }
     }
 
@@ -349,16 +353,18 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
     var totalReflection: f16 = f16(1.0);
     var maxCoverage: f16 = f16(0.0);
     var anyShapeOnLayer: bool = false;
+    var minAlpha: f16 = f16(1.0);  // Track minimum alpha for intensity modulation
 
     for (var i: u32 = 0u; i < numShapes; i++) {
       let shape = shapes[i];
 
       // Compute coverage (MSDF only) - alpha does NOT affect visibility gate
       let coverage = getMsdfCoverage(shape, fx, fy);
+      let alpha = getAlphaValue(shape, fx, fy);
       let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
       // Gate check uses COVERAGE only, not alpha
-      // Alpha affects absorption intensity, not reflection visibility
+      // Alpha modulates intensity, not visibility
       if (coverage > 0.0 || isFullCoverage) {
         // Only count as "on layer" when shape ACTUALLY covers this pixel
         anyShapeOnLayer = true;
@@ -369,13 +375,15 @@ fn applyAmbientLight(@builtin(global_invocation_id) id: vec3<u32>) {
         // Track max coverage for final scaling
         let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
         maxCoverage = max(maxCoverage, f16(effectiveCoverage));
+        // Track minimum alpha - shapes with alpha reduce ambient intensity
+        minAlpha = min(minAlpha, f16(alpha));
       }
     }
 
     var ambientContribution: f16 = f16(0.0);
     if (anyShapeOnLayer) {
-      // Apply coverage at the end: reflection * coverage
-      ambientContribution = ambient * totalReflection * maxCoverage * pattern;
+      // Apply coverage and alpha modulation at the end
+      ambientContribution = ambient * totalReflection * maxCoverage * pattern * minAlpha;
     }
 
     spectralInput[spectralIdx] = current + ambientContribution;
@@ -568,6 +576,7 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
     // ============================================================
     // STEP 2: Apply ambient reflection (multiplicative compounding)
     // Uses original formula: compound reflections, then multiply by maxCoverage
+    // Alpha gradients modulate ambient intensity (lower alpha = less reflection)
     // ============================================================
     if (inBounds) {
       let ambient = getAmbientIntensity(wavelength);
@@ -576,16 +585,18 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
       var totalReflection: f16 = f16(1.0);
       var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
+      var minAlpha: f16 = f16(1.0);  // Track minimum alpha for intensity modulation
 
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
-          // Use CACHED coverage (MSDF only) - alpha does NOT affect visibility gate
+          // Use CACHED coverage and alpha
           let coverage = f32(shapeCoverages[i]);
+          let alpha = f32(shapeAlphas[i]);
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           // Gate check uses COVERAGE only, not alpha
-          // Alpha affects absorption intensity, not reflection visibility
+          // Alpha modulates intensity, not visibility
           if (coverage > 0.0 || isFullCoverage) {
             // Only count as "on layer" when shape ACTUALLY covers this pixel
             anyShapeOnLayer = true;
@@ -596,13 +607,15 @@ fn processLayerTransition(@builtin(global_invocation_id) id: vec3<u32>) {
             // Track max coverage for final scaling
             let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
             maxCoverage = max(maxCoverage, f16(effectiveCoverage));
+            // Track minimum alpha - shapes with alpha reduce ambient intensity
+            minAlpha = min(minAlpha, f16(alpha));
           }
         }
       }
 
       if (anyShapeOnLayer) {
-        // Apply coverage at the end: reflection * coverage
-        combined += ambient * totalReflection * maxCoverage * ambientPattern;
+        // Apply coverage and alpha modulation at the end
+        combined += ambient * totalReflection * maxCoverage * ambientPattern * minAlpha;
       }
     }
 
@@ -795,15 +808,19 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
       var maxCoverage: f16 = f16(0.0);
       var anyShapeOnLayer: bool = false;
 
+      // Track minimum alpha for intensity modulation (alpha reduces reflection)
+      var minAlpha: f16 = f16(1.0);
+
       for (var i: u32 = 0u; i < shapesToProcess; i++) {
         let shape = shapes[i];
         if (shape.layer == params.currentLayer) {
           // Use CACHED coverage (MSDF only) - alpha does NOT affect visibility gate
           let coverage = f32(shapeCoverages[i]);
+          let alpha = f32(shapeAlphas[i]);
           let isFullCoverage = (shape.hasMsdf == 0u && shape.hasAlpha == 0u);
 
           // Gate check uses COVERAGE only, not alpha
-          // Alpha affects absorption intensity, not reflection visibility
+          // Alpha modulates intensity, not visibility
           if (coverage > 0.0 || isFullCoverage) {
             // Only count as "on layer" when shape ACTUALLY covers this pixel
             anyShapeOnLayer = true;
@@ -821,13 +838,18 @@ fn processLayerTransitionVec4(@builtin(global_invocation_id) id: vec3<u32>) {
             // Track max coverage for final scaling
             let effectiveCoverage = select(coverage, 1.0, isFullCoverage);
             maxCoverage = max(maxCoverage, f16(effectiveCoverage));
+            
+            // Track minimum alpha - shapes with alpha reduce ambient intensity
+            // This makes the alpha gradient affect ambient light reflection
+            minAlpha = min(minAlpha, f16(alpha));
           }
         }
       }
 
       if (anyShapeOnLayer) {
-        // Apply coverage at the end: reflection * coverage
-        combined += ambient * totalReflection * maxCoverage * vec4<f16>(ambientPattern);
+        // Apply coverage and alpha modulation at the end
+        // Alpha reduces ambient intensity: lower alpha = less ambient reflection
+        combined += ambient * totalReflection * maxCoverage * vec4<f16>(ambientPattern) * vec4<f16>(minAlpha);
       }
     }
 

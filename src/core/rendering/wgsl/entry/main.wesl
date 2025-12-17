@@ -20,7 +20,7 @@ import package::wgsl::physics::materials::getMaterialReflection;
 // DEBUG: Full-screen color band visualization for GPU values
 // ============================================================
 // Set to 1 to enable debug mode, 0 for normal rendering
-const DEBUG_MODE: u32 = 1u;
+const DEBUG_MODE: u32 = 0u;
 
 // Distinct colors for easy identification (no gradients!)
 const COLOR_BLACK: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
