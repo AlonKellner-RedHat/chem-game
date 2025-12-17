@@ -16,9 +16,6 @@ import package::wgsl::bindings::{
   spectralInput, spectralOutput, scatterSource, blurredTransmitted,
   rgbOutput
 };
-
-// DEBUG: Set to 1 to enable debug output in processLayerTransition
-const COMBINE_DEBUG_MODE: u32 = 1u;
 import package::wgsl::physics::scattering::applyScattering;
 import package::wgsl::physics::materials::{
   getMaterialReflection, getMaterialTransmission, getFluorescenceExcitation
@@ -27,6 +24,9 @@ import package::wgsl::physics::planck::getKirchhoffEmission;
 import package::wgsl::physics::layer::computeLayerPhysicsWithFluorescence;
 import package::wgsl::rendering::msdf::{getShapeMask, getMsdfCoverage, getAlphaValue};
 import package::wgsl::rendering::ambient::{getAmbientPattern, getAmbientIntensity};
+
+// DEBUG: Set to 1 to enable debug output in processLayerTransition
+const COMBINE_DEBUG_MODE: u32 = 1u;
 
 // ============================================================
 // Helper Functions
