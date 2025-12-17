@@ -225,17 +225,19 @@ function generateAmbientLightAlpha(): AlphaConfig {
   return {
     gradients: [
       {
-        // Linear gradient: bright on right, transparent on left
+        // Linear gradient: full brightness on right, black on left
+        // This creates a strong horizontal gradient across the screen
         id: 'linearRightToLeft',
         type: 'linear',
         attrs: { x1: '100%', y1: '0%', x2: '0%', y2: '0%' },
         stops: [
-          { offset: '0%', color: 'white', opacity: '0.7' },
-          { offset: '100%', color: 'white', opacity: '0' },
+          { offset: '0%', color: 'white', opacity: '1.0' }, // Full brightness on right
+          { offset: '100%', color: 'white', opacity: '0' }, // Black on left
         ],
       },
       {
-        // Radial gradient: bright at bottom-left, transparent outward
+        // Radial gradient: intense bright spot at bottom-left corner
+        // Falls off sharply to add a localized bright area
         id: 'radialBottomLeft',
         type: 'radial',
         attrs: {
@@ -247,16 +249,18 @@ function generateAmbientLightAlpha(): AlphaConfig {
           fy: `${fy}`,
         },
         stops: [
-          { offset: '0%', color: 'white', opacity: '1' },
-          { offset: '40%', color: 'white', opacity: '0.4' },
-          { offset: '100%', color: 'white', opacity: '0' },
+          { offset: '0%', color: 'white', opacity: '1.0' }, // Full brightness at center
+          { offset: '25%', color: 'white', opacity: '0.6' }, // Quick falloff
+          { offset: '60%', color: 'white', opacity: '0.1' }, // Almost dark
+          { offset: '100%', color: 'white', opacity: '0' }, // Black at edge
         ],
       },
     ],
     layers: [
-      // Start with black base (no light)
+      // Start with black base (no light = 0% reflection)
       { fill: 'black' },
       // Add lights with screen blend (additive mixing)
+      // Screen blend: result = 1 - (1-a)(1-b), so lights add together
       { fill: 'url(#linearRightToLeft)', blendMode: 'screen' },
       { fill: 'url(#radialBottomLeft)', blendMode: 'screen' },
     ],
