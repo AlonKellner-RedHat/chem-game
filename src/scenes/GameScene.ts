@@ -192,9 +192,13 @@ export class GameScene {
       this.state.currentDemo.update(this);
     }
 
-    // Render via GPU and display
-    const imageData = await this.renderer.render();
-    this.ctx.putImageData(imageData, 0, 0);
+    // Only use GPU renderer if the demo requires it (default: true)
+    const usesGpu = this.state.currentDemo?.usesGpuRenderer ?? true;
+    if (usesGpu) {
+      // Render via GPU and display
+      const imageData = await this.renderer.render();
+      this.ctx.putImageData(imageData, 0, 0);
+    }
   }
 
   /**

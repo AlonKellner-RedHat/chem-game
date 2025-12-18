@@ -17,6 +17,13 @@ export interface Demo {
   readonly description?: string;
 
   /**
+   * Whether this demo uses the GPU spectral renderer.
+   * If false, the demo handles all rendering via 2D canvas.
+   * Defaults to true if not specified.
+   */
+  readonly usesGpuRenderer?: boolean;
+
+  /**
    * Initialize the demo
    * Called when the demo is loaded
    */

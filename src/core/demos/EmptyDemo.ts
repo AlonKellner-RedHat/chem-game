@@ -13,6 +13,7 @@ const BASE_WIDTH = 1280;
 export class EmptyDemo implements Demo {
   readonly name = 'Empty';
   readonly description = 'Minimal placeholder demo';
+  readonly usesGpuRenderer = false;
 
   initialize(scene: GameScene): void {
     console.log('[EmptyDemo] Initialized');

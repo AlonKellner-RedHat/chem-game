@@ -24,6 +24,7 @@ const BASE_HEIGHT = 720;
 export class InteractivityDemo implements Demo {
   readonly name = 'Interactivity';
   readonly description = 'Object placement and connection systems';
+  readonly usesGpuRenderer = false;
 
   private objects: DemoObject[] = [];
   private selectedObject: DemoObject | null = null;

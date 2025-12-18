@@ -17,6 +17,7 @@ const BASE_HEIGHT = 720;
 export class GPUDemo implements Demo {
   readonly name = 'GPU Demo';
   readonly description = 'GPU rendering pipeline diagnostics';
+  readonly usesGpuRenderer = false; // This demo tests 2D canvas rendering
 
   private mode: DiagnosticMode = 'pattern';
   private uiContainer: HTMLElement | null = null;
